@@ -26,6 +26,13 @@ type ProfileDetails = {
   countryCode?: string
 }
 
+type ProfileSearchItem = {
+  linkedinUrl?: string
+  url?: string
+  profileUrl?: string
+  publicIdentifier?: string
+}
+
 type CommentItem = {
   id?: string
   postId?: string
@@ -74,20 +81,30 @@ function isBrazilianProfile(profile: ProfileDetails | undefined) {
 }
 
 async function apifyRun(actorId: string, input: Record<string, unknown>, token: string): Promise<{ items: unknown[]; costUsd: number }> {
+  const timeout = AbortSignal.timeout(45_000)
   const start = await fetch(`https://api.apify.com/v2/acts/${actorId.replace("/", "~")}/runs?waitForFinish=120`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(input),
+    signal: timeout,
   })
   if (!start.ok) throw new Error(`Apify não iniciou o Actor (${start.status}).`)
   const run = await start.json()
   if (run.data?.status !== "SUCCEEDED") throw new Error(`Actor finalizou com status ${run.data?.status ?? "desconhecido"}.`)
   const datasetId = run.data?.defaultDatasetId
   if (!datasetId) throw new Error("Actor não retornou dataset.")
-  const output = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?clean=true`, { headers: { Authorization: `Bearer ${token}` } })
+  const output = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?clean=true`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) })
   if (!output.ok) throw new Error("Não foi possível ler o dataset do Apify.")
   const items = await output.json()
   return { items: Array.isArray(items) ? items : [], costUsd: Number(run.data?.usageTotalUsd ?? 0) }
+}
+
+async function discoverBrazilianPosts(keyword: string, token: string) {
+  const profiles = await apifyRun("harvestapi/linkedin-profile-search", { searchQuery: keyword, locations: ["Brazil"], maxItems: 10, autoQuerySegmentation: false }, token)
+  const profileUrls = (profiles.items as ProfileSearchItem[]).map((profile) => profile.linkedinUrl ?? profile.url ?? profile.profileUrl ?? (profile.publicIdentifier ? `https://www.linkedin.com/in/${profile.publicIdentifier}` : null)).filter((url): url is string => Boolean(url))
+  if (!profileUrls.length) return { items: [], costUsd: profiles.costUsd, profileCostUsd: profiles.costUsd, postsCostUsd: 0, profilesFound: profiles.items.length, profileUrlsFound: 0 }
+  const posts = await apifyRun("harvestapi/linkedin-profile-posts", { targetUrls: profileUrls, maxPosts: MAX_POSTS_PER_COLLECTION, postedLimit: "3months", scrapeComments: false, scrapeReactions: false }, token)
+  return { items: posts.items, costUsd: profiles.costUsd + posts.costUsd, profileCostUsd: profiles.costUsd, postsCostUsd: posts.costUsd, profilesFound: profiles.items.length, profileUrlsFound: profileUrls.length }
 }
 
 Deno.serve(async (request) => {
@@ -145,14 +162,19 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const search = await apifyRun("harvestapi/linkedin-post-search", { searchQueries: [keyword], maxPosts: MAX_POSTS_PER_COLLECTION, postedLimit: "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }, apifyToken)
+    const search = await discoverBrazilianPosts(keyword, apifyToken)
     costUsd += search.costUsd
-    await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-search", itens: search.items.length, custo_usd: search.costUsd })
+    await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-search", itens: search.profileCostUsd > 0 ? 10 : 0, custo_usd: search.profileCostUsd })
+    if (search.postsCostUsd > 0) await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-posts", itens: search.items.length, custo_usd: search.postsCostUsd })
     let commentsRead = 0
-    for (const raw of search.items as SearchPost[]) {
-      if (!raw.id || !raw.linkedinUrl) continue
+    const candidates = (search.items as SearchPost[]).filter((raw) => raw.id && raw.linkedinUrl && (raw.author ?? raw.actor)?.linkedinUrl)
+    const brazilianFlags = await Promise.all(candidates.map(async (raw) => {
       const author = raw.author ?? raw.actor
-      if (!author?.linkedinUrl || !(await isBrazilian(author.linkedinUrl))) continue
+      return await isBrazilian(author?.linkedinUrl ?? "")
+    }))
+    for (const [index, raw] of candidates.entries()) {
+      if (!brazilianFlags[index]) continue
+      const author = raw.author ?? raw.actor
       const { data: post, error: postError } = await admin.from("posts").upsert({ projeto_id: project.id, linkedin_url: raw.linkedinUrl, post_urn: raw.id, autor_nome: author?.name ?? null, autor_url: author?.linkedinUrl ?? null, texto: raw.text ?? raw.content ?? raw.commentary ?? null, publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null, total_reacoes: countValue(raw.engagement?.reactions), total_comentarios: raw.engagement?.comments ?? null, total_shares: raw.engagement?.shares ?? null }, { onConflict: "projeto_id,post_urn" }).select("id").single()
       if (postError || !post) throw new Error(`Não foi possível persistir o post ${raw.id}: ${postError?.message ?? "registro ausente"}`)
       postsRead += 1
@@ -170,7 +192,7 @@ Deno.serve(async (request) => {
       }
     }
     await admin.from("execucoes").update({ status: "concluida", posts_lidos: postsRead, comentarios_lidos: commentsRead, custo_usd: costUsd, concluida_em: new Date().toISOString() }).eq("id", execution.id)
-    return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, costUsd })
+    return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, costUsd, profilesFound: search.profilesFound, profileUrlsFound: search.profileUrlsFound })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido na coleta."
     await admin.from("execucoes").update({ status: "falhou", custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)

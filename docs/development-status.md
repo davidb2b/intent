@@ -65,6 +65,21 @@
 - Edge Function `analyze-posts` publicada e validada com 1 post analisado e 4
   posts ainda pendentes.
 
+## Auditoria de origem dos dados
+
+- As coletas novas foram testadas com `cost breakdown`, `cost breakdown Brasil`
+  e `procurement`: nenhuma inseriu post estrangeiro.
+- A estratégia Brazil-first foi publicada usando
+  `harvestapi/linkedin-profile-search` com `locations: ["Brazil"]` e
+  `harvestapi/linkedin-profile-posts`, mas o Actor retornou zero perfis mesmo
+  para `procurement`; a captura brasileira ainda está bloqueada por esse
+  contrato/resultado do Actor.
+- Os 5 posts e 9 comentários existentes são dados de testes anteriores,
+  coletados antes do filtro brasileiro. Eles não representam uma nova coleta.
+- Não avançar para novas features até validar uma coleta real com pelo menos
+  um autor brasileiro e limpar/reprocessar os dados antigos com decisão
+  explícita.
+
 ## Próximo gate
 
 Executar uma coleta autenticada com uma palavra-chave real. Depois devemos
