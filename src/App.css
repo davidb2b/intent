@@ -69,7 +69,11 @@
 .signal-panel { border: 1px solid var(--signal-border); border-radius: 14px; background: var(--signal-surface); overflow: hidden; }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid var(--signal-border); }
 .panel-heading h2 { margin: 0; font-size: 19px; letter-spacing: -.03em; }
+.panel-heading-actions { display: flex; align-items: center; gap: 8px; }
 .signal-tag { display: inline-flex; align-items: center; border-radius: 999px; background: var(--signal-soft); color: var(--signal-brand-dark); padding: 5px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.comment-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px 0; }
+.comment-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.comment-toolbar input { width: min(100%, 280px); }
 .post-list, .comments-list { display: grid; gap: 0; }
 .post-card { padding: 20px 24px; border-bottom: 1px solid var(--signal-border); }
 .post-card:last-child, .comment-card:last-child { border-bottom: 0; }
@@ -86,6 +90,8 @@
 .comment-card-heading span { margin-top: 3px; color: var(--signal-muted); font-size: 11px; }
 .comment-card p { margin: 12px 0; color: #33423a; font-size: 13px; line-height: 1.55; }
 .comment-card-footer { justify-content: flex-start; }
+.filtered-empty { display: flex; min-height: 180px; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--signal-muted); font-size: 13px; text-align: center; }
+.filtered-empty strong { color: var(--signal-ink); }
 .empty-state { min-height: 420px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px dashed #cddbd3; border-radius: 14px; background: rgba(255,255,255,.46); text-align: center; }
 .empty-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 16px; background: var(--signal-soft); color: var(--signal-brand); }
 .empty-state h2 { margin: 20px 0 8px; font-size: 20px; letter-spacing: -.03em; }
@@ -135,5 +141,8 @@
 @media (max-width: 780px) {
   .signal-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .panel-heading, .post-card, .comment-card { padding-left: 18px; padding-right: 18px; }
+  .comment-toolbar { align-items: stretch; flex-direction: column; padding-left: 18px; padding-right: 18px; }
+  .comment-toolbar input { width: 100%; }
+  .panel-heading-actions { align-items: flex-start; flex-direction: column; }
   .post-card-footer a { margin-left: 0; }
 }

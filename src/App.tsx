@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { startCollection } from "@/application/collection/start-collection"
 import { loadSignalComments, loadSignalPosts, loadSignalSummary, type SignalComment, type SignalPost, type SignalSummary } from "@/application/signals/load-signals"
 import { supabase } from "@/infrastructure/supabase/client"
@@ -24,6 +25,7 @@ type View = "overview" | "posts" | "comments" | "companies" | "people"
 type CollectionState = "idle" | "running" | "success" | "error"
 type AuthMode = "signin" | "signup" | "recovery" | "update-password"
 type AuthSession = { email: string; userId: string }
+type CommentFilter = "all" | "pain" | "question" | "experience" | "generic"
 
 const pathByView: Record<View, string> = {
   overview: "/overview",
@@ -49,11 +51,11 @@ function shorten(value: string | null, length = 180) {
 }
 
 const navigation: Array<{ id: View; label: string; icon: typeof LayoutDashboard }> = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "overview", label: "Visão geral", icon: LayoutDashboard },
   { id: "posts", label: "Posts", icon: FileText },
-  { id: "comments", label: "Comments", icon: MessageCircle },
-  { id: "companies", label: "Companies", icon: Building2 },
-  { id: "people", label: "People", icon: Users },
+  { id: "comments", label: "Comentários", icon: MessageCircle },
+  { id: "companies", label: "Empresas", icon: Building2 },
+  { id: "people", label: "Pessoas", icon: Users },
 ]
 
 const viewCopy: Record<View, { eyebrow: string; title: string; description: string }> = {
@@ -104,6 +106,8 @@ function App() {
   const [signalSummary, setSignalSummary] = useState<SignalSummary | null>(null)
   const [signalPosts, setSignalPosts] = useState<SignalPost[]>([])
   const [signalComments, setSignalComments] = useState<SignalComment[]>([])
+  const [commentFilter, setCommentFilter] = useState<CommentFilter>("all")
+  const [commentSearch, setCommentSearch] = useState("")
   const [summaryError, setSummaryError] = useState("")
 
   const content = viewCopy[activeView]
@@ -205,6 +209,38 @@ function App() {
     else setCollectionMessage("Sessão encerrada.")
   }
 
+  function commentMatchesFilter(comment: SignalComment) {
+    if (commentFilter === "all") return true
+    const tone = (comment.tone ?? "").toLowerCase()
+    return commentFilter === "pain"
+      ? tone.includes("pain") || tone.includes("dor")
+      : commentFilter === "question"
+        ? tone.includes("question") || tone.includes("pergunta")
+        : commentFilter === "experience"
+          ? tone.includes("experience") || tone.includes("experi")
+          : tone.includes("generic") || tone.includes("genér") || tone.includes("gener")
+  }
+
+  function visibleComments() {
+    const query = commentSearch.trim().toLowerCase()
+    return signalComments.filter((comment) => {
+      if (!commentMatchesFilter(comment)) return false
+      if (!query) return true
+      return [comment.personName, comment.personHeadline, comment.text, comment.tone].some((value) => value?.toLowerCase().includes(query))
+    })
+  }
+
+  function exportComments() {
+    const rows = [["Pessoa", "Cargo", "Teor", "Comentário", "Data", "Perfil", "Post"], ...visibleComments().map((comment) => [comment.personName, comment.personHeadline ?? "", comment.tone ?? "", comment.text, formatDate(comment.publishedAt), comment.personUrl, comment.postUrl])]
+    const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n")
+    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }))
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = "signal-lab-comentarios.csv"
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="signal-shell">
       <aside className="signal-sidebar">
@@ -299,11 +335,17 @@ function App() {
               </article>)}</div>
             </section>
           </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">
-            <div className="panel-heading"><div><p className="eyebrow">Sinais de intenção</p><h2>{signalComments.length} comentários encontrados</h2></div><span className="signal-tag">Dados reais</span></div>
-            <div className="comments-list">{signalComments.map((comment) => <article className="comment-card" key={comment.id}>
+            <div className="comment-toolbar">
+              <div className="comment-filters" role="group" aria-label="Filtrar comentários">
+                {([["all", "Todos"], ["pain", "Dores"], ["question", "Perguntas"], ["experience", "Experiências"], ["generic", "Genéricos"]] as Array<[CommentFilter, string]>).map(([filter, label]) => <Button key={filter} type="button" size="sm" variant={commentFilter === filter ? "default" : "outline"} onClick={() => setCommentFilter(filter)}>{label}</Button>)}
+              </div>
+              <Input value={commentSearch} onChange={(event) => setCommentSearch(event.target.value)} placeholder="Buscar pessoa ou comentário" aria-label="Buscar comentários" />
+            </div>
+            <div className="panel-heading"><div><p className="eyebrow">Comentários</p><h2>{visibleComments().length} comentários encontrados</h2><p>Classificação automática com evidência preservada.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" onClick={exportComments}>Baixar CSV</Button></div></div>
+            {visibleComments().length > 0 ? <div className="comments-list">{visibleComments().map((comment) => <article className="comment-card" key={comment.id}>
               <div className="comment-avatar">{comment.personName.slice(0, 1).toUpperCase()}</div>
               <div><div className="comment-card-heading"><div><strong>{comment.personName}</strong><span>{comment.personHeadline ?? "Perfil público"}</span></div>{comment.tone && <span className="signal-tag">{comment.tone}</span>}</div><p>“{shorten(comment.text, 260)}”</p><div className="comment-card-footer"><span>{formatDate(comment.publishedAt)}</span><a href={comment.personUrl} target="_blank" rel="noreferrer">Ver perfil</a><a href={comment.postUrl} target="_blank" rel="noreferrer">Ver post</a></div></div>
-            </article>)}</div>
+            </article>)}</div> : <div className="filtered-empty"><strong>Nenhum comentário encontrado</strong><span>Remova um filtro ou altere a busca.</span></div>}
           </section> : <div className="empty-state">
             <div className="empty-icon"><BarChart3 size={24} /></div>
             <h2>{session && signalSummary?.posts ? "Sinais reais disponíveis" : content.title}</h2>
