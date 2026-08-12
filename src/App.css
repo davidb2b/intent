@@ -80,6 +80,10 @@
 .post-card-meta, .post-card-footer, .comment-card-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--signal-muted); font-size: 11px; }
 .post-card-meta { justify-content: space-between; }
 .post-card p { margin: 13px 0 16px; color: #33423a; font-size: 13px; line-height: 1.6; }
+.post-analysis { display: grid; gap: 9px; margin: 14px 0 16px; border-left: 2px solid #b9d7c6; padding-left: 12px; }
+.post-analysis div { display: grid; gap: 3px; }
+.post-analysis strong { color: var(--signal-brand-dark); font-size: 11px; }
+.post-analysis span { color: #33423a; font-size: 12px; line-height: 1.5; }
 .post-card-footer a, .comment-card-footer a { color: var(--signal-brand); font-weight: 600; text-decoration: none; }
 .post-card-footer a { margin-left: auto; }
 .comment-card { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 13px; padding: 20px 24px; border-bottom: 1px solid var(--signal-border); }

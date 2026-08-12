@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { startCollection } from "@/application/collection/start-collection"
 import { classifyComments } from "@/application/classification/classify-comments"
+import { analyzePosts } from "@/application/classification/analyze-posts"
 import { loadSignalComments, loadSignalPosts, loadSignalSummary, type SignalComment, type SignalPost, type SignalSummary } from "@/application/signals/load-signals"
 import { supabase } from "@/infrastructure/supabase/client"
 import "./App.css"
@@ -111,6 +112,7 @@ function App() {
   const [commentSearch, setCommentSearch] = useState("")
   const [summaryError, setSummaryError] = useState("")
   const [classificationBusy, setClassificationBusy] = useState(false)
+  const [postAnalysisBusy, setPostAnalysisBusy] = useState(false)
 
   const content = viewCopy[activeView]
 
@@ -263,6 +265,23 @@ function App() {
     }
   }
 
+  async function handleAnalyzePosts() {
+    if (!signalSummary?.projectId || postAnalysisBusy) return
+    setPostAnalysisBusy(true)
+    setCollectionState("running")
+    setCollectionMessage("Analisando posts reais…")
+    try {
+      const result = await analyzePosts(signalSummary.projectId)
+      const posts = await loadSignalPosts(signalSummary.projectId)
+      setSignalPosts(posts)
+      setCollectionState("success")
+      setCollectionMessage(result.analyzed ? "Análise do post concluída." : "Nenhum post pendente para analisar.")
+    } catch (error) {
+      setCollectionState("error")
+      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível analisar os posts.")
+    } finally { setPostAnalysisBusy(false) }
+  }
+
   return (
     <div className="signal-shell">
       <aside className="signal-sidebar">
@@ -349,10 +368,11 @@ function App() {
           </div>}
           {activeView === "posts" && session && signalPosts.length > 0 ? <div className="signal-panel-grid">
             <section className="signal-panel">
-              <div className="panel-heading"><div><p className="eyebrow">Resultados da busca</p><h2>{signalPosts.length} posts encontrados</h2></div><span className="signal-tag">Dados reais</span></div>
+              <div className="panel-heading"><div><p className="eyebrow">Resultados da busca</p><h2>{signalPosts.length} posts encontrados</h2><p>Revise a relevância antes de monitorar.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
               <div className="post-list">{signalPosts.map((post) => <article className="post-card" key={post.id}>
                 <div className="post-card-meta"><span>{post.authorName ?? "Autor não identificado"}</span><span>{formatDate(post.publishedAt)}</span></div>
                 <p>{shorten(post.text, 240)}</p>
+                {post.analysis.topic && <div className="post-analysis"><div><strong>Tópico</strong><span>{post.analysis.topic}</span></div><div><strong>Problema</strong><span>{post.analysis.problem}</span></div><div><strong>Por que faz sentido</strong><span>{post.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{post.analysis.collection}</span></div></div>}
                 <div className="post-card-footer"><span>{post.reactions ?? 0} reações</span><span>{post.comments ?? 0} comentários</span><span>{post.shares ?? 0} compartilhamentos</span><a href={post.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
               </article>)}</div>
             </section>
