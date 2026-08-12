@@ -119,6 +119,7 @@ Deno.serve(async (request) => {
   let postsRead = 0
   let commentsRead = 0
   let peopleNew = 0
+  const warnings: string[] = []
   try {
     const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
     const postInput = { authorUrls: monitoredSources.map((source) => source.linkedin_url), maxPosts: 200, postedLimit: janela, scrapeComments: false, scrapeReactions: false }
@@ -150,6 +151,9 @@ Deno.serve(async (request) => {
       costUsd += commentsResult.costUsd
       registerActualCost(budget, commentsResult.costUsd)
       await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-comments", itens: commentsResult.items.length, custo_usd: commentsResult.costUsd })
+      if (commentsResult.items.length >= 200) {
+        warnings.push(`O post ${postId} atingiu o limite de 200 comentários; a coleta pode estar truncada.`)
+      }
       for (const comment of commentsResult.items as ActorComment[]) {
         const actor = comment.actor
         if (!comment.id || !comment.commentary || !actor?.linkedinUrl) continue
@@ -174,8 +178,8 @@ Deno.serve(async (request) => {
         if (!error) commentsRead += 1
       }
     }
-    await admin.from("execucoes").update({ status: "concluida", posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, concluida_em: new Date().toISOString() }).eq("id", execution.id)
-    return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, peopleNew, costUsd })
+    await admin.from("execucoes").update({ status: "concluida", posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, parametros: { janela, origem: body.origem ?? "manual", fontes: monitoredSources.length, avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, peopleNew, costUsd, warnings })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido no monitoramento."
     const abortedByCost = error instanceof CostLimitError

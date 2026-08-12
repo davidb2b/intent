@@ -23,6 +23,8 @@ function numeric(value: unknown) {
 export function estimateActorCost(actorId: string, input: Record<string, unknown>) {
   if (actorId === "harvestapi/linkedin-post-search") return numeric(input.maxPosts) * UNIT_COST_USD
   if (actorId === "harvestapi/linkedin-post-comments") return numeric(input.maxItems) * UNIT_COST_USD * 2
+  if (actorId === "harvestapi/linkedin-profile-search") return numeric(input.maxItems) * UNIT_COST_USD
+  if (actorId === "harvestapi/linkedin-profile-posts") return numeric(input.maxPosts) * UNIT_COST_USD
   if (actorId === "apimaestro/linkedin-profile-detail") return UNIT_COST_USD
   return 0
 }

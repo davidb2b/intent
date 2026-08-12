@@ -9,6 +9,11 @@ describe("collection cost estimates", () => {
     expect(estimateComments(200)).toBe(0.6)
   })
 
+  it("estimates the auxiliary profile Actors", () => {
+    expect(10 * 0.0015).toBeCloseTo(0.015)
+    expect(5 * 0.0015).toBeCloseTo(0.0075)
+  })
+
   it("detects when the next call would exceed the execution ceiling", () => {
     const spent = 14.7
     const nextCall = estimateComments(200)

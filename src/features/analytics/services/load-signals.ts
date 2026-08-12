@@ -27,6 +27,7 @@ export type SignalExecution = {
   peopleNew: number
   costUsd: number
   error: string | null
+  warnings: string[]
   startedAt: string
   completedAt: string | null
 }
@@ -133,7 +134,8 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
   if (firstError) throw new Error(firstError.message)
 
   const executionHistory = (executions.data ?? []).map((execution) => {
-    const parameters = execution.parametros as { origem?: string } | null
+    const parameters = execution.parametros as { origem?: string; avisos?: unknown } | null
+    const warnings = Array.isArray(parameters?.avisos) ? parameters.avisos.filter((warning): warning is string => typeof warning === "string") : []
     return {
       id: execution.id,
       type: execution.tipo,
@@ -144,6 +146,7 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
       peopleNew: execution.pessoas_novas ?? 0,
       costUsd: Number(execution.custo_usd ?? 0),
       error: execution.erro,
+      warnings,
       startedAt: execution.iniciada_em,
       completedAt: execution.concluida_em,
     } satisfies SignalExecution

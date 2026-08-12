@@ -74,6 +74,7 @@
 .signal-metrics span { color: var(--signal-muted); font-size: 12px; }
 .signal-metrics strong { font-size: 24px; letter-spacing: -.04em; }
 .execution-history-panel { margin-bottom: 16px; }
+.execution-warning { color: #a16207; }
 .execution-list { display: grid; }
 .execution-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; padding: 15px 24px; border-bottom: 1px solid var(--signal-border); }
 .execution-row:last-child { border-bottom: 0; }
