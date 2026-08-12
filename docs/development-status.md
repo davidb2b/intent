@@ -54,6 +54,11 @@
   separador `;` e BOM UTF-8.
 - Confiança abaixo de 0,6 já possui marca visual de revisão quando existir no
   banco.
+- Edge Function `classify-comments` publicada com lotes de até 40 comentários,
+  temperatura 0, validação de categorias/IDs/confiança e proteção contra
+  sobrescrever revisão humana.
+- A função está aguardando apenas o secret `OPENAI_API_KEY` para executar a
+  classificação real; sem ele responde `503` explicitamente.
 
 ## Próximo gate
 
