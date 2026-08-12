@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -163,7 +164,7 @@ Deno.serve(async (request) => {
   const brazilProfileCache = new Map<string, boolean>()
 
   async function isBrazilian(linkedinUrl: string) {
-    const username = linkedinUrl.split("/in/")[1]?.split(/[/?#]/)[0] ?? linkedinUrl
+    const username = profileUsername(linkedinUrl)
     const cached = brazilProfileCache.get(username)
     if (cached !== undefined) return cached
     const profile = await apifyRun("apimaestro/linkedin-profile-detail", { username, includeEmail: false }, apifyToken)
@@ -199,7 +200,7 @@ Deno.serve(async (request) => {
       for (const comment of comments.items as CommentItem[]) {
         if (!comment.id || !comment.actor?.linkedinUrl || !comment.commentary) continue
         if (!(await isBrazilian(comment.actor.linkedinUrl))) continue
-        const { data: person } = await admin.from("pessoas").upsert({ projeto_id: project.id, linkedin_url: comment.actor.linkedinUrl, slug: comment.actor.linkedinUrl.split("/").filter(Boolean).pop() ?? comment.actor.id ?? comment.id, nome: comment.actor.name ?? "Perfil sem nome", headline: comment.actor.headline ?? comment.actor.position ?? null, cargo: comment.actor.experience?.[0]?.position ?? null }, { onConflict: "projeto_id,slug" }).select("id").single()
+        const { data: person } = await admin.from("pessoas").upsert({ projeto_id: project.id, linkedin_url: comment.actor.linkedinUrl, slug: normalizeProfileSlug(comment.actor.linkedinUrl), nome: comment.actor.name ?? "Perfil sem nome", headline: comment.actor.headline ?? comment.actor.position ?? null, cargo: comment.actor.experience?.[0]?.position ?? null }, { onConflict: "projeto_id,slug" }).select("id").single()
         if (!person) continue
         await admin.from("comentarios").upsert({ projeto_id: project.id, post_id: post.id, pessoa_id: person.id, comentario_urn: comment.id, texto: comment.commentary, publicado_em: comment.createdAt ?? null }, { onConflict: "projeto_id,comentario_urn" })
         commentsRead += 1

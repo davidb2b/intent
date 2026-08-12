@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -82,8 +83,6 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
 function dateValue(value: string | { date?: string } | undefined) { return typeof value === "string" ? value : value?.date ?? null }
 function countValue(value: number | unknown[] | undefined, fallback?: number) { return Array.isArray(value) ? value.length : value ?? fallback ?? null }
 function sourceUrl(value: string) { return value.replace(/\/$/, "") }
-function slugFromUrl(url: string) { return url.split("/").filter(Boolean).pop()?.split(/[?#]/)[0] ?? url }
-
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405)
@@ -148,14 +147,14 @@ Deno.serve(async (request) => {
         if (!comment.id || !comment.commentary || !actor?.linkedinUrl) continue
         const actorUrl = sourceUrl(actor.linkedinUrl)
         if (!profileCache.has(actorUrl)) {
-          const username = slugFromUrl(actorUrl)
+          const username = profileUsername(actorUrl)
           const profile = await apifyRun("apimaestro/linkedin-profile-detail", { username, includeEmail: false }, apifyToken)
           costUsd += profile.costUsd
           await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: 1, custo_usd: profile.costUsd })
           profileCache.set(actorUrl, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
         }
         if (!profileCache.get(actorUrl)) continue
-        const slug = actor.universalName ?? slugFromUrl(actorUrl)
+        const slug = normalizeProfileSlug(actorUrl)
         const { data: existingPerson } = await admin.from("pessoas").select("id").eq("projeto_id", projectId).eq("slug", slug).maybeSingle()
         const { data: person } = await admin.from("pessoas").upsert({ projeto_id: projectId, linkedin_url: actorUrl, slug, nome: actor.name ?? "Perfil sem nome", headline: actor.headline ?? actor.position ?? null, cargo: actor.experience?.[0]?.position ?? null }, { onConflict: "projeto_id,slug" }).select("id").single()
         if (!person) continue

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { profileUsername } from "../_shared/profile-identity.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -131,7 +132,7 @@ Deno.serve(async (request) => {
     for (const candidate of grouped.values()) {
       if (existingUrls.has(candidate.url)) continue
       if (!profileCache.has(candidate.url)) {
-        const username = candidate.url.split("/in/")[1]?.split(/[/?#]/)[0] ?? candidate.url
+        const username = profileUsername(candidate.url)
         const profile = await apifyRun("apimaestro/linkedin-profile-detail", { username, includeEmail: false }, apifyToken)
         costUsd += profile.costUsd
         await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: 1, custo_usd: profile.costUsd })

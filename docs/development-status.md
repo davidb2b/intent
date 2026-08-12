@@ -44,6 +44,17 @@
 - A decisão temporária é manter `owner_id` para preservar o isolamento de
   autenticação/RLS até a revisão da divergência com a spec.
 
+## Fase 2 — descoberta de fontes
+
+- A identidade de pessoas foi centralizada em
+  `supabase/functions/_shared/profile-identity.ts`.
+- Descoberta, monitoramento e coleta legada agora usam a mesma normalização
+  de slug, evitando duplicatas por maiúsculas, barra final ou query string.
+- Teste unitário cobre URLs canônicas e duas pessoas com slugs diferentes.
+- As Edge Functions `discover-sources`, `run-monitoring` e
+  `start-collection` foram republicadas.
+- As três funções continuam protegidas: chamadas sem sessão retornam `401`.
+
 ## Concluído nesta etapa
 
 - Permissão de gerenciamento liberada na organização `B2B Insiders Pro`.
