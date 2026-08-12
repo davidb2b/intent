@@ -16,14 +16,15 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { discoverSources } from "@/application/collection/discover-sources"
-import { runMonitoring } from "@/application/collection/run-monitoring"
-import { classifyComments } from "@/application/classification/classify-comments"
-import { analyzePosts } from "@/application/classification/analyze-posts"
-import { updatePostCuration, type CurationStatus } from "@/application/curation/update-post-curation"
-import { loadSignalComments, loadSignalCompanies, loadSignalPeople, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalCompany, type SignalPerson, type SignalPost, type SignalSource, type SignalSummary } from "@/application/signals/load-signals"
-import { updateSourceStatus } from "@/application/sources/update-source-status"
-import { supabase } from "@/infrastructure/supabase/client"
+import { discoverSources } from "@/features/collection/services/discover-sources"
+import { runMonitoring } from "@/features/collection/services/run-monitoring"
+import { updateSourceStatus } from "@/features/collection/services/update-source-status"
+import { classifyComments } from "@/features/classification/services/classify-comments"
+import { analyzePosts } from "@/features/classification/services/analyze-posts"
+import { updatePostCuration, type CurationStatus } from "@/features/posts/services/update-post-curation"
+import { loadSignalComments, loadSignalCompanies, loadSignalPeople, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalCompany, type SignalPerson, type SignalPost, type SignalSource, type SignalSummary } from "@/features/analytics/services/load-signals"
+import { authService } from "@/features/auth/services/auth-service"
+import { saveResearch } from "@/features/research/services/save-research"
 import "./App.css"
 
 type View = "overview" | "posts" | "comments" | "companies" | "people"
@@ -50,6 +51,14 @@ function viewFromPath(pathname: string): View {
 function formatDate(value: string | null) {
   if (!value) return "Data não informada"
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(new Date(value))
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" }).format(value)
+}
+
+function formatExecutionStatus(status: string) {
+  return status === "concluida" ? "Concluída" : status === "rodando" ? "Em andamento" : status === "abortada_por_custo" ? "Abortada por custo" : "Falhou"
 }
 
 function shorten(value: string | null, length = 180) {
@@ -101,7 +110,6 @@ function App() {
   const [negativeContext, setNegativeContext] = useState("")
   const [collectionState, setCollectionState] = useState<CollectionState>("idle")
   const [collectionMessage, setCollectionMessage] = useState("")
-  const [collectionCost, setCollectionCost] = useState<string>("—")
   const [session, setSession] = useState<AuthSession | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>("signin")
@@ -131,8 +139,8 @@ function App() {
     const updateSession = (nextSession: { user?: { id: string; email?: string } } | null) => {
       setSession(nextSession?.user?.email ? { email: nextSession.user.email, userId: nextSession.user.id } : null)
     }
-    void supabase.auth.getSession().then(({ data }) => updateSession(data.session))
-    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+    void authService.getSession().then(({ data }) => updateSession(data.session))
+    const { data: listener } = authService.onAuthStateChange((event, nextSession) => {
       updateSession(nextSession)
       if (event === "PASSWORD_RECOVERY") {
         setAuthMode("update-password")
@@ -202,7 +210,6 @@ function App() {
       if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de iniciar uma coleta.")
       const result = await runMonitoring(signalSummary.projectId)
       setCollectionState("success")
-      setCollectionCost(result.costUsd > 0 ? `$${result.costUsd.toFixed(3)}` : "$0.000")
       setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários monitorados.`)
       const refreshedSummary = await loadSignalSummary(session.userId)
       setSignalSummary(refreshedSummary)
@@ -233,7 +240,6 @@ function App() {
       const sources = await loadSignalSources(signalSummary.projectId)
       setSignalSources(sources)
       setCollectionState("success")
-      setCollectionCost(result.costUsd > 0 ? `$${result.costUsd.toFixed(3)}` : "$0.000")
       setCollectionMessage(`${result.candidatesInserted} fontes candidatas encontradas; ${result.candidatesRejected} perfis não brasileiros descartados.`)
     } catch (error) {
       setCollectionState("error")
@@ -246,12 +252,12 @@ function App() {
     setAuthBusy(true)
     setAuthError("")
     const result = authMode === "signin"
-      ? await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword })
+      ? await authService.signInWithPassword(authEmail, authPassword)
       : authMode === "signup"
-        ? await supabase.auth.signUp({ email: authEmail, password: authPassword })
+        ? await authService.signUp(authEmail, authPassword)
         : authMode === "recovery"
-          ? await supabase.auth.resetPasswordForEmail(authEmail, { redirectTo: `${window.location.origin}/reset-password` })
-          : await supabase.auth.updateUser({ password: authPassword })
+          ? await authService.resetPasswordForEmail(authEmail, `${window.location.origin}/reset-password`)
+          : await authService.updatePassword(authPassword)
     setAuthBusy(false)
     if (result.error) { setAuthError(result.error.message); return }
     setAuthOpen(false)
@@ -264,11 +270,8 @@ function App() {
     setCollectionState("running")
     setCollectionMessage("Salvando configuração da pesquisa…")
     try {
-      const { data: project, error: projectError } = await supabase.from("projetos").upsert({ owner_id: session.userId, nome: "Signal Lab", categoria: keyword.trim() }, { onConflict: "owner_id" }).select("id").single()
-      if (projectError || !project) throw new Error(projectError?.message ?? "Não foi possível salvar o projeto.")
-      const { error: termError } = await supabase.from("termos").upsert({ projeto_id: project.id, termo: keyword.trim(), contexto_positivo: positiveContext.trim() || null, contexto_negativo: negativeContext.trim() || null, ativo: true }, { onConflict: "projeto_id,termo" })
-      if (termError) throw new Error(termError.message)
-      setSignalSummary((summary) => summary ? { ...summary, projectId: project.id, keyword: keyword.trim(), positiveContext: positiveContext.trim() || null, negativeContext: negativeContext.trim() || null } : { projectId: project.id, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: keyword.trim(), positiveContext: positiveContext.trim() || null, negativeContext: negativeContext.trim() || null })
+      const saved = await saveResearch({ ownerId: session.userId, keyword, positiveContext, negativeContext })
+      setSignalSummary((summary) => summary ? { ...summary, projectId: saved.projectId, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext } : { projectId: saved.projectId, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext, lastExecutionOrigin: null, monthlyCostUsd: 0, estimatedNextCostUsd: 0, monitoredSources: 0, executionHistory: [] })
       setSettingsOpen(false)
       setCollectionState("success")
       setCollectionMessage("Configuração salva. Escolha descobrir fontes ou atualizar o monitoramento.")
@@ -279,7 +282,7 @@ function App() {
   }
 
   async function handleLogout() {
-    const { error } = await supabase.auth.signOut()
+    const { error } = await authService.signOut()
     if (error) setCollectionMessage(error.message)
     else setCollectionMessage("Sessão encerrada.")
   }
@@ -416,6 +419,7 @@ function App() {
         </nav>
 
         <div className="sidebar-footer">
+          <div className="cost-box"><p className="eyebrow">Gasto desta pesquisa</p><strong>{formatCurrency(signalSummary?.monthlyCostUsd ?? 0)}</strong><div className="cost-bar"><span style={{ width: `${Math.min(((signalSummary?.monthlyCostUsd ?? 0) / 300) * 100, 100)}%` }} /></div><small>Teto de US$ 300,00 no mês{(signalSummary?.monthlyCostUsd ?? 0) >= 225 ? " · Atenção" : ""}</small></div>
           <div className="status-line"><span className="status-dot" /> Ambiente preparado</div>
           <button className="help-link" type="button"><CircleHelp size={15} /> Ajuda</button>
         </div>
@@ -449,9 +453,9 @@ function App() {
         </section>
 
         <section className="collection-bar" aria-label="Status da coleta">
-          <div className={`collection-status collection-${collectionState}`}><span className="status-dot" /> {collectionState === "running" ? "Coleta em andamento" : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : "Coleta não iniciada"}</div>
-          <div className="collection-meta"><Clock3 size={15} /> Próxima coleta: não agendada</div>
-          <div className="collection-meta"><span className="cost-label">Custo</span> {collectionCost}</div>
+          <div className={`collection-status collection-${collectionState}`}><span className="status-dot" /> {collectionState === "running" ? "Coleta em andamento" : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : signalSummary?.lastExecutionAt ? `Última coleta ${formatDate(signalSummary.lastExecutionAt)}` : "Coleta não iniciada"}</div>
+          <div className="collection-meta"><Clock3 size={15} /> Próxima: segunda, 06h</div>
+          <div className="collection-meta"><span className="cost-label">Próxima estimativa</span> {formatCurrency(signalSummary?.estimatedNextCostUsd ?? 0)}</div>
           <div className="collection-actions">
             <Button className="discover-button" variant="outline" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleDiscover}>Descobrir fontes</Button>
             <Button className="collect-button" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
@@ -470,6 +474,7 @@ function App() {
             <div><span>Pessoas</span><strong>{signalSummary.people}</strong></div>
             <div><span>Empresas</span><strong>{signalSummary.companies}</strong></div>
           </div>}
+          {activeView === "overview" && session && signalSummary?.projectId && <section className="signal-panel execution-history-panel"><div className="panel-heading"><div><p className="eyebrow">Histórico</p><h2>Execuções recentes</h2><p>Descobertas e monitoramentos com origem e custo reais.</p></div><span className="signal-tag">{signalSummary.executionHistory.length} registros</span></div>{signalSummary.executionHistory.length > 0 ? <div className="execution-list">{signalSummary.executionHistory.map((execution) => <article className="execution-row" key={execution.id}><div><strong>{execution.type === "descoberta" ? "Descoberta de fontes" : "Monitoramento"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Agendada" : execution.origin === "manual" ? "Manual" : "Origem não informada"}</span></div><div><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.warnings.length > 0 && <small className="execution-warning">⚠ {execution.warnings.length} aviso(s) de truncamento</small>}</div><strong>{formatCurrency(execution.costUsd)}</strong></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma execução registrada</strong><span>As próximas descobertas e monitoramentos aparecerão aqui.</span></div>}</section>}
           {activeView === "posts" && session && signalSummary?.projectId ? <div className="signal-panel-grid">
             <section className="signal-panel">
               <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>

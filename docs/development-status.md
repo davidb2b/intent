@@ -15,6 +15,77 @@
 - PR1 fechado no front-end: sessão persistida, rotas reais, logout, recuperação
   de senha e atualização de senha via Supabase Auth.
 
+## Auditoria da Fase 0 — em andamento
+
+- O stack foi alinhado à spec: React e React DOM fixados na versão 18.3.1,
+  com tipos React 18.
+- Branch de trabalho criada para respeitar o fluxo de branch/PR/preview; não
+  haverá novas entregas diretamente em `main`.
+- Testes, build e lint foram executados após o alinhamento do stack.
+- As amostras reais dos Actors estão versionadas em `docs/amostras/` e não
+  contêm credenciais.
+- Pendente: mover a aplicação para a organização por features/services
+  definida em `docs/architecture.md`.
+- Pendente: confirmar com David se `owner_id` deve permanecer na tabela
+  `projetos`. A spec publicada não declara essa coluna, mas o RLS atual e o
+  login usam esse vínculo. A migration não será alterada sem resolver essa
+  divergência.
+- A aplicação foi reorganizada por domínio em `src/features`, com auth,
+  research, collection, classification, posts e analytics separados.
+- A UI não importa mais o client do Supabase diretamente; autenticação e
+  persistência da pesquisa usam services próprios.
+
+## Fase 1 — configuração da pesquisa
+
+- O modal salva projeto, termo e contextos no Supabase somente quando existe
+  sessão autenticada.
+- Salvar a configuração não dispara Actor nem cria execução.
+- Palavra-chave e contextos são normalizados no service, com teste unitário.
+- A decisão temporária é manter `owner_id` para preservar o isolamento de
+  autenticação/RLS até a revisão da divergência com a spec.
+
+## Fase 2 — descoberta de fontes
+
+- A identidade de pessoas foi centralizada em
+  `supabase/functions/_shared/profile-identity.ts`.
+- Descoberta, monitoramento e coleta legada agora usam a mesma normalização
+  de slug, evitando duplicatas por maiúsculas, barra final ou query string.
+- Teste unitário cobre URLs canônicas e duas pessoas com slugs diferentes.
+- As Edge Functions `discover-sources`, `run-monitoring` e
+  `start-collection` foram republicadas.
+- As três funções continuam protegidas: chamadas sem sessão retornam `401`.
+
+## Fase 5 — controle de custos
+
+- Criado controle compartilhado de custo para as Edge Functions.
+- Teto padrão por execução: US$ 15,00.
+- Teto mensal: US$ 300,00.
+- A próxima chamada é estimada antes de ser enviada ao Apify.
+- Execuções que atingem o limite são gravadas como
+  `abortada_por_custo` e não continuam novas chamadas.
+- O custo real continua sendo registrado por Actor em `custos`.
+- A descoberta e o monitoramento foram republicados com essa proteção.
+- Testes unitários cobrem a estimativa de comentários e o corte do teto por
+  execução.
+- Ainda falta testar o abortamento contra uma execução autenticada real com
+  teto reduzido para US$ 0,50, conforme o checklist do David.
+- A barra de coleta agora mostra próxima execução, estimativa calculada a
+  partir das fontes monitoradas e status da última rodada.
+- A sidebar agora mostra gasto mensal, barra de consumo e aviso a partir de
+  75% do teto.
+- A Visão geral agora mostra histórico real de execuções, origem, status,
+  contadores e custo.
+
+## Fase 6 — agendamento
+
+- O `run-monitoring` agora aceita um caminho agendado protegido exclusivamente
+  pelo secret `SCHEDULER_SECRET` no header `x-scheduler-secret`.
+- Execuções por esse caminho são registradas com `origem: "agendada"` e não
+  dependem de um usuário fictício.
+- O contrato e os passos para configurar o cron de segunda-feira às 06:00 BRT
+  estão em `docs/scheduling.md`.
+- Pendente: cadastrar o secret e ativar o job cron no projeto Supabase.
+
 ## Concluído nesta etapa
 
 - Permissão de gerenciamento liberada na organização `B2B Insiders Pro`.

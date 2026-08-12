@@ -16,13 +16,12 @@ src/
   app/                       composição da aplicação e roteamento
   components/                UI compartilhada e shadcn/ui
   features/
-    overview/                tela 01
-    posts/                   tela 02 e curadoria
-    comments/                tela 03 e exportação
-    companies/               tela 04
-    people/                  tela 05
-    collection/              descoberta, monitoramento e histórico
-    research/                configuração da pesquisa
+    auth/services/           sessão e autenticação
+    analytics/services/      leitura de posts, comentários, empresas e pessoas
+    classification/services/ classificação de comentários e posts
+    collection/services/     descoberta, monitoramento e fontes
+    posts/services/          curadoria de posts
+    research/services/       persistência da configuração da pesquisa
   infrastructure/
     apify/                   catálogo e adapters externos
     supabase/                client único do browser
@@ -42,7 +41,8 @@ UI -> application/use-case -> service -> Edge Function -> Apify
 
 O front não conhece payload de Actor. O service recebe tipos próprios do
 domínio. Cada Actor tem um adapter específico e todos convergem para os
-mesmos comandos de ingestão.
+mesmos comandos de ingestão. A composição em `src/app` não importa o client
+do Supabase diretamente; essa dependência fica nos services.
 
 ## Ordem de execução
 

@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -82,8 +84,6 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
 function dateValue(value: string | { date?: string } | undefined) { return typeof value === "string" ? value : value?.date ?? null }
 function countValue(value: number | unknown[] | undefined, fallback?: number) { return Array.isArray(value) ? value.length : value ?? fallback ?? null }
 function sourceUrl(value: string) { return value.replace(/\/$/, "") }
-function slugFromUrl(url: string) { return url.split("/").filter(Boolean).pop()?.split(/[?#]/)[0] ?? url }
-
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405)
@@ -92,36 +92,50 @@ Deno.serve(async (request) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
   const apifyToken = Deno.env.get("APIFY_TOKEN")
   if (!supabaseUrl || !serviceRoleKey || !apifyToken) return json({ error: "Backend não configurado: faltam secrets do Supabase ou Apify." }, 503)
-  const authHeader = request.headers.get("Authorization")
-  if (!authHeader) return json({ error: "Faça login para iniciar o monitoramento." }, 401)
-  const admin = createClient(supabaseUrl, serviceRoleKey)
-  const userClient = createClient(supabaseUrl, serviceRoleKey, { global: { headers: { Authorization: authHeader } } })
-  const { data: { user }, error: userError } = await userClient.auth.getUser()
-  if (userError || !user) return json({ error: "Sessão inválida. Faça login novamente." }, 401)
 
-  let body: { projectId?: string; projeto_id?: string; janela?: string; origem?: string }
+  let body: { projectId?: string; projeto_id?: string; janela?: string; origem?: string; teto_execucao_usd?: number }
   try { body = await request.json() } catch { return json({ error: "JSON inválido." }, 400) }
   const projectId = body.projectId ?? body.projeto_id
+  const schedulerSecret = Deno.env.get("SCHEDULER_SECRET")
+  const schedulerHeader = request.headers.get("x-scheduler-secret")
+  const isScheduled = Boolean(schedulerSecret && schedulerHeader && schedulerHeader === schedulerSecret)
+  const authHeader = request.headers.get("Authorization")
+  if (!isScheduled && !authHeader) return json({ error: "Faça login para iniciar o monitoramento." }, 401)
+  const admin = createClient(supabaseUrl, serviceRoleKey)
+  let userId: string | null = null
+  if (!isScheduled) {
+    const userClient = createClient(supabaseUrl, serviceRoleKey, { global: { headers: { Authorization: authHeader! } } })
+    const { data: { user }, error: userError } = await userClient.auth.getUser()
+    if (userError || !user) return json({ error: "Sessão inválida. Faça login novamente." }, 401)
+    userId = user.id
+  }
   const janela = body.janela ?? "month"
   if (!projectId) return json({ error: "projeto_id é obrigatório." }, 400)
   if (!["any", "24h", "week", "month", "3months", "6months", "year"].includes(janela)) return json({ error: "janela inválida." }, 400)
-  const { data: project } = await admin.from("projetos").select("id").eq("id", projectId).eq("owner_id", user.id).maybeSingle()
-  if (!project) return json({ error: "Projeto não encontrado para o usuário autenticado." }, 404)
+  const projectQuery = admin.from("projetos").select("id").eq("id", projectId)
+  const { data: project } = isScheduled ? await projectQuery.maybeSingle() : await projectQuery.eq("owner_id", userId!).maybeSingle()
+  if (!project) return json({ error: isScheduled ? "Projeto agendado não encontrado." : "Projeto não encontrado para o usuário autenticado." }, 404)
   const { data: activeExecution } = await admin.from("execucoes").select("id").eq("projeto_id", projectId).eq("status", "rodando").limit(1).maybeSingle()
   if (activeExecution) return json({ error: "Já existe uma execução em andamento para este projeto." }, 409)
   const { data: sources } = await admin.from("fontes").select("id, linkedin_url").eq("projeto_id", projectId).eq("status", "monitorada").order("criado_em", { ascending: true })
   const monitoredSources = (sources ?? []) as MonitoredSource[]
   if (monitoredSources.length === 0) return json({ error: "Nenhuma fonte monitorada. Aprove uma fonte candidata antes de iniciar." }, 400)
-  const { data: execution, error: executionError } = await admin.from("execucoes").insert({ projeto_id: projectId, tipo: "monitoramento", status: "rodando", parametros: { janela, origem: body.origem ?? "manual", fontes: monitoredSources.length } }).select("id").single()
+  const origin = isScheduled ? "agendada" : body.origem ?? "manual"
+  const { data: execution, error: executionError } = await admin.from("execucoes").insert({ projeto_id: projectId, tipo: "monitoramento", status: "rodando", parametros: { janela, origem: origin, fontes: monitoredSources.length } }).select("id").single()
   if (executionError || !execution) return json({ error: "Não foi possível registrar o monitoramento." }, 500)
 
   let costUsd = 0
   let postsRead = 0
   let commentsRead = 0
   let peopleNew = 0
+  const warnings: string[] = []
   try {
-    const postResult = await apifyRun("harvestapi/linkedin-post-search", { authorUrls: monitoredSources.map((source) => source.linkedin_url), maxPosts: 200, postedLimit: janela, scrapeComments: false, scrapeReactions: false }, apifyToken)
+    const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
+    const postInput = { authorUrls: monitoredSources.map((source) => source.linkedin_url), maxPosts: 200, postedLimit: janela, scrapeComments: false, scrapeReactions: false }
+    assertCallWithinBudget(budget, "harvestapi/linkedin-post-search", postInput)
+    const postResult = await apifyRun("harvestapi/linkedin-post-search", postInput, apifyToken)
     costUsd += postResult.costUsd
+    registerActualCost(budget, postResult.costUsd)
     await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-search", itens: postResult.items.length, custo_usd: postResult.costUsd })
     const sourceByUrl = new Map(monitoredSources.map((source) => [sourceUrl(source.linkedin_url), source.id]))
     const postRows: Array<{ raw: ActorPost; postId: string; linkedinUrl: string }> = []
@@ -140,22 +154,31 @@ Deno.serve(async (request) => {
     for (const { raw, postId, linkedinUrl } of postRows) {
       const commentCount = countValue(raw.engagement?.comments, raw.commentsCount) ?? 0
       if (commentCount === 0) continue
-      const commentsResult = await apifyRun("harvestapi/linkedin-post-comments", { posts: [linkedinUrl], maxItems: 200, postedLimit: janela, scrapeReplies: false, profileScraperMode: "main" }, apifyToken)
+      const commentInput = { posts: [linkedinUrl], maxItems: 200, postedLimit: janela, scrapeReplies: false, profileScraperMode: "main" }
+      assertCallWithinBudget(budget, "harvestapi/linkedin-post-comments", commentInput)
+      const commentsResult = await apifyRun("harvestapi/linkedin-post-comments", commentInput, apifyToken)
       costUsd += commentsResult.costUsd
+      registerActualCost(budget, commentsResult.costUsd)
       await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-comments", itens: commentsResult.items.length, custo_usd: commentsResult.costUsd })
+      if (commentsResult.items.length >= 200) {
+        warnings.push(`O post ${postId} atingiu o limite de 200 comentários; a coleta pode estar truncada.`)
+      }
       for (const comment of commentsResult.items as ActorComment[]) {
         const actor = comment.actor
         if (!comment.id || !comment.commentary || !actor?.linkedinUrl) continue
         const actorUrl = sourceUrl(actor.linkedinUrl)
         if (!profileCache.has(actorUrl)) {
-          const username = slugFromUrl(actorUrl)
-          const profile = await apifyRun("apimaestro/linkedin-profile-detail", { username, includeEmail: false }, apifyToken)
+          const username = profileUsername(actorUrl)
+          const profileInput = { username, includeEmail: false }
+          assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", profileInput)
+          const profile = await apifyRun("apimaestro/linkedin-profile-detail", profileInput, apifyToken)
           costUsd += profile.costUsd
+          registerActualCost(budget, profile.costUsd)
           await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: 1, custo_usd: profile.costUsd })
           profileCache.set(actorUrl, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
         }
         if (!profileCache.get(actorUrl)) continue
-        const slug = actor.universalName ?? slugFromUrl(actorUrl)
+        const slug = normalizeProfileSlug(actorUrl)
         const { data: existingPerson } = await admin.from("pessoas").select("id").eq("projeto_id", projectId).eq("slug", slug).maybeSingle()
         const { data: person } = await admin.from("pessoas").upsert({ projeto_id: projectId, linkedin_url: actorUrl, slug, nome: actor.name ?? "Perfil sem nome", headline: actor.headline ?? actor.position ?? null, cargo: actor.experience?.[0]?.position ?? null }, { onConflict: "projeto_id,slug" }).select("id").single()
         if (!person) continue
@@ -164,11 +187,12 @@ Deno.serve(async (request) => {
         if (!error) commentsRead += 1
       }
     }
-    await admin.from("execucoes").update({ status: "concluida", posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, concluida_em: new Date().toISOString() }).eq("id", execution.id)
-    return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, peopleNew, costUsd })
+    await admin.from("execucoes").update({ status: "concluida", posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, parametros: { janela, origem: origin, fontes: monitoredSources.length, avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, peopleNew, costUsd, warnings })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido no monitoramento."
-    await admin.from("execucoes").update({ status: "falhou", posts_lidos: postsRead, comentarios_lidos: commentsRead, custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
-    return json({ error: message, executionId: execution.id }, 502)
+    const abortedByCost = error instanceof CostLimitError
+    await admin.from("execucoes").update({ status: abortedByCost ? "abortada_por_custo" : "falhou", posts_lidos: postsRead, comentarios_lidos: commentsRead, custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    return json({ error: message, executionId: execution.id }, abortedByCost ? 402 : 502)
   }
 })

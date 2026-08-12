@@ -10,6 +10,26 @@ export type SignalSummary = {
   keyword: string | null
   positiveContext: string | null
   negativeContext: string | null
+  lastExecutionOrigin: "manual" | "agendada" | null
+  monthlyCostUsd: number
+  estimatedNextCostUsd: number
+  monitoredSources: number
+  executionHistory: SignalExecution[]
+}
+
+export type SignalExecution = {
+  id: string
+  type: "descoberta" | "monitoramento"
+  status: string
+  origin: "manual" | "agendada" | null
+  postsRead: number
+  commentsRead: number
+  peopleNew: number
+  costUsd: number
+  error: string | null
+  warnings: string[]
+  startedAt: string
+  completedAt: string | null
 }
 
 export type SignalPost = {
@@ -82,6 +102,11 @@ const emptySummary: SignalSummary = {
   keyword: null,
   positiveContext: null,
   negativeContext: null,
+  lastExecutionOrigin: null,
+  monthlyCostUsd: 0,
+  estimatedNextCostUsd: 0,
+  monitoredSources: 0,
+  executionHistory: [],
 }
 
 export async function loadSignalSummary(userId: string): Promise<SignalSummary> {
@@ -95,17 +120,46 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
   if (!project) return emptySummary
 
   const projectId = project.id
-  const [posts, comments, people, companies, execution, term] = await Promise.all([
+  const [posts, comments, people, companies, executions, term, sources] = await Promise.all([
     supabase.from("posts").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("comentarios").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("pessoas").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("empresas").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
-    supabase.from("execucoes").select("concluida_em, iniciada_em").eq("projeto_id", projectId).order("iniciada_em", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("execucoes").select("id, tipo, status, parametros, posts_lidos, comentarios_lidos, pessoas_novas, custo_usd, erro, iniciada_em, concluida_em").eq("projeto_id", projectId).order("iniciada_em", { ascending: false }).limit(20),
     supabase.from("termos").select("termo, contexto_positivo, contexto_negativo").eq("projeto_id", projectId).eq("ativo", true).order("criado_em", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("fontes").select("id", { count: "exact", head: true }).eq("projeto_id", projectId).eq("status", "monitorada"),
   ])
 
-  const firstError = [posts, comments, people, companies, execution, term].find((result) => result.error)?.error
+  const firstError = [posts, comments, people, companies, executions, term, sources].find((result) => result.error)?.error
   if (firstError) throw new Error(firstError.message)
+
+  const executionHistory = (executions.data ?? []).map((execution) => {
+    const parameters = execution.parametros as { origem?: string; avisos?: unknown } | null
+    const warnings = Array.isArray(parameters?.avisos) ? parameters.avisos.filter((warning): warning is string => typeof warning === "string") : []
+    return {
+      id: execution.id,
+      type: execution.tipo,
+      status: execution.status,
+      origin: parameters?.origem === "agendada" ? "agendada" : parameters?.origem === "manual" ? "manual" : null,
+      postsRead: execution.posts_lidos ?? 0,
+      commentsRead: execution.comentarios_lidos ?? 0,
+      peopleNew: execution.pessoas_novas ?? 0,
+      costUsd: Number(execution.custo_usd ?? 0),
+      error: execution.erro,
+      warnings,
+      startedAt: execution.iniciada_em,
+      completedAt: execution.concluida_em,
+    } satisfies SignalExecution
+  })
+  const monthlyStart = new Date()
+  monthlyStart.setDate(1)
+  monthlyStart.setHours(0, 0, 0, 0)
+  const monthlyCostUsd = executionHistory.filter((execution) => new Date(execution.startedAt) >= monthlyStart).reduce((total, execution) => total + execution.costUsd, 0)
+  const monitoredSources = sources.count ?? 0
+  const estimatedPosts = monitoredSources * 8
+  const estimatedComments = estimatedPosts * 40
+  const estimatedNextCostUsd = estimatedPosts * 0.0015 + estimatedComments * 0.0015 * 2
+  const latestExecution = executionHistory[0]
 
   return {
     projectId,
@@ -113,10 +167,15 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
     comments: comments.count ?? 0,
     people: people.count ?? 0,
     companies: companies.count ?? 0,
-    lastExecutionAt: execution.data?.concluida_em ?? execution.data?.iniciada_em ?? null,
+    lastExecutionAt: latestExecution?.completedAt ?? latestExecution?.startedAt ?? null,
     keyword: term.data?.termo ?? null,
     positiveContext: term.data?.contexto_positivo ?? null,
     negativeContext: term.data?.contexto_negativo ?? null,
+    lastExecutionOrigin: latestExecution?.origin ?? null,
+    monthlyCostUsd,
+    estimatedNextCostUsd,
+    monitoredSources,
+    executionHistory,
   }
 }
 
