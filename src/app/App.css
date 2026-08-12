@@ -29,6 +29,12 @@
 .nav-index { width: 20px; color: #a0ada6; font-size: 10px; font-variant-numeric: tabular-nums; }
 .nav-item.is-active .nav-index { color: var(--signal-brand); }
 .sidebar-footer { margin-top: auto; padding: 16px 10px 0; border-top: 1px solid var(--signal-border); color: var(--signal-muted); font-size: 11px; }
+.cost-box { margin-bottom: 18px; border: 1px solid var(--signal-border); border-radius: 10px; background: #fbfdfc; padding: 12px; }
+.cost-box .eyebrow { margin-bottom: 6px; }
+.cost-box strong { display: block; color: #17221c; font-size: 18px; letter-spacing: -.03em; }
+.cost-box small { display: block; color: var(--signal-muted); font-size: 10px; line-height: 1.4; }
+.cost-bar { height: 6px; margin: 9px 0 6px; overflow: hidden; border: 1px solid var(--signal-border); border-radius: 999px; background: white; }
+.cost-bar span { display: block; height: 100%; border-radius: inherit; background: var(--signal-brand); transition: width .2s; }
 .status-line, .help-link { display: flex; align-items: center; gap: 7px; }
 .status-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: #45a875; }
 .help-link { margin-top: 14px; border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; }
@@ -67,6 +73,16 @@
 .signal-metrics > div { display: flex; flex-direction: column; gap: 6px; padding: 16px; border: 1px solid var(--signal-border); border-radius: 14px; background: var(--signal-surface); }
 .signal-metrics span { color: var(--signal-muted); font-size: 12px; }
 .signal-metrics strong { font-size: 24px; letter-spacing: -.04em; }
+.execution-history-panel { margin-bottom: 16px; }
+.execution-list { display: grid; }
+.execution-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; padding: 15px 24px; border-bottom: 1px solid var(--signal-border); }
+.execution-row:last-child { border-bottom: 0; }
+.execution-row > div:first-child strong, .execution-row > div:first-child span, .execution-row > div:nth-child(2) span, .execution-row > div:nth-child(2) small { display: block; }
+.execution-row > div:first-child strong { font-size: 12px; }
+.execution-row > div:first-child span, .execution-row > div:nth-child(2) small { margin-top: 4px; color: var(--signal-muted); font-size: 10px; }
+.execution-row > div:nth-child(2) { text-align: right; }
+.execution-row > div:nth-child(2) span { color: var(--signal-brand-dark); font-size: 11px; font-weight: 600; }
+.execution-row > strong { min-width: 70px; color: #17221c; font-size: 12px; text-align: right; }
 .signal-panel-grid { display: grid; grid-template-columns: minmax(0, 1fr); }
 .signal-panel { border: 1px solid var(--signal-border); border-radius: 14px; background: var(--signal-surface); overflow: hidden; }
 .mode-switch { display: inline-flex; gap: 4px; margin: 16px 24px 0; padding: 3px; border: 1px solid var(--signal-border); border-radius: 999px; background: var(--signal-bg); }
@@ -205,4 +221,7 @@
   .source-row { grid-template-columns: 1fr; gap: 10px; padding-left: 18px; padding-right: 18px; }
   .company-row, .person-row { grid-template-columns: 34px minmax(0, 1fr); padding-left: 18px; padding-right: 18px; }
   .company-metric, .person-signal { grid-column: 2; justify-self: start; text-align: left; }
+  .execution-row { grid-template-columns: 1fr auto; padding-left: 18px; padding-right: 18px; }
+  .execution-row > div:nth-child(2) { text-align: left; }
+  .execution-row > strong { grid-column: 2; grid-row: 1; }
 }

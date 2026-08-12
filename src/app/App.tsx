@@ -53,6 +53,14 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(new Date(value))
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" }).format(value)
+}
+
+function formatExecutionStatus(status: string) {
+  return status === "concluida" ? "Concluída" : status === "rodando" ? "Em andamento" : status === "abortada_por_custo" ? "Abortada por custo" : "Falhou"
+}
+
 function shorten(value: string | null, length = 180) {
   if (!value) return "Sem texto disponível."
   return value.length > length ? `${value.slice(0, length).trim()}…` : value
@@ -102,7 +110,6 @@ function App() {
   const [negativeContext, setNegativeContext] = useState("")
   const [collectionState, setCollectionState] = useState<CollectionState>("idle")
   const [collectionMessage, setCollectionMessage] = useState("")
-  const [collectionCost, setCollectionCost] = useState<string>("—")
   const [session, setSession] = useState<AuthSession | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>("signin")
@@ -203,7 +210,6 @@ function App() {
       if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de iniciar uma coleta.")
       const result = await runMonitoring(signalSummary.projectId)
       setCollectionState("success")
-      setCollectionCost(result.costUsd > 0 ? `$${result.costUsd.toFixed(3)}` : "$0.000")
       setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários monitorados.`)
       const refreshedSummary = await loadSignalSummary(session.userId)
       setSignalSummary(refreshedSummary)
@@ -234,7 +240,6 @@ function App() {
       const sources = await loadSignalSources(signalSummary.projectId)
       setSignalSources(sources)
       setCollectionState("success")
-      setCollectionCost(result.costUsd > 0 ? `$${result.costUsd.toFixed(3)}` : "$0.000")
       setCollectionMessage(`${result.candidatesInserted} fontes candidatas encontradas; ${result.candidatesRejected} perfis não brasileiros descartados.`)
     } catch (error) {
       setCollectionState("error")
@@ -266,7 +271,7 @@ function App() {
     setCollectionMessage("Salvando configuração da pesquisa…")
     try {
       const saved = await saveResearch({ ownerId: session.userId, keyword, positiveContext, negativeContext })
-      setSignalSummary((summary) => summary ? { ...summary, projectId: saved.projectId, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext } : { projectId: saved.projectId, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext })
+      setSignalSummary((summary) => summary ? { ...summary, projectId: saved.projectId, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext } : { projectId: saved.projectId, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext, lastExecutionOrigin: null, monthlyCostUsd: 0, estimatedNextCostUsd: 0, monitoredSources: 0, executionHistory: [] })
       setSettingsOpen(false)
       setCollectionState("success")
       setCollectionMessage("Configuração salva. Escolha descobrir fontes ou atualizar o monitoramento.")
@@ -414,6 +419,7 @@ function App() {
         </nav>
 
         <div className="sidebar-footer">
+          <div className="cost-box"><p className="eyebrow">Gasto desta pesquisa</p><strong>{formatCurrency(signalSummary?.monthlyCostUsd ?? 0)}</strong><div className="cost-bar"><span style={{ width: `${Math.min(((signalSummary?.monthlyCostUsd ?? 0) / 300) * 100, 100)}%` }} /></div><small>Teto de US$ 300,00 no mês{(signalSummary?.monthlyCostUsd ?? 0) >= 225 ? " · Atenção" : ""}</small></div>
           <div className="status-line"><span className="status-dot" /> Ambiente preparado</div>
           <button className="help-link" type="button"><CircleHelp size={15} /> Ajuda</button>
         </div>
@@ -447,9 +453,9 @@ function App() {
         </section>
 
         <section className="collection-bar" aria-label="Status da coleta">
-          <div className={`collection-status collection-${collectionState}`}><span className="status-dot" /> {collectionState === "running" ? "Coleta em andamento" : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : "Coleta não iniciada"}</div>
-          <div className="collection-meta"><Clock3 size={15} /> Próxima coleta: não agendada</div>
-          <div className="collection-meta"><span className="cost-label">Custo</span> {collectionCost}</div>
+          <div className={`collection-status collection-${collectionState}`}><span className="status-dot" /> {collectionState === "running" ? "Coleta em andamento" : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : signalSummary?.lastExecutionAt ? `Última coleta ${formatDate(signalSummary.lastExecutionAt)}` : "Coleta não iniciada"}</div>
+          <div className="collection-meta"><Clock3 size={15} /> Próxima: segunda, 06h</div>
+          <div className="collection-meta"><span className="cost-label">Próxima estimativa</span> {formatCurrency(signalSummary?.estimatedNextCostUsd ?? 0)}</div>
           <div className="collection-actions">
             <Button className="discover-button" variant="outline" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleDiscover}>Descobrir fontes</Button>
             <Button className="collect-button" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
@@ -468,6 +474,7 @@ function App() {
             <div><span>Pessoas</span><strong>{signalSummary.people}</strong></div>
             <div><span>Empresas</span><strong>{signalSummary.companies}</strong></div>
           </div>}
+          {activeView === "overview" && session && signalSummary?.projectId && <section className="signal-panel execution-history-panel"><div className="panel-heading"><div><p className="eyebrow">Histórico</p><h2>Execuções recentes</h2><p>Descobertas e monitoramentos com origem e custo reais.</p></div><span className="signal-tag">{signalSummary.executionHistory.length} registros</span></div>{signalSummary.executionHistory.length > 0 ? <div className="execution-list">{signalSummary.executionHistory.map((execution) => <article className="execution-row" key={execution.id}><div><strong>{execution.type === "descoberta" ? "Descoberta de fontes" : "Monitoramento"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Agendada" : execution.origin === "manual" ? "Manual" : "Origem não informada"}</span></div><div><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small></div><strong>{formatCurrency(execution.costUsd)}</strong></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma execução registrada</strong><span>As próximas descobertas e monitoramentos aparecerão aqui.</span></div>}</section>}
           {activeView === "posts" && session && signalSummary?.projectId ? <div className="signal-panel-grid">
             <section className="signal-panel">
               <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>

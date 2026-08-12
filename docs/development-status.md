@@ -69,6 +69,12 @@
   execução.
 - Ainda falta testar o abortamento contra uma execução autenticada real com
   teto reduzido para US$ 0,50, conforme o checklist do David.
+- A barra de coleta agora mostra próxima execução, estimativa calculada a
+  partir das fontes monitoradas e status da última rodada.
+- A sidebar agora mostra gasto mensal, barra de consumo e aviso a partir de
+  75% do teto.
+- A Visão geral agora mostra histórico real de execuções, origem, status,
+  contadores e custo.
 
 ## Concluído nesta etapa
 
