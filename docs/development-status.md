@@ -45,6 +45,16 @@
   Perfis fora do Brasil ou sem localização confirmada são descartados antes
   da persistência.
 
+## PR3 iniciado
+
+- Edge Function republicada com a validação brasileira ativa.
+- Classificação determinística de senioridade e ICP criada como função pura,
+  separada da coleta e da futura classificação por IA.
+- Comentários agora preservam o texto integral na tela e exportam CSV com
+  separador `;` e BOM UTF-8.
+- Confiança abaixo de 0,6 já possui marca visual de revisão quando existir no
+  banco.
+
 ## Próximo gate
 
 Executar uma coleta autenticada com uma palavra-chave real. Depois devemos

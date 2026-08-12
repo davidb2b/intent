@@ -232,7 +232,7 @@ function App() {
 
   function exportComments() {
     const rows = [["Pessoa", "Cargo", "Teor", "Comentário", "Data", "Perfil", "Post"], ...visibleComments().map((comment) => [comment.personName, comment.personHeadline ?? "", comment.tone ?? "", comment.text, formatDate(comment.publishedAt), comment.personUrl, comment.postUrl])]
-    const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n")
+    const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(";")).join("\n")
     const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }))
     const anchor = document.createElement("a")
     anchor.href = url
@@ -344,7 +344,7 @@ function App() {
             <div className="panel-heading"><div><p className="eyebrow">Comentários</p><h2>{visibleComments().length} comentários encontrados</h2><p>Classificação automática com evidência preservada.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" onClick={exportComments}>Baixar CSV</Button></div></div>
             {visibleComments().length > 0 ? <div className="comments-list">{visibleComments().map((comment) => <article className="comment-card" key={comment.id}>
               <div className="comment-avatar">{comment.personName.slice(0, 1).toUpperCase()}</div>
-              <div><div className="comment-card-heading"><div><strong>{comment.personName}</strong><span>{comment.personHeadline ?? "Perfil público"}</span></div>{comment.tone && <span className="signal-tag">{comment.tone}</span>}</div><p>“{shorten(comment.text, 260)}”</p><div className="comment-card-footer"><span>{formatDate(comment.publishedAt)}</span><a href={comment.personUrl} target="_blank" rel="noreferrer">Ver perfil</a><a href={comment.postUrl} target="_blank" rel="noreferrer">Ver post</a></div></div>
+              <div><div className="comment-card-heading"><div><strong>{comment.personName}</strong><span>{comment.personHeadline ?? "Perfil público"}</span></div><div className="comment-labels">{comment.tone && <span className="signal-tag">{comment.tone}</span>}{comment.confidence !== null && comment.confidence < 0.6 && <span className="review-tag">Revisar</span>}</div></div><p>“{comment.text}”</p><div className="comment-card-footer"><span>{formatDate(comment.publishedAt)}</span><a href={comment.personUrl} target="_blank" rel="noreferrer">Ver perfil</a><a href={comment.postUrl} target="_blank" rel="noreferrer">Ver post</a></div></div>
             </article>)}</div> : <div className="filtered-empty"><strong>Nenhum comentário encontrado</strong><span>Remova um filtro ou altere a busca.</span></div>}
           </section> : <div className="empty-state">
             <div className="empty-icon"><BarChart3 size={24} /></div>
