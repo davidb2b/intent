@@ -57,8 +57,13 @@
 - Edge Function `classify-comments` publicada com lotes de até 40 comentários,
   temperatura 0, validação de categorias/IDs/confiança e proteção contra
   sobrescrever revisão humana.
-- A função está aguardando apenas o secret `OPENAI_API_KEY` para executar a
-  classificação real; sem ele responde `503` explicitamente.
+- O contrato da resposta da OpenAI foi corrigido para o objeto JSON
+  `resultados`; a primeira classificação real foi validada com 9 comentários
+  classificados e zero pendentes.
+- A função exige o secret `OPENAI_API_KEY` no backend; sem ele responde `503`
+  explicitamente.
+- Edge Function `analyze-posts` publicada e validada com 1 post analisado e 4
+  posts ainda pendentes.
 
 ## Próximo gate
 

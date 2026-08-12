@@ -17,7 +17,7 @@ generico   — elogio, concordância, agradecimento ou comentário sem conteúdo
 Se o comentário se encaixar em mais de uma, escolha a de maior peso nesta ordem:
 dor > pergunta > fornecedor > pratica > generico.
 
-Devolva JSON: [{"id": "<id>", "teor": "<categoria>", "confianca": <0 a 1>}]
+Devolva um objeto JSON exatamente neste formato: {"resultados":[{"id":"<id>","teor":"<categoria>","confianca":<0 a 1>}]}.
 Não escreva nada além do JSON.`
 
 const allowedTones = new Set(["dor", "pergunta", "fornecedor", "pratica", "generico"])
