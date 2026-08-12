@@ -24,6 +24,7 @@ type ProfileDetails = {
   address?: unknown
   country?: string
   countryCode?: string
+  basic_info?: { location?: { country?: string; country_code?: string; full?: string } }
 }
 
 type ProfileSearchItem = {
@@ -31,6 +32,8 @@ type ProfileSearchItem = {
   url?: string
   profileUrl?: string
   publicIdentifier?: string
+  profile_url?: string
+  basic_info?: { profile_url?: string }
 }
 
 type CommentItem = {
@@ -70,12 +73,12 @@ function normalized(value: unknown) {
 
 function isBrazilianProfile(profile: ProfileDetails | undefined) {
   if (!profile) return false
-  const locations = [profile.location, profile.geoLocation, profile.address, profile.country, profile.countryCode]
+  const locations = [profile.location, profile.geoLocation, profile.address, profile.country, profile.countryCode, profile.basic_info?.location]
   const values = locations.flatMap((value) => {
     if (typeof value === "string") return [normalized(value)]
     if (!value || typeof value !== "object") return []
     const item = value as Record<string, unknown>
-    return [item.countryCode, item.country, item.countryFull, item.name].map(normalized)
+    return [item.countryCode, item.country_code, item.country, item.countryFull, item.name, item.full].map(normalized)
   })
   return values.some((value) => value === "br" || value === "brazil" || value === "brasil" || value.endsWith(", brazil") || value.endsWith(", brasil"))
 }
@@ -96,15 +99,25 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
   const output = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?clean=true`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) })
   if (!output.ok) throw new Error("Não foi possível ler o dataset do Apify.")
   const items = await output.json()
+  if (Array.isArray(items) && items.some((item) => item && typeof item === "object" && typeof item.message === "string" && item.message.toLowerCase().includes("free-tier limit"))) {
+    throw new Error("O limite diário gratuito do Apify para perfis foi atingido. Aguarde a renovação do limite ou atualize o plano antes de validar a origem brasileira.")
+  }
   return { items: Array.isArray(items) ? items : [], costUsd: Number(run.data?.usageTotalUsd ?? 0) }
 }
 
-async function discoverBrazilianPosts(keyword: string, token: string) {
-  const profiles = await apifyRun("harvestapi/linkedin-profile-search", { searchQuery: keyword, locations: ["Brazil"], maxItems: 10, autoQuerySegmentation: false }, token)
-  const profileUrls = (profiles.items as ProfileSearchItem[]).map((profile) => profile.linkedinUrl ?? profile.url ?? profile.profileUrl ?? (profile.publicIdentifier ? `https://www.linkedin.com/in/${profile.publicIdentifier}` : null)).filter((url): url is string => Boolean(url))
-  if (!profileUrls.length) return { items: [], costUsd: profiles.costUsd, profileCostUsd: profiles.costUsd, postsCostUsd: 0, profilesFound: profiles.items.length, profileUrlsFound: 0 }
+async function discoverBrazilianPosts(keyword: string, token: string, seedProfileUrls: string[] = []) {
+  if (seedProfileUrls.length) {
+    const posts = await apifyRun("harvestapi/linkedin-profile-posts", { targetUrls: seedProfileUrls, maxPosts: MAX_POSTS_PER_COLLECTION, postedLimit: "3months", scrapeComments: false, scrapeReactions: false }, token)
+    return { items: posts.items, costUsd: posts.costUsd, profileCostUsd: 0, postsCostUsd: posts.costUsd, fallbackCostUsd: 0, profilesFound: seedProfileUrls.length, profileUrlsFound: seedProfileUrls.length }
+  }
+  const profiles = await apifyRun("harvestapi/linkedin-profile-search", { searchQuery: "compras", locations: ["Brazil"], maxItems: 10, autoQuerySegmentation: false }, token)
+  const profileUrls = (profiles.items as ProfileSearchItem[]).map((profile) => profile.linkedinUrl ?? profile.profile_url ?? profile.basic_info?.profile_url ?? profile.url ?? profile.profileUrl ?? (profile.publicIdentifier ? `https://www.linkedin.com/in/${profile.publicIdentifier}` : null)).filter((url): url is string => Boolean(url))
+  if (!profileUrls.length) {
+    const fallback = await apifyRun("harvestapi/linkedin-post-search", { searchQueries: [keyword, `${keyword} Brasil`], maxPosts: 25, postedLimit: "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }, token)
+    return { items: fallback.items, costUsd: profiles.costUsd + fallback.costUsd, profileCostUsd: profiles.costUsd, postsCostUsd: 0, fallbackCostUsd: fallback.costUsd, profilesFound: profiles.items.length, profileUrlsFound: 0 }
+  }
   const posts = await apifyRun("harvestapi/linkedin-profile-posts", { targetUrls: profileUrls, maxPosts: MAX_POSTS_PER_COLLECTION, postedLimit: "3months", scrapeComments: false, scrapeReactions: false }, token)
-  return { items: posts.items, costUsd: profiles.costUsd + posts.costUsd, profileCostUsd: profiles.costUsd, postsCostUsd: posts.costUsd, profilesFound: profiles.items.length, profileUrlsFound: profileUrls.length }
+  return { items: posts.items, costUsd: profiles.costUsd + posts.costUsd, profileCostUsd: profiles.costUsd, postsCostUsd: posts.costUsd, fallbackCostUsd: 0, profilesFound: profiles.items.length, profileUrlsFound: profileUrls.length }
 }
 
 Deno.serve(async (request) => {
@@ -123,7 +136,7 @@ Deno.serve(async (request) => {
   const { data: { user }, error: userError } = await userClient.auth.getUser()
   if (userError || !user) return json({ error: "Sessão inválida. Faça login novamente." }, 401)
 
-  let body: { keyword?: string; positiveContext?: string; negativeContext?: string }
+  let body: { keyword?: string; positiveContext?: string; negativeContext?: string; profileUrls?: string[] }
   try {
     body = await request.json()
   } catch {
@@ -162,10 +175,11 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const search = await discoverBrazilianPosts(keyword, apifyToken)
+    const search = await discoverBrazilianPosts(keyword, apifyToken, body.profileUrls ?? [])
     costUsd += search.costUsd
     await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-search", itens: search.profileCostUsd > 0 ? 10 : 0, custo_usd: search.profileCostUsd })
     if (search.postsCostUsd > 0) await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-posts", itens: search.items.length, custo_usd: search.postsCostUsd })
+    if (search.fallbackCostUsd > 0) await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-search", itens: search.items.length, custo_usd: search.fallbackCostUsd })
     let commentsRead = 0
     const candidates = (search.items as SearchPost[]).filter((raw) => raw.id && raw.linkedinUrl && (raw.author ?? raw.actor)?.linkedinUrl)
     const brazilianFlags = await Promise.all(candidates.map(async (raw) => {

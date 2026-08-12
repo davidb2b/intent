@@ -26,7 +26,11 @@ export async function startCollection(input: StartCollectionInput): Promise<Star
     },
   })
 
-  if (error) throw new Error(error.message || "Não foi possível iniciar a coleta.")
+  if (error) {
+    const context = "context" in error ? (error as { context?: Response }).context : undefined
+    if (context) { try { const body = await context.clone().json() as { error?: string }; if (body.error) throw new Error(body.error) } catch (contextError) { if (contextError instanceof Error && contextError.message !== "Unexpected end of JSON input") throw contextError } }
+    throw new Error(error.message || "Não foi possível iniciar a coleta.")
+  }
   if (!data) throw new Error("O backend não retornou o estado da coleta.")
   return data
 }

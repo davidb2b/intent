@@ -79,6 +79,13 @@
 - Não avançar para novas features até validar uma coleta real com pelo menos
   um autor brasileiro e limpar/reprocessar os dados antigos com decisão
   explícita.
+- A limpeza do projeto de teste foi executada; os posts/comentários antigos
+  estrangeiros foram removidos.
+- O diagnóstico final do bloqueio foi o limite diário gratuito do Apify para
+  perfis. A Edge Function agora retorna esse motivo explicitamente, em vez de
+  tratar a resposta como zero perfis.
+- O payload de localização do Actor de perfil foi corrigido para ler
+  `basic_info.location.country_code` e `basic_info.location.country`.
 
 ## Próximo gate
 
