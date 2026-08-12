@@ -151,6 +151,9 @@ function App() {
       .then(async (summary) => {
         if (!active) return
         setSignalSummary(summary)
+        setKeyword(summary.keyword ?? "")
+        setPositiveContext(summary.positiveContext ?? "")
+        setNegativeContext(summary.negativeContext ?? "")
         if (summary.projectId) {
           const [posts, comments] = await Promise.all([loadSignalPosts(summary.projectId), loadSignalComments(summary.projectId)])
           if (active) { setSignalPosts(posts); setSignalComments(comments) }

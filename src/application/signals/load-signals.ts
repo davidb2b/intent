@@ -7,6 +7,9 @@ export type SignalSummary = {
   people: number
   companies: number
   lastExecutionAt: string | null
+  keyword: string | null
+  positiveContext: string | null
+  negativeContext: string | null
 }
 
 export type SignalPost = {
@@ -42,6 +45,9 @@ const emptySummary: SignalSummary = {
   people: 0,
   companies: 0,
   lastExecutionAt: null,
+  keyword: null,
+  positiveContext: null,
+  negativeContext: null,
 }
 
 export async function loadSignalSummary(userId: string): Promise<SignalSummary> {
@@ -55,15 +61,16 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
   if (!project) return emptySummary
 
   const projectId = project.id
-  const [posts, comments, people, companies, execution] = await Promise.all([
+  const [posts, comments, people, companies, execution, term] = await Promise.all([
     supabase.from("posts").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("comentarios").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("pessoas").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("empresas").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("execucoes").select("concluida_em, iniciada_em").eq("projeto_id", projectId).order("iniciada_em", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("termos").select("termo, contexto_positivo, contexto_negativo").eq("projeto_id", projectId).eq("ativo", true).order("criado_em", { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  const firstError = [posts, comments, people, companies, execution].find((result) => result.error)?.error
+  const firstError = [posts, comments, people, companies, execution, term].find((result) => result.error)?.error
   if (firstError) throw new Error(firstError.message)
 
   return {
@@ -73,6 +80,9 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
     people: people.count ?? 0,
     companies: companies.count ?? 0,
     lastExecutionAt: execution.data?.concluida_em ?? execution.data?.iniciada_em ?? null,
+    keyword: term.data?.termo ?? null,
+    positiveContext: term.data?.contexto_positivo ?? null,
+    negativeContext: term.data?.contexto_negativo ?? null,
   }
 }
 
