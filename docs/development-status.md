@@ -84,7 +84,10 @@
   dependem de um usuário fictício.
 - O contrato e os passos para configurar o cron de segunda-feira às 06:00 BRT
   estão em `docs/scheduling.md`.
-- Pendente: cadastrar o secret e ativar o job cron no projeto Supabase.
+- `SCHEDULER_SECRET` já foi cadastrado no projeto Supabase sem expor o valor.
+- Pendente: ativar o job cron no projeto Supabase; a tela de Edge Functions
+  disponível para esta conta está em modo somente leitura e não exibe o
+  gerenciamento de schedules.
 
 ## Concluído nesta etapa
 
