@@ -76,6 +76,16 @@
 - A Visão geral agora mostra histórico real de execuções, origem, status,
   contadores e custo.
 
+## Fase 6 — agendamento
+
+- O `run-monitoring` agora aceita um caminho agendado protegido exclusivamente
+  pelo secret `SCHEDULER_SECRET` no header `x-scheduler-secret`.
+- Execuções por esse caminho são registradas com `origem: "agendada"` e não
+  dependem de um usuário fictício.
+- O contrato e os passos para configurar o cron de segunda-feira às 06:00 BRT
+  estão em `docs/scheduling.md`.
+- Pendente: cadastrar o secret e ativar o job cron no projeto Supabase.
+
 ## Concluído nesta etapa
 
 - Permissão de gerenciamento liberada na organização `B2B Insiders Pro`.

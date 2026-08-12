@@ -92,27 +92,36 @@ Deno.serve(async (request) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
   const apifyToken = Deno.env.get("APIFY_TOKEN")
   if (!supabaseUrl || !serviceRoleKey || !apifyToken) return json({ error: "Backend não configurado: faltam secrets do Supabase ou Apify." }, 503)
-  const authHeader = request.headers.get("Authorization")
-  if (!authHeader) return json({ error: "Faça login para iniciar o monitoramento." }, 401)
-  const admin = createClient(supabaseUrl, serviceRoleKey)
-  const userClient = createClient(supabaseUrl, serviceRoleKey, { global: { headers: { Authorization: authHeader } } })
-  const { data: { user }, error: userError } = await userClient.auth.getUser()
-  if (userError || !user) return json({ error: "Sessão inválida. Faça login novamente." }, 401)
 
   let body: { projectId?: string; projeto_id?: string; janela?: string; origem?: string; teto_execucao_usd?: number }
   try { body = await request.json() } catch { return json({ error: "JSON inválido." }, 400) }
   const projectId = body.projectId ?? body.projeto_id
+  const schedulerSecret = Deno.env.get("SCHEDULER_SECRET")
+  const schedulerHeader = request.headers.get("x-scheduler-secret")
+  const isScheduled = Boolean(schedulerSecret && schedulerHeader && schedulerHeader === schedulerSecret)
+  const authHeader = request.headers.get("Authorization")
+  if (!isScheduled && !authHeader) return json({ error: "Faça login para iniciar o monitoramento." }, 401)
+  const admin = createClient(supabaseUrl, serviceRoleKey)
+  let userId: string | null = null
+  if (!isScheduled) {
+    const userClient = createClient(supabaseUrl, serviceRoleKey, { global: { headers: { Authorization: authHeader! } } })
+    const { data: { user }, error: userError } = await userClient.auth.getUser()
+    if (userError || !user) return json({ error: "Sessão inválida. Faça login novamente." }, 401)
+    userId = user.id
+  }
   const janela = body.janela ?? "month"
   if (!projectId) return json({ error: "projeto_id é obrigatório." }, 400)
   if (!["any", "24h", "week", "month", "3months", "6months", "year"].includes(janela)) return json({ error: "janela inválida." }, 400)
-  const { data: project } = await admin.from("projetos").select("id").eq("id", projectId).eq("owner_id", user.id).maybeSingle()
-  if (!project) return json({ error: "Projeto não encontrado para o usuário autenticado." }, 404)
+  const projectQuery = admin.from("projetos").select("id").eq("id", projectId)
+  const { data: project } = isScheduled ? await projectQuery.maybeSingle() : await projectQuery.eq("owner_id", userId!).maybeSingle()
+  if (!project) return json({ error: isScheduled ? "Projeto agendado não encontrado." : "Projeto não encontrado para o usuário autenticado." }, 404)
   const { data: activeExecution } = await admin.from("execucoes").select("id").eq("projeto_id", projectId).eq("status", "rodando").limit(1).maybeSingle()
   if (activeExecution) return json({ error: "Já existe uma execução em andamento para este projeto." }, 409)
   const { data: sources } = await admin.from("fontes").select("id, linkedin_url").eq("projeto_id", projectId).eq("status", "monitorada").order("criado_em", { ascending: true })
   const monitoredSources = (sources ?? []) as MonitoredSource[]
   if (monitoredSources.length === 0) return json({ error: "Nenhuma fonte monitorada. Aprove uma fonte candidata antes de iniciar." }, 400)
-  const { data: execution, error: executionError } = await admin.from("execucoes").insert({ projeto_id: projectId, tipo: "monitoramento", status: "rodando", parametros: { janela, origem: body.origem ?? "manual", fontes: monitoredSources.length } }).select("id").single()
+  const origin = isScheduled ? "agendada" : body.origem ?? "manual"
+  const { data: execution, error: executionError } = await admin.from("execucoes").insert({ projeto_id: projectId, tipo: "monitoramento", status: "rodando", parametros: { janela, origem: origin, fontes: monitoredSources.length } }).select("id").single()
   if (executionError || !execution) return json({ error: "Não foi possível registrar o monitoramento." }, 500)
 
   let costUsd = 0
@@ -178,7 +187,7 @@ Deno.serve(async (request) => {
         if (!error) commentsRead += 1
       }
     }
-    await admin.from("execucoes").update({ status: "concluida", posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, parametros: { janela, origem: body.origem ?? "manual", fontes: monitoredSources.length, avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    await admin.from("execucoes").update({ status: "concluida", posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, parametros: { janela, origem: origin, fontes: monitoredSources.length, avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
     return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, peopleNew, costUsd, warnings })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido no monitoramento."
