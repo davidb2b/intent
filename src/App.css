@@ -34,6 +34,8 @@
 .help-link { margin-top: 14px; border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; }
 .signal-main { min-width: 0; flex: 1; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 38px 48px 28px; }
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+.session-label { max-width: 220px; overflow: hidden; color: var(--signal-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .breadcrumb { margin: 0 0 10px; color: var(--signal-muted); font-size: 12px; }
 .breadcrumb span { margin: 0 7px; color: #b2beb7; }
 .topbar h1 { margin: 0; font-size: 28px; letter-spacing: -.04em; }
@@ -47,10 +49,17 @@
 .query-context { margin-left: auto; max-width: 52%; color: var(--signal-muted); font-size: 11px; text-align: right; }
 .collection-bar { display: flex; align-items: center; gap: 20px; border-top: 0; border-radius: 0 0 12px 12px; padding: 11px 18px; font-size: 11px; }
 .collection-status { display: flex; align-items: center; gap: 7px; color: #54635b; font-weight: 600; }
+.collection-running .status-dot { background: #c88a2c; }
+.collection-error .status-dot { background: #b34a4a; }
+.collection-success .status-dot { background: #258b5b; }
 .collection-meta { display: flex; align-items: center; gap: 6px; color: var(--signal-muted); }
 .cost-label { margin-right: 3px; }
 .collect-button { margin-left: auto; background: var(--signal-brand); color: white; }
 .collect-button:hover { background: var(--signal-brand-dark); }
+.collection-message { margin: 12px 48px 0; border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+.collection-message-running { background: #fff7e8; color: #825513; }
+.collection-message-success { background: var(--signal-soft); color: var(--signal-brand-dark); }
+.collection-message-error { background: #fff0f0; color: #8d3d3d; }
 .content-area { padding: 34px 48px 58px; }
 .empty-state { min-height: 420px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px dashed #cddbd3; border-radius: 14px; background: rgba(255,255,255,.46); text-align: center; }
 .empty-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 16px; background: var(--signal-soft); color: var(--signal-brand); }
@@ -70,6 +79,7 @@
 .settings-modal input, .settings-modal textarea { width: 100%; border: 1px solid var(--signal-border); border-radius: 8px; outline: none; background: white; color: #17221c; padding: 10px 11px; font-size: 13px; }
 .settings-modal input:focus, .settings-modal textarea:focus { border-color: var(--signal-brand); box-shadow: 0 0 0 3px rgba(20,107,73,.12); }
 .settings-modal textarea { min-height: 64px; resize: vertical; }
+.auth-error { margin: 12px 0 0; border-radius: 7px; background: #fff0f0; color: #8d3d3d; padding: 9px 10px; font-size: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
 .modal-actions button:last-child { background: var(--signal-brand); color: white; }
 

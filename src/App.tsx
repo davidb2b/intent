@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   BarChart3,
   Building2,
@@ -15,9 +15,13 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { startCollection } from "@/application/collection/start-collection"
+import { supabase } from "@/infrastructure/supabase/client"
 import "./App.css"
 
 type View = "overview" | "posts" | "comments" | "companies" | "people"
+type CollectionState = "idle" | "running" | "success" | "error"
+type AuthMode = "signin" | "signup"
 
 const navigation: Array<{ id: View; label: string; icon: typeof LayoutDashboard }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -61,8 +65,55 @@ function App() {
   const [keyword, setKeyword] = useState("")
   const [positiveContext, setPositiveContext] = useState("")
   const [negativeContext, setNegativeContext] = useState("")
+  const [collectionState, setCollectionState] = useState<CollectionState>("idle")
+  const [collectionMessage, setCollectionMessage] = useState("")
+  const [collectionCost, setCollectionCost] = useState<string>("—")
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null)
+  const [authOpen, setAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<AuthMode>("signin")
+  const [authEmail, setAuthEmail] = useState("")
+  const [authPassword, setAuthPassword] = useState("")
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authError, setAuthError] = useState("")
 
   const content = viewCopy[activeView]
+
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data }) => setSessionEmail(data.session?.user.email ?? null))
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setSessionEmail(session?.user.email ?? null))
+    return () => listener.subscription.unsubscribe()
+  }, [])
+
+  async function handleCollect() {
+    if (!keyword.trim() || !sessionEmail || collectionState === "running") {
+      if (!sessionEmail) { setAuthOpen(true); setCollectionMessage("Faça login para iniciar uma coleta real.") }
+      return
+    }
+    setCollectionState("running")
+    setCollectionMessage("Executando coleta real no Apify…")
+    try {
+      const result = await startCollection({ keyword, positiveContext, negativeContext })
+      setCollectionState("success")
+      setCollectionCost(result.costUsd > 0 ? `$${result.costUsd.toFixed(3)}` : "$0.000")
+      setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários persistidos.`)
+    } catch (error) {
+      setCollectionState("error")
+      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar a coleta.")
+    }
+  }
+
+  async function handleAuth(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAuthBusy(true)
+    setAuthError("")
+    const result = authMode === "signin"
+      ? await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword })
+      : await supabase.auth.signUp({ email: authEmail, password: authPassword })
+    setAuthBusy(false)
+    if (result.error) { setAuthError(result.error.message); return }
+    setAuthOpen(false)
+    setCollectionMessage(authMode === "signup" ? "Conta criada. Verifique seu e-mail se a confirmação estiver habilitada." : "Login realizado.")
+  }
 
   return (
     <div className="signal-shell">
@@ -108,9 +159,10 @@ function App() {
             <p className="breadcrumb">Signal Lab <span>/</span> {content.eyebrow}</p>
             <h1>{content.eyebrow}</h1>
           </div>
-          <Button className="settings-button" onClick={() => setSettingsOpen(true)} variant="outline">
-            <Settings2 size={16} /> Configurar pesquisa
-          </Button>
+          <div className="topbar-actions">
+            <Button className="settings-button" onClick={() => setSettingsOpen(true)} variant="outline"><Settings2 size={16} /> Configurar pesquisa</Button>
+            {sessionEmail ? <span className="session-label">{sessionEmail}</span> : <Button onClick={() => setAuthOpen(true)} variant="outline">Entrar</Button>}
+          </div>
         </header>
 
         <section className="query-bar" aria-label="Termo monitorado">
@@ -129,13 +181,15 @@ function App() {
         </section>
 
         <section className="collection-bar" aria-label="Status da coleta">
-          <div className="collection-status"><span className="status-dot" /> Coleta não iniciada</div>
+          <div className={`collection-status collection-${collectionState}`}><span className="status-dot" /> {collectionState === "running" ? "Coleta em andamento" : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : "Coleta não iniciada"}</div>
           <div className="collection-meta"><Clock3 size={15} /> Próxima coleta: não agendada</div>
-          <div className="collection-meta"><span className="cost-label">Custo estimado</span> —</div>
-          <Button className="collect-button" disabled={!keyword.trim()}>
-            <Play size={14} /> Atualizar agora
+          <div className="collection-meta"><span className="cost-label">Custo</span> {collectionCost}</div>
+          <Button className="collect-button" disabled={!keyword.trim() || !sessionEmail || collectionState === "running"} onClick={handleCollect}>
+            <Play size={14} /> {collectionState === "running" ? "Coletando…" : "Atualizar agora"}
           </Button>
         </section>
+
+        {collectionMessage && <p aria-live="polite" className={`collection-message collection-message-${collectionState}`}>{collectionMessage}</p>}
 
         <section className="content-area">
           <div className="empty-state">
@@ -173,6 +227,21 @@ function App() {
                 <Button onClick={() => setSettingsOpen(false)} type="button" variant="ghost">Cancelar</Button>
                 <Button disabled={!keyword.trim()} type="submit">Salvar configuração</Button>
               </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {authOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAuthOpen(false)}>
+          <section aria-labelledby="auth-title" aria-modal="true" className="settings-modal auth-modal" role="dialog">
+            <div className="modal-header"><div><p className="eyebrow">Acesso seguro</p><h2 id="auth-title">{authMode === "signin" ? "Entrar no Signal Lab" : "Criar sua conta"}</h2></div><button aria-label="Fechar acesso" className="icon-button" onClick={() => setAuthOpen(false)} type="button"><X size={18} /></button></div>
+            <p className="modal-description">A coleta é vinculada ao seu usuário e permanece separada de outras contas.</p>
+            <form onSubmit={handleAuth}>
+              <label htmlFor="auth-email">E-mail</label><input autoComplete="email" id="auth-email" onChange={(event) => setAuthEmail(event.target.value)} required type="email" value={authEmail} />
+              <label htmlFor="auth-password">Senha</label><input autoComplete={authMode === "signin" ? "current-password" : "new-password"} id="auth-password" minLength={6} onChange={(event) => setAuthPassword(event.target.value)} required type="password" value={authPassword} />
+              {authError && <p className="auth-error" role="alert">{authError}</p>}
+              <div className="modal-actions"><Button onClick={() => { setAuthMode(authMode === "signin" ? "signup" : "signin"); setAuthError("") }} type="button" variant="ghost">{authMode === "signin" ? "Criar conta" : "Já tenho conta"}</Button><Button disabled={authBusy} type="submit">{authBusy ? "Aguarde…" : authMode === "signin" ? "Entrar" : "Criar conta"}</Button></div>
             </form>
           </section>
         </div>

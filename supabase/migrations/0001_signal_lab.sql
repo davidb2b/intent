@@ -2,15 +2,19 @@ create extension if not exists pgcrypto;
 
 create table public.projetos (
   id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
   nome text not null,
   categoria text not null,
-  criado_em timestamptz not null default now()
+  criado_em timestamptz not null default now(),
+  unique (owner_id)
 );
 
 create table public.termos (
   id uuid primary key default gen_random_uuid(),
   projeto_id uuid not null references public.projetos(id) on delete cascade,
   termo text not null,
+  contexto_positivo text,
+  contexto_negativo text,
   ativo boolean not null default true,
   criado_em timestamptz not null default now(),
   unique (projeto_id, termo)
@@ -139,3 +143,38 @@ alter table public.pessoas enable row level security;
 alter table public.comentarios enable row level security;
 alter table public.execucoes enable row level security;
 alter table public.custos enable row level security;
+
+create policy "owners manage projects" on public.projetos
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+create policy "owners manage terms" on public.termos
+  for all using (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()));
+
+create policy "owners manage sources" on public.fontes
+  for all using (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()));
+
+create policy "owners manage posts" on public.posts
+  for all using (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()));
+
+create policy "owners manage companies" on public.empresas
+  for all using (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()));
+
+create policy "owners manage people" on public.pessoas
+  for all using (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()));
+
+create policy "owners manage comments" on public.comentarios
+  for all using (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()));
+
+create policy "owners manage executions" on public.execucoes
+  for all using (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from public.projetos p where p.id = projeto_id and p.owner_id = auth.uid()));
+
+create policy "owners manage costs" on public.custos
+  for all using (exists (select 1 from public.execucoes e join public.projetos p on p.id = e.projeto_id where e.id = execucao_id and p.owner_id = auth.uid()))
+  with check (exists (select 1 from public.execucoes e join public.projetos p on p.id = e.projeto_id where e.id = execucao_id and p.owner_id = auth.uid()));
