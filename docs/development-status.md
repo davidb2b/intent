@@ -13,26 +13,18 @@
 - Token dedicado criado na Apify para o backend.
 - Testes unitários, build e lint validados.
 
-## Em andamento
+## Concluído nesta etapa
 
-- Publicação da Edge Function `start-collection`.
-- Cadastro do `APIFY_TOKEN` nos secrets do Supabase.
-- Primeiro teste integrado autenticado com coleta real.
-
-## Bloqueio atual
-
-Na conta Supabase atualmente conectada, `Edge Functions`, `Functions`, `Secrets`
-e `Deploy a new function` aparecem desabilitados. O endpoint confirma que a
-função ainda não foi publicada (`404 Requested function was not found`).
-
-Isso indica falta de permissão/escopo para gerenciar Edge Functions nessa conta
-ou projeto. A migration e o banco estão operacionais; o bloqueio está apenas
-na camada de execução server-side e secrets.
+- Permissão de gerenciamento liberada na organização `B2B Insiders Pro`.
+- Secret `APIFY_TOKEN` criado no Supabase, sem expor o valor no repositório.
+- Edge Function `start-collection` publicada.
+- Validação JWT antiga desativada no gateway; a própria função valida a sessão
+  autenticada com `auth.getUser()`.
+- Endpoint verificado sem sessão: retorna `401` com `Faça login para iniciar
+  uma coleta.` Isso confirma que a função está publicada e protegida.
 
 ## Próximo gate
 
-Conceder à conta utilizada no Supabase permissão de gerenciamento de Edge
-Functions, ou conectar uma conta/projeto em que o deploy esteja habilitado.
-Depois disso, publicar a função, cadastrar o secret e executar uma coleta
-autenticada com uma palavra-chave real. Só após esse teste o PR2 será marcado
-como concluído.
+Executar uma coleta autenticada com uma palavra-chave real. Depois devemos
+confirmar posts, comentários, execução e custo no banco, e então seguir para a
+separação formal entre descoberta e monitoramento do PR2.
