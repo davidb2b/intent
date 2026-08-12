@@ -35,6 +35,15 @@
 - A UI não importa mais o client do Supabase diretamente; autenticação e
   persistência da pesquisa usam services próprios.
 
+## Fase 1 — configuração da pesquisa
+
+- O modal salva projeto, termo e contextos no Supabase somente quando existe
+  sessão autenticada.
+- Salvar a configuração não dispara Actor nem cria execução.
+- Palavra-chave e contextos são normalizados no service, com teste unitário.
+- A decisão temporária é manter `owner_id` para preservar o isolamento de
+  autenticação/RLS até a revisão da divergência com a spec.
+
 ## Concluído nesta etapa
 
 - Permissão de gerenciamento liberada na organização `B2B Insiders Pro`.
