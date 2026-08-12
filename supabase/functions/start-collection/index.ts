@@ -9,11 +9,13 @@ type SearchPost = {
   id?: string
   linkedinUrl?: string
   text?: string
+  content?: string
   commentary?: string
-  postedAt?: string
+  postedAt?: string | { date?: string }
   createdAt?: string
   actor?: { name?: string; linkedinUrl?: string; id?: string }
-  engagement?: { comments?: number; reactions?: number; shares?: number }
+  author?: { name?: string; linkedinUrl?: string; id?: string }
+  engagement?: { comments?: number; reactions?: number | unknown[]; shares?: number }
 }
 
 type CommentItem = {
@@ -37,6 +39,14 @@ const MAX_COMMENTS_PER_POST = 10
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+}
+
+function dateValue(value: string | { date?: string } | undefined) {
+  return typeof value === "string" ? value : value?.date ?? null
+}
+
+function countValue(value: number | unknown[] | undefined) {
+  return Array.isArray(value) ? value.length : value ?? null
 }
 
 async function apifyRun(actorId: string, input: Record<string, unknown>, token: string): Promise<{ items: unknown[]; costUsd: number }> {
@@ -103,8 +113,9 @@ Deno.serve(async (request) => {
     let commentsRead = 0
     for (const raw of search.items as SearchPost[]) {
       if (!raw.id || !raw.linkedinUrl) continue
-      const { data: post } = await admin.from("posts").upsert({ projeto_id: project.id, linkedin_url: raw.linkedinUrl, post_urn: raw.id, autor_nome: raw.actor?.name ?? null, autor_url: raw.actor?.linkedinUrl ?? null, texto: raw.text ?? raw.commentary ?? null, publicado_em: raw.postedAt ?? raw.createdAt ?? null, total_reacoes: raw.engagement?.reactions ?? null, total_comentarios: raw.engagement?.comments ?? null, total_shares: raw.engagement?.shares ?? null }, { onConflict: "projeto_id,post_urn" }).select("id").single()
-      if (!post) continue
+      const author = raw.author ?? raw.actor
+      const { data: post, error: postError } = await admin.from("posts").upsert({ projeto_id: project.id, linkedin_url: raw.linkedinUrl, post_urn: raw.id, autor_nome: author?.name ?? null, autor_url: author?.linkedinUrl ?? null, texto: raw.text ?? raw.content ?? raw.commentary ?? null, publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null, total_reacoes: countValue(raw.engagement?.reactions), total_comentarios: raw.engagement?.comments ?? null, total_shares: raw.engagement?.shares ?? null }, { onConflict: "projeto_id,post_urn" }).select("id").single()
+      if (postError || !post) throw new Error(`Não foi possível persistir o post ${raw.id}: ${postError?.message ?? "registro ausente"}`)
       postsRead += 1
       if (!raw.engagement?.comments) continue
       const comments = await apifyRun("harvestapi/linkedin-post-comments", { posts: [raw.linkedinUrl], maxItems: MAX_COMMENTS_PER_POST, postedLimit: "3months", scrapeReplies: false, profileScraperMode: "main" }, apifyToken)

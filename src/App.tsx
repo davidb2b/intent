@@ -148,6 +148,8 @@ function App() {
       setCollectionState("success")
       setCollectionCost(result.costUsd > 0 ? `$${result.costUsd.toFixed(3)}` : "$0.000")
       setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários persistidos.`)
+      const refreshedSummary = await loadSignalSummary(session.userId)
+      setSignalSummary(refreshedSummary)
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar a coleta.")

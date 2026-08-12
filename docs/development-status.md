@@ -36,6 +36,10 @@
   `401`.
 - O front-end passou a ler o resumo persistido do projeto autenticado e exibir
   contagens reais de posts, comentários, pessoas e empresas.
+- Primeira coleta real validada em produção com `cost breakdown`: 5 posts, 9
+  comentários e custo de `$0.012`.
+- O contrato do Actor foi normalizado para `author`, `content` e
+  `postedAt.date`, evitando falhas silenciosas de persistência.
 
 ## Próximo gate
 
