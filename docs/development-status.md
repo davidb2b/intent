@@ -15,6 +15,22 @@
 - PR1 fechado no front-end: sessão persistida, rotas reais, logout, recuperação
   de senha e atualização de senha via Supabase Auth.
 
+## Auditoria da Fase 0 — em andamento
+
+- O stack foi alinhado à spec: React e React DOM fixados na versão 18.3.1,
+  com tipos React 18.
+- Branch de trabalho criada para respeitar o fluxo de branch/PR/preview; não
+  haverá novas entregas diretamente em `main`.
+- Testes, build e lint foram executados após o alinhamento do stack.
+- As amostras reais dos Actors estão versionadas em `docs/amostras/` e não
+  contêm credenciais.
+- Pendente: mover a aplicação para a organização por features/services
+  definida em `docs/architecture.md`.
+- Pendente: confirmar com David se `owner_id` deve permanecer na tabela
+  `projetos`. A spec publicada não declara essa coluna, mas o RLS atual e o
+  login usam esse vínculo. A migration não será alterada sem resolver essa
+  divergência.
+
 ## Concluído nesta etapa
 
 - Permissão de gerenciamento liberada na organização `B2B Insiders Pro`.
