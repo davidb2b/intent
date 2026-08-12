@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { startCollection } from "@/application/collection/start-collection"
+import { classifyComments } from "@/application/classification/classify-comments"
 import { loadSignalComments, loadSignalPosts, loadSignalSummary, type SignalComment, type SignalPost, type SignalSummary } from "@/application/signals/load-signals"
 import { supabase } from "@/infrastructure/supabase/client"
 import "./App.css"
@@ -109,6 +110,7 @@ function App() {
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("all")
   const [commentSearch, setCommentSearch] = useState("")
   const [summaryError, setSummaryError] = useState("")
+  const [classificationBusy, setClassificationBusy] = useState(false)
 
   const content = viewCopy[activeView]
 
@@ -241,6 +243,26 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
+  async function handleClassifyComments() {
+    if (!signalSummary?.projectId || classificationBusy) return
+    setClassificationBusy(true)
+    setCollectionMessage("Classificando comentários reais…")
+    setCollectionState("running")
+    try {
+      const result = await classifyComments(signalSummary.projectId)
+      const [comments, summary] = await Promise.all([loadSignalComments(signalSummary.projectId), loadSignalSummary(session?.userId ?? "")])
+      setSignalComments(comments)
+      setSignalSummary(summary)
+      setCollectionState("success")
+      setCollectionMessage(result.classified ? `${result.classified} comentários classificados. ${result.remaining} pendentes.` : "Nenhum comentário pendente para classificar.")
+    } catch (error) {
+      setCollectionState("error")
+      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível classificar os comentários.")
+    } finally {
+      setClassificationBusy(false)
+    }
+  }
+
   return (
     <div className="signal-shell">
       <aside className="signal-sidebar">
@@ -341,7 +363,7 @@ function App() {
               </div>
               <Input value={commentSearch} onChange={(event) => setCommentSearch(event.target.value)} placeholder="Buscar pessoa ou comentário" aria-label="Buscar comentários" />
             </div>
-            <div className="panel-heading"><div><p className="eyebrow">Comentários</p><h2>{visibleComments().length} comentários encontrados</h2><p>Classificação automática com evidência preservada.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" onClick={exportComments}>Baixar CSV</Button></div></div>
+            <div className="panel-heading"><div><p className="eyebrow">Comentários</p><h2>{visibleComments().length} comentários encontrados</h2><p>Classificação automática com evidência preservada.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" disabled={classificationBusy} onClick={handleClassifyComments}>{classificationBusy ? "Classificando…" : "Classificar pendentes"}</Button><Button type="button" size="sm" variant="outline" onClick={exportComments}>Baixar CSV</Button></div></div>
             {visibleComments().length > 0 ? <div className="comments-list">{visibleComments().map((comment) => <article className="comment-card" key={comment.id}>
               <div className="comment-avatar">{comment.personName.slice(0, 1).toUpperCase()}</div>
               <div><div className="comment-card-heading"><div><strong>{comment.personName}</strong><span>{comment.personHeadline ?? "Perfil público"}</span></div><div className="comment-labels">{comment.tone && <span className="signal-tag">{comment.tone}</span>}{comment.confidence !== null && comment.confidence < 0.6 && <span className="review-tag">Revisar</span>}</div></div><p>“{comment.text}”</p><div className="comment-card-footer"><span>{formatDate(comment.publishedAt)}</span><a href={comment.personUrl} target="_blank" rel="noreferrer">Ver perfil</a><a href={comment.postUrl} target="_blank" rel="noreferrer">Ver post</a></div></div>
