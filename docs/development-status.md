@@ -34,6 +34,8 @@
 - JSON inválido e execução concorrente do mesmo projeto são rejeitados.
 - A versão atualizada foi publicada e o endpoint sem sessão continua retornando
   `401`.
+- O front-end passou a ler o resumo persistido do projeto autenticado e exibir
+  contagens reais de posts, comentários, pessoas e empresas.
 
 ## Próximo gate
 
