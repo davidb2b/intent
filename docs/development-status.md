@@ -102,6 +102,12 @@
 - O status de curadoria fica visível e é atualizado sem dados mockados.
 - A análise automática continua apenas como sugestão; a decisão humana é a
   que controla o status do post.
+- Tela de Posts alinhada ao HTML de referência com alternador entre
+  `Resultados da busca` e `Perfis monitorados`, usando somente registros reais
+  de `posts` e `fontes`.
+- Barra de coleta separada em `Descobrir fontes` e `Atualizar agora`; salvar a
+  configuração agora persiste projeto e termo no Supabase antes de permitir
+  as ações.
 
 ## Próximo gate
 

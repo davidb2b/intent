@@ -38,6 +38,17 @@ export type SignalComment = {
   confidence: number | null
 }
 
+export type SignalSource = {
+  id: string
+  linkedinUrl: string
+  name: string | null
+  status: "monitorada" | "candidata" | "descartada"
+  posts: number
+  comments: number
+  reactions: number
+  ratio: number
+}
+
 const emptySummary: SignalSummary = {
   projectId: null,
   posts: 0,
@@ -108,6 +119,31 @@ export async function loadSignalPosts(projectId: string): Promise<SignalPost[]> 
     curationStatus: post.status_curadoria,
     analysis: { topic: post.analise_topico, problem: post.analise_problema, reason: post.analise_motivo, collection: post.analise_coleta },
   }))
+}
+
+export async function loadSignalSources(projectId: string): Promise<SignalSource[]> {
+  const { data, error } = await supabase
+    .from("fontes")
+    .select("id, linkedin_url, nome, status, meta")
+    .eq("projeto_id", projectId)
+    .order("status", { ascending: true })
+    .order("criado_em", { ascending: false })
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((source) => {
+    let meta: { posts?: number; comentarios?: number; reacoes?: number; razao_comentarios_reacoes?: number } = {}
+    try { meta = source.meta ? JSON.parse(source.meta) as typeof meta : {} } catch { meta = {} }
+    return {
+      id: source.id,
+      linkedinUrl: source.linkedin_url,
+      name: source.nome,
+      status: source.status,
+      posts: meta.posts ?? 0,
+      comments: meta.comentarios ?? 0,
+      reactions: meta.reacoes ?? 0,
+      ratio: meta.razao_comentarios_reacoes ?? 0,
+    }
+  })
 }
 
 export async function loadSignalComments(projectId: string): Promise<SignalComment[]> {

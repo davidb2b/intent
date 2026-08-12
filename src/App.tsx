@@ -16,11 +16,13 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { startCollection } from "@/application/collection/start-collection"
+import { discoverSources } from "@/application/collection/discover-sources"
+import { runMonitoring } from "@/application/collection/run-monitoring"
 import { classifyComments } from "@/application/classification/classify-comments"
 import { analyzePosts } from "@/application/classification/analyze-posts"
 import { updatePostCuration, type CurationStatus } from "@/application/curation/update-post-curation"
-import { loadSignalComments, loadSignalPosts, loadSignalSummary, type SignalComment, type SignalPost, type SignalSummary } from "@/application/signals/load-signals"
+import { loadSignalComments, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalPost, type SignalSource, type SignalSummary } from "@/application/signals/load-signals"
+import { updateSourceStatus } from "@/application/sources/update-source-status"
 import { supabase } from "@/infrastructure/supabase/client"
 import "./App.css"
 
@@ -29,6 +31,7 @@ type CollectionState = "idle" | "running" | "success" | "error"
 type AuthMode = "signin" | "signup" | "recovery" | "update-password"
 type AuthSession = { email: string; userId: string }
 type CommentFilter = "all" | "pain" | "question" | "experience" | "generic"
+type PostsMode = "search" | "sources"
 
 const pathByView: Record<View, string> = {
   overview: "/overview",
@@ -108,7 +111,9 @@ function App() {
   const [authError, setAuthError] = useState("")
   const [signalSummary, setSignalSummary] = useState<SignalSummary | null>(null)
   const [signalPosts, setSignalPosts] = useState<SignalPost[]>([])
+  const [signalSources, setSignalSources] = useState<SignalSource[]>([])
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
+  const [postsMode, setPostsMode] = useState<PostsMode>("search")
   const [signalComments, setSignalComments] = useState<SignalComment[]>([])
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("all")
   const [commentSearch, setCommentSearch] = useState("")
@@ -143,6 +148,7 @@ function App() {
     if (!session) {
       setSignalSummary(null)
       setSignalPosts([])
+      setSignalSources([])
       setSelectedPostId(null)
       setSignalComments([])
       setSummaryError("")
@@ -158,8 +164,8 @@ function App() {
         setPositiveContext(summary.positiveContext ?? "")
         setNegativeContext(summary.negativeContext ?? "")
         if (summary.projectId) {
-          const [posts, comments] = await Promise.all([loadSignalPosts(summary.projectId), loadSignalComments(summary.projectId)])
-          if (active) { setSignalPosts(posts); setSignalComments(comments) }
+          const [posts, comments, sources] = await Promise.all([loadSignalPosts(summary.projectId), loadSignalComments(summary.projectId), loadSignalSources(summary.projectId)])
+          if (active) { setSignalPosts(posts); setSignalComments(comments); setSignalSources(sources) }
         }
       })
       .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
@@ -187,20 +193,43 @@ function App() {
     setCollectionState("running")
     setCollectionMessage("Executando coleta real no Apify…")
     try {
-      const result = await startCollection({ keyword, positiveContext, negativeContext })
+      if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de iniciar uma coleta.")
+      const result = await runMonitoring(signalSummary.projectId)
       setCollectionState("success")
       setCollectionCost(result.costUsd > 0 ? `$${result.costUsd.toFixed(3)}` : "$0.000")
-      setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários persistidos.`)
+      setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários monitorados.`)
       const refreshedSummary = await loadSignalSummary(session.userId)
       setSignalSummary(refreshedSummary)
       if (refreshedSummary.projectId) {
-        const [posts, comments] = await Promise.all([loadSignalPosts(refreshedSummary.projectId), loadSignalComments(refreshedSummary.projectId)])
+        const [posts, comments, sources] = await Promise.all([loadSignalPosts(refreshedSummary.projectId), loadSignalComments(refreshedSummary.projectId), loadSignalSources(refreshedSummary.projectId)])
         setSignalPosts(posts)
         setSignalComments(comments)
+        setSignalSources(sources)
       }
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar a coleta.")
+    }
+  }
+
+  async function handleDiscover() {
+    if (!keyword.trim() || !session || collectionState === "running") {
+      if (!session) { setAuthOpen(true); setCollectionMessage("Faça login para descobrir fontes reais.") }
+      return
+    }
+    setCollectionState("running")
+    setCollectionMessage("Descobrindo fontes brasileiras no Apify…")
+    try {
+      if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de descobrir fontes.")
+      const result = await discoverSources(signalSummary.projectId, [keyword])
+      const sources = await loadSignalSources(signalSummary.projectId)
+      setSignalSources(sources)
+      setCollectionState("success")
+      setCollectionCost(result.costUsd > 0 ? `$${result.costUsd.toFixed(3)}` : "$0.000")
+      setCollectionMessage(`${result.candidatesInserted} fontes candidatas encontradas; ${result.candidatesRejected} perfis não brasileiros descartados.`)
+    } catch (error) {
+      setCollectionState("error")
+      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível descobrir fontes.")
     }
   }
 
@@ -219,6 +248,26 @@ function App() {
     if (result.error) { setAuthError(result.error.message); return }
     setAuthOpen(false)
     setCollectionMessage(authMode === "signup" ? "Conta criada. Verifique seu e-mail se a confirmação estiver habilitada." : authMode === "recovery" ? "Enviamos o link de recuperação para seu e-mail." : authMode === "update-password" ? "Senha atualizada com sucesso." : "Login realizado.")
+  }
+
+  async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!session || !keyword.trim()) return
+    setCollectionState("running")
+    setCollectionMessage("Salvando configuração da pesquisa…")
+    try {
+      const { data: project, error: projectError } = await supabase.from("projetos").upsert({ owner_id: session.userId, nome: "Signal Lab", categoria: keyword.trim() }, { onConflict: "owner_id" }).select("id").single()
+      if (projectError || !project) throw new Error(projectError?.message ?? "Não foi possível salvar o projeto.")
+      const { error: termError } = await supabase.from("termos").upsert({ projeto_id: project.id, termo: keyword.trim(), contexto_positivo: positiveContext.trim() || null, contexto_negativo: negativeContext.trim() || null, ativo: true }, { onConflict: "projeto_id,termo" })
+      if (termError) throw new Error(termError.message)
+      setSignalSummary((summary) => summary ? { ...summary, projectId: project.id, keyword: keyword.trim(), positiveContext: positiveContext.trim() || null, negativeContext: negativeContext.trim() || null } : { projectId: project.id, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: keyword.trim(), positiveContext: positiveContext.trim() || null, negativeContext: negativeContext.trim() || null })
+      setSettingsOpen(false)
+      setCollectionState("success")
+      setCollectionMessage("Configuração salva. Escolha descobrir fontes ou atualizar o monitoramento.")
+    } catch (error) {
+      setCollectionState("error")
+      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível salvar a configuração.")
+    }
   }
 
   async function handleLogout() {
@@ -310,6 +359,18 @@ function App() {
     }
   }
 
+  async function handleSourceStatus(sourceId: string, status: "monitorada" | "descartada") {
+    try {
+      await updateSourceStatus(sourceId, status)
+      setSignalSources((sources) => sources.map((source) => source.id === sourceId ? { ...source, status } : source))
+      setCollectionState("success")
+      setCollectionMessage(status === "monitorada" ? "Fonte aprovada para o monitoramento." : "Fonte descartada.")
+    } catch (error) {
+      setCollectionState("error")
+      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível atualizar a fonte.")
+    }
+  }
+
   return (
     <div className="signal-shell">
       <aside className="signal-sidebar">
@@ -379,9 +440,12 @@ function App() {
           <div className={`collection-status collection-${collectionState}`}><span className="status-dot" /> {collectionState === "running" ? "Coleta em andamento" : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : "Coleta não iniciada"}</div>
           <div className="collection-meta"><Clock3 size={15} /> Próxima coleta: não agendada</div>
           <div className="collection-meta"><span className="cost-label">Custo</span> {collectionCost}</div>
-          <Button className="collect-button" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
-            <Play size={14} /> {collectionState === "running" ? "Coletando…" : "Atualizar agora"}
-          </Button>
+          <div className="collection-actions">
+            <Button className="discover-button" variant="outline" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleDiscover}>Descobrir fontes</Button>
+            <Button className="collect-button" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
+              <Play size={14} /> {collectionState === "running" ? "Coletando…" : "Atualizar agora"}
+            </Button>
+          </div>
         </section>
 
         {collectionMessage && <p aria-live="polite" className={`collection-message collection-message-${collectionState}`}>{collectionMessage}</p>}
@@ -394,9 +458,10 @@ function App() {
             <div><span>Pessoas</span><strong>{signalSummary.people}</strong></div>
             <div><span>Empresas</span><strong>{signalSummary.companies}</strong></div>
           </div>}
-          {activeView === "posts" && session && signalPosts.length > 0 ? <div className="signal-panel-grid">
+          {activeView === "posts" && session && signalSummary?.projectId ? <div className="signal-panel-grid">
             <section className="signal-panel">
-              <div className="panel-heading"><div><p className="eyebrow">Resultados da busca</p><h2>{signalPosts.length} posts encontrados</h2><p>Revise a relevância antes de monitorar.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
+              <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
+              {postsMode === "search" ? <><div className="panel-heading"><div><p className="eyebrow">Resultados da busca</p><h2>{signalPosts.length} posts encontrados</h2><p>Clique em um post para revisar.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || signalPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
               <div className="post-review-layout">
                 <div className="post-results-list" aria-label="Lista de posts encontrados">
                   {signalPosts.map((post) => <article
@@ -419,7 +484,7 @@ function App() {
                   {selectedPost.analysis.topic ? <div className="post-analysis post-analysis-detail"><div><strong>Tópico</strong><span>{selectedPost.analysis.topic}</span></div><div><strong>Problema</strong><span>{selectedPost.analysis.problem}</span></div><div><strong>Por que o post faz sentido</strong><span>{selectedPost.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{selectedPost.analysis.collection}</span></div></div> : <div className="post-detail-empty">Este post ainda não foi analisado. Use “Analisar pendente” para gerar a classificação.</div>}
                   <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar</Button><a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
                 </article>}
-              </div>
+              </div></> : <section className="sources-panel"><div className="panel-heading"><div><p className="eyebrow">Perfis monitorados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} fontes ativas</h2><p>As coletas semanais leem somente fontes aprovadas.</p></div><span className="signal-tag">{signalSources.length} fontes</span></div>{signalSources.length > 0 ? <div className="source-list">{signalSources.map((source) => <article className="source-row" key={source.id}><div><strong>{source.name ?? "Perfil sem nome"}</strong><span>{source.linkedinUrl}</span></div><div className="source-metrics"><span>{source.posts} posts</span><span>{source.comments} comentários</span><span>{source.ratio.toFixed(2)} razão</span></div><span className={`curation-status source-${source.status}`}>{source.status}</span><div className="source-actions">{source.status !== "monitorada" && <Button type="button" size="sm" onClick={() => void handleSourceStatus(source.id, "monitorada")}>Monitorar</Button>}{source.status !== "descartada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Descartar</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma fonte descoberta</strong><span>Use “Descobrir fontes” para encontrar perfis brasileiros candidatos.</span></div>}</section>}
             </section>
           </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">
             <div className="comment-toolbar">
@@ -457,7 +522,7 @@ function App() {
               <button aria-label="Fechar configuração" className="icon-button" onClick={() => setSettingsOpen(false)} type="button"><X size={18} /></button>
             </div>
             <p className="modal-description">Esses parâmetros serão usados na próxima coleta real do Apify.</p>
-            <form onSubmit={(event) => { event.preventDefault(); setSettingsOpen(false) }}>
+            <form onSubmit={handleSaveSettings}>
               <label htmlFor="keyword">Palavra-chave principal</label>
               <input id="keyword" onChange={(event) => setKeyword(event.target.value)} placeholder="Ex.: cost breakdown" value={keyword} />
               <label htmlFor="positive-context">Contextos incluídos <span>opcional</span></label>

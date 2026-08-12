@@ -54,8 +54,10 @@
 .collection-success .status-dot { background: #258b5b; }
 .collection-meta { display: flex; align-items: center; gap: 6px; color: var(--signal-muted); }
 .cost-label { margin-right: 3px; }
-.collect-button { margin-left: auto; background: var(--signal-brand); color: white; }
+.collection-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.collect-button { background: var(--signal-brand); color: white; }
 .collect-button:hover { background: var(--signal-brand-dark); }
+.discover-button { border-color: var(--signal-border); color: var(--signal-brand-dark); }
 .collection-message { margin: 12px 48px 0; border-radius: 8px; padding: 10px 12px; font-size: 12px; }
 .collection-message-running { background: #fff7e8; color: #825513; }
 .collection-message-success { background: var(--signal-soft); color: var(--signal-brand-dark); }
@@ -67,6 +69,7 @@
 .signal-metrics strong { font-size: 24px; letter-spacing: -.04em; }
 .signal-panel-grid { display: grid; grid-template-columns: minmax(0, 1fr); }
 .signal-panel { border: 1px solid var(--signal-border); border-radius: 14px; background: var(--signal-surface); overflow: hidden; }
+.mode-switch { display: inline-flex; gap: 4px; margin: 16px 24px 0; padding: 3px; border: 1px solid var(--signal-border); border-radius: 999px; background: var(--signal-bg); }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid var(--signal-border); }
 .panel-heading h2 { margin: 0; font-size: 19px; letter-spacing: -.03em; }
 .panel-heading-actions { display: flex; align-items: center; gap: 8px; }
@@ -92,6 +95,17 @@
 .post-detail-actions a { margin-left: auto; color: var(--signal-brand); font-size: 12px; font-weight: 600; text-decoration: none; }
 .post-detail-empty { margin-top: 18px; border-radius: 8px; background: #f6faf7; color: var(--signal-muted); padding: 12px; font-size: 12px; line-height: 1.5; }
 .post-analysis-detail { margin-top: 18px; }
+.sources-panel { overflow: hidden; }
+.source-list { display: grid; }
+.source-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto auto; align-items: center; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--signal-border); }
+.source-row:last-child { border-bottom: 0; }
+.source-row > div:first-child strong, .source-row > div:first-child span { display: block; }
+.source-row > div:first-child strong { font-size: 13px; }
+.source-row > div:first-child span { margin-top: 4px; overflow: hidden; color: var(--signal-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.source-metrics { display: flex; flex-wrap: wrap; gap: 9px; color: var(--signal-muted); font-size: 11px; }
+.source-monitorada { background: var(--signal-soft); color: var(--signal-brand-dark); }
+.source-candidata { background: #fff7e8; color: #825513; }
+.source-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .post-card-meta, .post-card-footer, .comment-card-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--signal-muted); font-size: 11px; }
 .post-card-meta { justify-content: space-between; }
 .post-card p { margin: 13px 0 16px; color: #33423a; font-size: 13px; line-height: 1.6; }
@@ -150,7 +164,7 @@
   .topbar, .content-area { padding-left: 24px; padding-right: 24px; }
   .query-bar, .collection-bar { margin-left: 24px; margin-right: 24px; }
   .collection-bar { flex-wrap: wrap; }
-  .collect-button { margin-left: 0; }
+  .collection-actions { width: 100%; margin-left: 0; }
 }
 
 @media (max-width: 600px) {
@@ -170,4 +184,6 @@
   .comment-toolbar input { width: 100%; }
   .panel-heading-actions { align-items: flex-start; flex-direction: column; }
   .post-card-footer a { margin-left: 0; }
+  .mode-switch { margin-left: 18px; margin-right: 18px; }
+  .source-row { grid-template-columns: 1fr; gap: 10px; padding-left: 18px; padding-right: 18px; }
 }
