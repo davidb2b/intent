@@ -23,6 +23,15 @@ describe("Signal Lab foundation", () => {
     expect(screen.getByText("Nenhum post disponível")).toBeInTheDocument()
   })
 
+  it("uses real application routes for the product areas", () => {
+    window.history.replaceState({}, "", "/overview")
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: /02Posts/ }))
+
+    expect(window.location.pathname).toBe("/posts")
+  })
+
   it("requires both a keyword and an authenticated session before collecting", () => {
     render(<App />)
 
@@ -37,5 +46,14 @@ describe("Signal Lab foundation", () => {
     expect(screen.getAllByText("cost breakdown").length).toBe(2)
     expect(screen.getAllByRole("button", { name: /Atualizar agora/ })[0]).toBeDisabled()
     expect(screen.getByRole("button", { name: "Entrar" })).toBeInTheDocument()
+  })
+
+  it("offers password recovery and password visibility controls", () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole("button", { name: "Entrar" }))
+    fireEvent.click(screen.getByRole("button", { name: "Esqueci a senha" }))
+
+    expect(screen.getByRole("heading", { name: "Recuperar senha" })).toBeInTheDocument()
+    expect(screen.queryByLabelText("Senha")).not.toBeInTheDocument()
   })
 })

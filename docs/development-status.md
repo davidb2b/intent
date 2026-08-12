@@ -12,6 +12,8 @@
 - RLS configurado para separar os dados por `owner_id`.
 - Token dedicado criado na Apify para o backend.
 - Testes unitários, build e lint validados.
+- PR1 fechado no front-end: sessão persistida, rotas reais, logout, recuperação
+  de senha e atualização de senha via Supabase Auth.
 
 ## Concluído nesta etapa
 

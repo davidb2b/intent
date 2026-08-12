@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import {
   BarChart3,
   Building2,
@@ -21,7 +21,21 @@ import "./App.css"
 
 type View = "overview" | "posts" | "comments" | "companies" | "people"
 type CollectionState = "idle" | "running" | "success" | "error"
-type AuthMode = "signin" | "signup"
+type AuthMode = "signin" | "signup" | "recovery" | "update-password"
+type AuthSession = { email: string; userId: string }
+
+const pathByView: Record<View, string> = {
+  overview: "/overview",
+  posts: "/posts",
+  comments: "/comments",
+  companies: "/companies",
+  people: "/people",
+}
+
+function viewFromPath(pathname: string): View {
+  const entry = Object.entries(pathByView).find(([, path]) => path === pathname)
+  return (entry?.[0] as View | undefined) ?? "overview"
+}
 
 const navigation: Array<{ id: View; label: string; icon: typeof LayoutDashboard }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -68,25 +82,46 @@ function App() {
   const [collectionState, setCollectionState] = useState<CollectionState>("idle")
   const [collectionMessage, setCollectionMessage] = useState("")
   const [collectionCost, setCollectionCost] = useState<string>("—")
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null)
+  const [session, setSession] = useState<AuthSession | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>("signin")
   const [authEmail, setAuthEmail] = useState("")
   const [authPassword, setAuthPassword] = useState("")
+  const [authPasswordVisible, setAuthPasswordVisible] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState("")
 
   const content = viewCopy[activeView]
 
   useEffect(() => {
-    void supabase.auth.getSession().then(({ data }) => setSessionEmail(data.session?.user.email ?? null))
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setSessionEmail(session?.user.email ?? null))
-    return () => listener.subscription.unsubscribe()
+    const updateSession = (nextSession: { user?: { id: string; email?: string } } | null) => {
+      setSession(nextSession?.user?.email ? { email: nextSession.user.email, userId: nextSession.user.id } : null)
+    }
+    void supabase.auth.getSession().then(({ data }) => updateSession(data.session))
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      updateSession(nextSession)
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthMode("update-password")
+        setAuthOpen(true)
+      }
+    })
+    const onPopState = () => setActiveView(viewFromPath(window.location.pathname))
+    window.addEventListener("popstate", onPopState)
+    if (window.location.pathname === "/") window.history.replaceState({}, "", "/overview")
+    return () => {
+      listener.subscription.unsubscribe()
+      window.removeEventListener("popstate", onPopState)
+    }
   }, [])
 
+  function navigate(view: View) {
+    setActiveView(view)
+    window.history.pushState({}, "", pathByView[view])
+  }
+
   async function handleCollect() {
-    if (!keyword.trim() || !sessionEmail || collectionState === "running") {
-      if (!sessionEmail) { setAuthOpen(true); setCollectionMessage("Faça login para iniciar uma coleta real.") }
+    if (!keyword.trim() || !session || collectionState === "running") {
+      if (!session) { setAuthOpen(true); setCollectionMessage("Faça login para iniciar uma coleta real.") }
       return
     }
     setCollectionState("running")
@@ -102,17 +137,27 @@ function App() {
     }
   }
 
-  async function handleAuth(event: React.FormEvent<HTMLFormElement>) {
+  async function handleAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setAuthBusy(true)
     setAuthError("")
     const result = authMode === "signin"
       ? await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword })
-      : await supabase.auth.signUp({ email: authEmail, password: authPassword })
+      : authMode === "signup"
+        ? await supabase.auth.signUp({ email: authEmail, password: authPassword })
+        : authMode === "recovery"
+          ? await supabase.auth.resetPasswordForEmail(authEmail, { redirectTo: `${window.location.origin}/reset-password` })
+          : await supabase.auth.updateUser({ password: authPassword })
     setAuthBusy(false)
     if (result.error) { setAuthError(result.error.message); return }
     setAuthOpen(false)
-    setCollectionMessage(authMode === "signup" ? "Conta criada. Verifique seu e-mail se a confirmação estiver habilitada." : "Login realizado.")
+    setCollectionMessage(authMode === "signup" ? "Conta criada. Verifique seu e-mail se a confirmação estiver habilitada." : authMode === "recovery" ? "Enviamos o link de recuperação para seu e-mail." : authMode === "update-password" ? "Senha atualizada com sucesso." : "Login realizado.")
+  }
+
+  async function handleLogout() {
+    const { error } = await supabase.auth.signOut()
+    if (error) setCollectionMessage(error.message)
+    else setCollectionMessage("Sessão encerrada.")
   }
 
   return (
@@ -137,7 +182,7 @@ function App() {
             <button
               className={`nav-item ${activeView === id ? "is-active" : ""}`}
               key={id}
-              onClick={() => setActiveView(id)}
+              onClick={() => navigate(id)}
               type="button"
             >
               <span className="nav-index">0{index + 1}</span>
@@ -161,7 +206,7 @@ function App() {
           </div>
           <div className="topbar-actions">
             <Button className="settings-button" onClick={() => setSettingsOpen(true)} variant="outline"><Settings2 size={16} /> Configurar pesquisa</Button>
-            {sessionEmail ? <span className="session-label">{sessionEmail}</span> : <Button onClick={() => setAuthOpen(true)} variant="outline">Entrar</Button>}
+            {session ? <><span className="session-label">{session.email}</span><Button onClick={handleLogout} variant="outline">Sair</Button></> : <Button onClick={() => { setAuthMode("signin"); setAuthOpen(true) }} variant="outline">Entrar</Button>}
           </div>
         </header>
 
@@ -184,7 +229,7 @@ function App() {
           <div className={`collection-status collection-${collectionState}`}><span className="status-dot" /> {collectionState === "running" ? "Coleta em andamento" : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : "Coleta não iniciada"}</div>
           <div className="collection-meta"><Clock3 size={15} /> Próxima coleta: não agendada</div>
           <div className="collection-meta"><span className="cost-label">Custo</span> {collectionCost}</div>
-          <Button className="collect-button" disabled={!keyword.trim() || !sessionEmail || collectionState === "running"} onClick={handleCollect}>
+          <Button className="collect-button" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
             <Play size={14} /> {collectionState === "running" ? "Coletando…" : "Atualizar agora"}
           </Button>
         </section>
@@ -235,13 +280,13 @@ function App() {
       {authOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAuthOpen(false)}>
           <section aria-labelledby="auth-title" aria-modal="true" className="settings-modal auth-modal" role="dialog">
-            <div className="modal-header"><div><p className="eyebrow">Acesso seguro</p><h2 id="auth-title">{authMode === "signin" ? "Entrar no Signal Lab" : "Criar sua conta"}</h2></div><button aria-label="Fechar acesso" className="icon-button" onClick={() => setAuthOpen(false)} type="button"><X size={18} /></button></div>
-            <p className="modal-description">A coleta é vinculada ao seu usuário e permanece separada de outras contas.</p>
+            <div className="modal-header"><div><p className="eyebrow">Acesso seguro</p><h2 id="auth-title">{authMode === "signin" ? "Entrar no Signal Lab" : authMode === "signup" ? "Criar sua conta" : authMode === "recovery" ? "Recuperar senha" : "Atualizar senha"}</h2></div><button aria-label="Fechar acesso" className="icon-button" onClick={() => setAuthOpen(false)} type="button"><X size={18} /></button></div>
+            <p className="modal-description">{authMode === "recovery" ? "Informe seu e-mail e enviaremos um link seguro para redefinir sua senha." : authMode === "update-password" ? "Escolha uma nova senha para voltar a acessar suas análises." : "A coleta é vinculada ao seu usuário e permanece separada de outras contas."}</p>
             <form onSubmit={handleAuth}>
-              <label htmlFor="auth-email">E-mail</label><input autoComplete="email" id="auth-email" onChange={(event) => setAuthEmail(event.target.value)} required type="email" value={authEmail} />
-              <label htmlFor="auth-password">Senha</label><input autoComplete={authMode === "signin" ? "current-password" : "new-password"} id="auth-password" minLength={6} onChange={(event) => setAuthPassword(event.target.value)} required type="password" value={authPassword} />
+              {authMode !== "update-password" && <><label htmlFor="auth-email">E-mail</label><input autoComplete="email" id="auth-email" onChange={(event) => setAuthEmail(event.target.value)} required type="email" value={authEmail} /></>}
+              {authMode !== "recovery" && <><label htmlFor="auth-password">{authMode === "update-password" ? "Nova senha" : "Senha"}</label><div className="password-field"><input autoComplete={authMode === "signin" ? "current-password" : "new-password"} id="auth-password" minLength={6} onChange={(event) => setAuthPassword(event.target.value)} required type={authPasswordVisible ? "text" : "password"} value={authPassword} /><button aria-label={authPasswordVisible ? "Ocultar senha" : "Mostrar senha"} className="password-toggle" onClick={() => setAuthPasswordVisible((visible) => !visible)} type="button">{authPasswordVisible ? "Ocultar" : "Mostrar"}</button></div></>}
               {authError && <p className="auth-error" role="alert">{authError}</p>}
-              <div className="modal-actions"><Button onClick={() => { setAuthMode(authMode === "signin" ? "signup" : "signin"); setAuthError("") }} type="button" variant="ghost">{authMode === "signin" ? "Criar conta" : "Já tenho conta"}</Button><Button disabled={authBusy} type="submit">{authBusy ? "Aguarde…" : authMode === "signin" ? "Entrar" : "Criar conta"}</Button></div>
+              <div className="modal-actions">{authMode !== "update-password" && <Button onClick={() => { setAuthMode(authMode === "signin" ? "signup" : "signin"); setAuthError("") }} type="button" variant="ghost">{authMode === "signin" ? "Criar conta" : "Já tenho conta"}</Button>}{authMode === "signin" && <Button onClick={() => { setAuthMode("recovery"); setAuthError("") }} type="button" variant="ghost">Esqueci a senha</Button>}<Button disabled={authBusy} type="submit">{authBusy ? "Aguarde…" : authMode === "signin" ? "Entrar" : authMode === "signup" ? "Criar conta" : authMode === "recovery" ? "Enviar link" : "Atualizar senha"}</Button></div>
             </form>
           </section>
         </div>
