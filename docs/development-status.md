@@ -25,6 +25,16 @@
 - Endpoint verificado sem sessão: retorna `401` com `Faça login para iniciar
   uma coleta.` Isso confirma que a função está publicada e protegida.
 
+## PR2 iniciado
+
+- A Edge Function agora registra o custo individual de cada Actor em `custos`.
+- A coleta de comentários só é disparada para posts que informam comentários.
+- O contador de posts representa registros persistidos, e não apenas itens
+  retornados pelo Actor.
+- JSON inválido e execução concorrente do mesmo projeto são rejeitados.
+- A versão atualizada foi publicada e o endpoint sem sessão continua retornando
+  `401`.
+
 ## Próximo gate
 
 Executar uma coleta autenticada com uma palavra-chave real. Depois devemos
