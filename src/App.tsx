@@ -16,7 +16,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { startCollection } from "@/application/collection/start-collection"
-import { loadSignalSummary, type SignalSummary } from "@/application/signals/load-signals"
+import { loadSignalComments, loadSignalPosts, loadSignalSummary, type SignalComment, type SignalPost, type SignalSummary } from "@/application/signals/load-signals"
 import { supabase } from "@/infrastructure/supabase/client"
 import "./App.css"
 
@@ -36,6 +36,16 @@ const pathByView: Record<View, string> = {
 function viewFromPath(pathname: string): View {
   const entry = Object.entries(pathByView).find(([, path]) => path === pathname)
   return (entry?.[0] as View | undefined) ?? "overview"
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "Data não informada"
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(new Date(value))
+}
+
+function shorten(value: string | null, length = 180) {
+  if (!value) return "Sem texto disponível."
+  return value.length > length ? `${value.slice(0, length).trim()}…` : value
 }
 
 const navigation: Array<{ id: View; label: string; icon: typeof LayoutDashboard }> = [
@@ -92,6 +102,8 @@ function App() {
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState("")
   const [signalSummary, setSignalSummary] = useState<SignalSummary | null>(null)
+  const [signalPosts, setSignalPosts] = useState<SignalPost[]>([])
+  const [signalComments, setSignalComments] = useState<SignalComment[]>([])
   const [summaryError, setSummaryError] = useState("")
 
   const content = viewCopy[activeView]
@@ -120,13 +132,22 @@ function App() {
   useEffect(() => {
     if (!session) {
       setSignalSummary(null)
+      setSignalPosts([])
+      setSignalComments([])
       setSummaryError("")
       return
     }
     let active = true
     setSummaryError("")
     void loadSignalSummary(session.userId)
-      .then((summary) => { if (active) setSignalSummary(summary) })
+      .then(async (summary) => {
+        if (!active) return
+        setSignalSummary(summary)
+        if (summary.projectId) {
+          const [posts, comments] = await Promise.all([loadSignalPosts(summary.projectId), loadSignalComments(summary.projectId)])
+          if (active) { setSignalPosts(posts); setSignalComments(comments) }
+        }
+      })
       .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
     return () => { active = false }
   }, [session])
@@ -150,6 +171,11 @@ function App() {
       setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários persistidos.`)
       const refreshedSummary = await loadSignalSummary(session.userId)
       setSignalSummary(refreshedSummary)
+      if (refreshedSummary.projectId) {
+        const [posts, comments] = await Promise.all([loadSignalPosts(refreshedSummary.projectId), loadSignalComments(refreshedSummary.projectId)])
+        setSignalPosts(posts)
+        setSignalComments(comments)
+      }
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar a coleta.")
@@ -263,7 +289,22 @@ function App() {
             <div><span>Pessoas</span><strong>{signalSummary.people}</strong></div>
             <div><span>Empresas</span><strong>{signalSummary.companies}</strong></div>
           </div>}
-          <div className="empty-state">
+          {activeView === "posts" && session && signalPosts.length > 0 ? <div className="signal-panel-grid">
+            <section className="signal-panel">
+              <div className="panel-heading"><div><p className="eyebrow">Resultados da busca</p><h2>{signalPosts.length} posts encontrados</h2></div><span className="signal-tag">Dados reais</span></div>
+              <div className="post-list">{signalPosts.map((post) => <article className="post-card" key={post.id}>
+                <div className="post-card-meta"><span>{post.authorName ?? "Autor não identificado"}</span><span>{formatDate(post.publishedAt)}</span></div>
+                <p>{shorten(post.text, 240)}</p>
+                <div className="post-card-footer"><span>{post.reactions ?? 0} reações</span><span>{post.comments ?? 0} comentários</span><span>{post.shares ?? 0} compartilhamentos</span><a href={post.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
+              </article>)}</div>
+            </section>
+          </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">
+            <div className="panel-heading"><div><p className="eyebrow">Sinais de intenção</p><h2>{signalComments.length} comentários encontrados</h2></div><span className="signal-tag">Dados reais</span></div>
+            <div className="comments-list">{signalComments.map((comment) => <article className="comment-card" key={comment.id}>
+              <div className="comment-avatar">{comment.personName.slice(0, 1).toUpperCase()}</div>
+              <div><div className="comment-card-heading"><div><strong>{comment.personName}</strong><span>{comment.personHeadline ?? "Perfil público"}</span></div>{comment.tone && <span className="signal-tag">{comment.tone}</span>}</div><p>“{shorten(comment.text, 260)}”</p><div className="comment-card-footer"><span>{formatDate(comment.publishedAt)}</span><a href={comment.personUrl} target="_blank" rel="noreferrer">Ver perfil</a><a href={comment.postUrl} target="_blank" rel="noreferrer">Ver post</a></div></div>
+            </article>)}</div>
+          </section> : <div className="empty-state">
             <div className="empty-icon"><BarChart3 size={24} /></div>
             <h2>{session && signalSummary?.posts ? "Sinais reais disponíveis" : content.title}</h2>
             <p>{session && signalSummary?.posts ? "Os resultados persistidos no Supabase aparecerão nas áreas de Posts, Comments, Companies e People." : content.description}</p>
@@ -272,7 +313,7 @@ function App() {
                 <Settings2 size={16} /> Configurar primeira pesquisa
               </Button>
             )}
-          </div>
+          </div>}
         </section>
       </main>
 
