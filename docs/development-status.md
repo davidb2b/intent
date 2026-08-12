@@ -74,13 +74,9 @@
   `harvestapi/linkedin-profile-posts`, mas o Actor retornou zero perfis mesmo
   para `procurement`; a captura brasileira ainda está bloqueada por esse
   contrato/resultado do Actor.
-- Os 5 posts e 9 comentários existentes são dados de testes anteriores,
-  coletados antes do filtro brasileiro. Eles não representam uma nova coleta.
-- Não avançar para novas features até validar uma coleta real com pelo menos
-  um autor brasileiro e limpar/reprocessar os dados antigos com decisão
-  explícita.
 - A limpeza do projeto de teste foi executada; os posts/comentários antigos
-  estrangeiros foram removidos.
+  estrangeiros foram removidos. O projeto está sem dados de produção até uma
+  coleta brasileira ser validada.
 - O diagnóstico final do bloqueio foi o limite diário gratuito do Apify para
   perfis. A Edge Function agora retorna esse motivo explicitamente, em vez de
   tratar a resposta como zero perfis.
@@ -90,6 +86,8 @@
 ## PR3 — curadoria manual
 
 - Tela de Posts agora permite aprovar ou descartar cada post.
+- A revisão segue o HTML de referência com lista de resultados à esquerda e
+  painel de detalhe do post selecionado à direita.
 - A decisão é persistida diretamente no Supabase com RLS do proprietário.
 - O status de curadoria fica visível e é atualizado sem dados mockados.
 - A análise automática continua apenas como sugestão; a decisão humana é a

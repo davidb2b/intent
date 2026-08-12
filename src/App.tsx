@@ -108,6 +108,7 @@ function App() {
   const [authError, setAuthError] = useState("")
   const [signalSummary, setSignalSummary] = useState<SignalSummary | null>(null)
   const [signalPosts, setSignalPosts] = useState<SignalPost[]>([])
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
   const [signalComments, setSignalComments] = useState<SignalComment[]>([])
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("all")
   const [commentSearch, setCommentSearch] = useState("")
@@ -142,6 +143,7 @@ function App() {
     if (!session) {
       setSignalSummary(null)
       setSignalPosts([])
+      setSelectedPostId(null)
       setSignalComments([])
       setSummaryError("")
       return
@@ -163,6 +165,14 @@ function App() {
       .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
     return () => { active = false }
   }, [session])
+
+  useEffect(() => {
+    if (signalPosts.length === 0) {
+      setSelectedPostId(null)
+      return
+    }
+    setSelectedPostId((current) => current && signalPosts.some((post) => post.id === current) ? current : signalPosts[0].id)
+  }, [signalPosts])
 
   function navigate(view: View) {
     setActiveView(view)
@@ -237,6 +247,8 @@ function App() {
       return [comment.personName, comment.personHeadline, comment.text, comment.tone].some((value) => value?.toLowerCase().includes(query))
     })
   }
+
+  const selectedPost = signalPosts.find((post) => post.id === selectedPostId) ?? signalPosts[0]
 
   function exportComments() {
     const rows = [["Pessoa", "Cargo", "Teor", "Comentário", "Data", "Perfil", "Post"], ...visibleComments().map((comment) => [comment.personName, comment.personHeadline ?? "", comment.tone ?? "", comment.text, formatDate(comment.publishedAt), comment.personUrl, comment.postUrl])]
@@ -385,12 +397,29 @@ function App() {
           {activeView === "posts" && session && signalPosts.length > 0 ? <div className="signal-panel-grid">
             <section className="signal-panel">
               <div className="panel-heading"><div><p className="eyebrow">Resultados da busca</p><h2>{signalPosts.length} posts encontrados</h2><p>Revise a relevância antes de monitorar.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
-              <div className="post-list">{signalPosts.map((post) => <article className="post-card" key={post.id}>
-                <div className="post-card-meta"><span>{post.authorName ?? "Autor não identificado"}</span><span>{formatDate(post.publishedAt)}</span></div>
-                <p>{shorten(post.text, 240)}</p>
-                {post.analysis.topic && <div className="post-analysis"><div><strong>Tópico</strong><span>{post.analysis.topic}</span></div><div><strong>Problema</strong><span>{post.analysis.problem}</span></div><div><strong>Por que faz sentido</strong><span>{post.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{post.analysis.collection}</span></div></div>}
-                <div className="post-card-footer"><span>{post.reactions ?? 0} reações</span><span>{post.comments ?? 0} comentários</span><span>{post.shares ?? 0} compartilhamentos</span><span className={`curation-status curation-${post.curationStatus}`}>{post.curationStatus}</span><Button type="button" size="sm" variant={post.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(post.id, "aprovado")}>Aprovar</Button><Button type="button" size="sm" variant={post.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(post.id, "descartado")}>Descartar</Button><a href={post.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
-              </article>)}</div>
+              <div className="post-review-layout">
+                <div className="post-results-list" aria-label="Lista de posts encontrados">
+                  {signalPosts.map((post) => <article
+                    className={`post-card ${selectedPost?.id === post.id ? "is-selected" : ""}`}
+                    key={post.id}
+                    aria-selected={selectedPost?.id === post.id}
+                    tabIndex={0}
+                    onClick={() => setSelectedPostId(post.id)}
+                    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedPostId(post.id) } }}
+                  >
+                    <div className="post-card-meta"><span>{post.authorName ?? "Autor não identificado"}</span><span>{formatDate(post.publishedAt)}</span></div>
+                    <p>{shorten(post.text, 180)}</p>
+                    <div className="post-card-footer"><span>{post.reactions ?? 0} reações</span><span>{post.comments ?? 0} comentários</span><span className={`curation-status curation-${post.curationStatus}`}>{post.curationStatus}</span></div>
+                  </article>)}
+                </div>
+                {selectedPost && <article className="post-detail-panel">
+                  <div className="post-detail-header"><div><p className="eyebrow">Post selecionado</p><h3>{selectedPost.authorName ?? "Autor não identificado"}</h3><span>{formatDate(selectedPost.publishedAt)}</span></div><span className={`curation-status curation-${selectedPost.curationStatus}`}>{selectedPost.curationStatus}</span></div>
+                  <p className="post-detail-text">{selectedPost.text}</p>
+                  <div className="post-detail-metrics"><span>{selectedPost.reactions ?? 0} reações</span><span>{selectedPost.comments ?? 0} comentários</span><span>{selectedPost.shares ?? 0} compartilhamentos</span></div>
+                  {selectedPost.analysis.topic ? <div className="post-analysis post-analysis-detail"><div><strong>Tópico</strong><span>{selectedPost.analysis.topic}</span></div><div><strong>Problema</strong><span>{selectedPost.analysis.problem}</span></div><div><strong>Por que o post faz sentido</strong><span>{selectedPost.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{selectedPost.analysis.collection}</span></div></div> : <div className="post-detail-empty">Este post ainda não foi analisado. Use “Analisar pendente” para gerar a classificação.</div>}
+                  <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar</Button><a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
+                </article>}
+              </div>
             </section>
           </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">
             <div className="comment-toolbar">
