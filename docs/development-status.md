@@ -87,6 +87,11 @@
   a razão comentários/reactions e grava somente perfis brasileiros novos em
   `fontes` como `candidata`. Fontes já existentes, inclusive descartadas, não
   são recriadas.
+- Edge Function `run-monitoring` publicada com o contrato de monitoramento:
+  lê somente fontes `monitorada`, usa janela `month` por padrão, atualiza
+  posts por `post_urn`, coleta comentários sem replies, valida comentaristas
+  brasileiros, deduplica pessoas por slug e comentários por URN, e registra
+  cada chamada de Actor em `custos`.
 
 ## PR3 — curadoria manual
 
@@ -102,5 +107,6 @@
 
 Executar uma descoberta autenticada quando o limite do Apify permitir, validar
 as fontes brasileiras candidatas e então implementar `rodar-monitoramento` para
-ler somente fontes aprovadas como `monitorada`. A descoberta já está separada;
-posts e comentários continuam fora dela.
+ler somente fontes aprovadas como `monitorada`. A descoberta e o monitoramento
+já estão separados no backend; falta agora expor as duas ações de forma
+explícita na tela e testar o fluxo com uma fonte brasileira aprovada.
