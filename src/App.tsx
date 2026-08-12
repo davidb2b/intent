@@ -21,7 +21,7 @@ import { runMonitoring } from "@/application/collection/run-monitoring"
 import { classifyComments } from "@/application/classification/classify-comments"
 import { analyzePosts } from "@/application/classification/analyze-posts"
 import { updatePostCuration, type CurationStatus } from "@/application/curation/update-post-curation"
-import { loadSignalComments, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalPost, type SignalSource, type SignalSummary } from "@/application/signals/load-signals"
+import { loadSignalComments, loadSignalCompanies, loadSignalPeople, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalCompany, type SignalPerson, type SignalPost, type SignalSource, type SignalSummary } from "@/application/signals/load-signals"
 import { updateSourceStatus } from "@/application/sources/update-source-status"
 import { supabase } from "@/infrastructure/supabase/client"
 import "./App.css"
@@ -32,6 +32,7 @@ type AuthMode = "signin" | "signup" | "recovery" | "update-password"
 type AuthSession = { email: string; userId: string }
 type CommentFilter = "all" | "pain" | "question" | "experience" | "generic"
 type PostsMode = "search" | "sources"
+type PeopleFilter = "all" | "icp" | "without-icp"
 
 const pathByView: Record<View, string> = {
   overview: "/overview",
@@ -112,6 +113,9 @@ function App() {
   const [signalSummary, setSignalSummary] = useState<SignalSummary | null>(null)
   const [signalPosts, setSignalPosts] = useState<SignalPost[]>([])
   const [signalSources, setSignalSources] = useState<SignalSource[]>([])
+  const [signalCompanies, setSignalCompanies] = useState<SignalCompany[]>([])
+  const [signalPeople, setSignalPeople] = useState<SignalPerson[]>([])
+  const [peopleFilter, setPeopleFilter] = useState<PeopleFilter>("all")
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
   const [postsMode, setPostsMode] = useState<PostsMode>("search")
   const [signalComments, setSignalComments] = useState<SignalComment[]>([])
@@ -149,6 +153,8 @@ function App() {
       setSignalSummary(null)
       setSignalPosts([])
       setSignalSources([])
+      setSignalCompanies([])
+      setSignalPeople([])
       setSelectedPostId(null)
       setSignalComments([])
       setSummaryError("")
@@ -164,8 +170,8 @@ function App() {
         setPositiveContext(summary.positiveContext ?? "")
         setNegativeContext(summary.negativeContext ?? "")
         if (summary.projectId) {
-          const [posts, comments, sources] = await Promise.all([loadSignalPosts(summary.projectId), loadSignalComments(summary.projectId), loadSignalSources(summary.projectId)])
-          if (active) { setSignalPosts(posts); setSignalComments(comments); setSignalSources(sources) }
+          const [posts, comments, sources, companies, people] = await Promise.all([loadSignalPosts(summary.projectId), loadSignalComments(summary.projectId), loadSignalSources(summary.projectId), loadSignalCompanies(summary.projectId), loadSignalPeople(summary.projectId)])
+          if (active) { setSignalPosts(posts); setSignalComments(comments); setSignalSources(sources); setSignalCompanies(companies); setSignalPeople(people) }
         }
       })
       .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
@@ -201,10 +207,12 @@ function App() {
       const refreshedSummary = await loadSignalSummary(session.userId)
       setSignalSummary(refreshedSummary)
       if (refreshedSummary.projectId) {
-        const [posts, comments, sources] = await Promise.all([loadSignalPosts(refreshedSummary.projectId), loadSignalComments(refreshedSummary.projectId), loadSignalSources(refreshedSummary.projectId)])
+        const [posts, comments, sources, companies, people] = await Promise.all([loadSignalPosts(refreshedSummary.projectId), loadSignalComments(refreshedSummary.projectId), loadSignalSources(refreshedSummary.projectId), loadSignalCompanies(refreshedSummary.projectId), loadSignalPeople(refreshedSummary.projectId)])
         setSignalPosts(posts)
         setSignalComments(comments)
         setSignalSources(sources)
+        setSignalCompanies(companies)
+        setSignalPeople(people)
       }
     } catch (error) {
       setCollectionState("error")
@@ -295,6 +303,10 @@ function App() {
       if (!query) return true
       return [comment.personName, comment.personHeadline, comment.text, comment.tone].some((value) => value?.toLowerCase().includes(query))
     })
+  }
+
+  function visiblePeople() {
+    return signalPeople.filter((person) => peopleFilter === "all" || (peopleFilter === "icp" ? person.icp === true : person.icp !== true))
   }
 
   const selectedPost = signalPosts.find((post) => post.id === selectedPostId) ?? signalPosts[0]
@@ -498,6 +510,13 @@ function App() {
               <div className="comment-avatar">{comment.personName.slice(0, 1).toUpperCase()}</div>
               <div><div className="comment-card-heading"><div><strong>{comment.personName}</strong><span>{comment.personHeadline ?? "Perfil público"}</span></div><div className="comment-labels">{comment.tone && <span className="signal-tag">{comment.tone}</span>}{comment.confidence !== null && comment.confidence < 0.6 && <span className="review-tag">Revisar</span>}</div></div><p>“{comment.text}”</p><div className="comment-card-footer"><span>{formatDate(comment.publishedAt)}</span><a href={comment.personUrl} target="_blank" rel="noreferrer">Ver perfil</a><a href={comment.postUrl} target="_blank" rel="noreferrer">Ver post</a></div></div>
             </article>)}</div> : <div className="filtered-empty"><strong>Nenhum comentário encontrado</strong><span>Remova um filtro ou altere a busca.</span></div>}
+          </section> : activeView === "companies" && session && signalSummary?.projectId && signalCompanies.length > 0 ? <section className="signal-panel analysis-panel">
+            <div className="panel-heading"><div><p className="eyebrow">Empresas</p><h2>{signalCompanies.length} empresas observadas</h2><p>Contas identificadas a partir de pessoas que comentaram posts monitorados.</p></div><span className="signal-tag">Dados reais</span></div>
+            <div className="company-list">{signalCompanies.map((company) => <article className="company-row" key={company.id}><div className="company-avatar"><Building2 size={17} /></div><div className="company-info"><strong>{company.name}</strong><span>{company.sector ?? "Setor não informado"}{company.size ? ` · ${company.size}` : ""}</span>{company.linkedinUrl && <a href={company.linkedinUrl} target="_blank" rel="noreferrer">Ver empresa</a>}</div><div className="company-metric"><strong>{company.comments}</strong><span>comentários</span></div><div className="company-metric"><strong>{company.people}</strong><span>pessoas</span></div></article>)}</div>
+          </section> : activeView === "people" && session && signalSummary?.projectId && signalPeople.length > 0 ? <section className="signal-panel analysis-panel">
+            <div className="comment-toolbar"><div className="comment-filters" role="group" aria-label="Filtrar pessoas"><Button type="button" size="sm" variant={peopleFilter === "all" ? "default" : "outline"} onClick={() => setPeopleFilter("all")}>Todas</Button><Button type="button" size="sm" variant={peopleFilter === "icp" ? "default" : "outline"} onClick={() => setPeopleFilter("icp")}>Dentro do ICP</Button><Button type="button" size="sm" variant={peopleFilter === "without-icp" ? "default" : "outline"} onClick={() => setPeopleFilter("without-icp")}>Fora ou pendentes</Button></div></div>
+            <div className="panel-heading"><div><p className="eyebrow">Pessoas</p><h2>{visiblePeople().length} pessoas observadas</h2><p>Pessoas que demonstraram um sinal público em comentários coletados.</p></div><span className="signal-tag">Dados reais</span></div>
+            <div className="people-list">{visiblePeople().map((person) => <article className="person-row" key={person.id}><div className="comment-avatar">{person.name.slice(0, 1).toUpperCase()}</div><div className="person-info"><strong>{person.name}</strong><span>{person.headline ?? person.role ?? "Perfil público"}</span><small>{person.companyName ?? "Empresa não identificada"}</small><a href={person.linkedinUrl} target="_blank" rel="noreferrer">Ver perfil</a></div><div className="person-signal"><span className={`signal-tag ${person.icp === true ? "" : "signal-tag-muted"}`}>{person.icp === true ? "Dentro do ICP" : person.icp === false ? "Fora do ICP" : "ICP pendente"}</span><strong>{person.comments}</strong><span>comentários</span></div></article>)}</div>
           </section> : <div className="empty-state">
             <div className="empty-icon"><BarChart3 size={24} /></div>
             <h2>{session && signalSummary?.posts ? "Sinais reais disponíveis" : content.title}</h2>

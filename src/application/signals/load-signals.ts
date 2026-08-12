@@ -49,6 +49,29 @@ export type SignalSource = {
   ratio: number
 }
 
+export type SignalCompany = {
+  id: string
+  name: string
+  sector: string | null
+  size: string | null
+  linkedinUrl: string | null
+  people: number
+  comments: number
+}
+
+export type SignalPerson = {
+  id: string
+  name: string
+  headline: string | null
+  role: string | null
+  linkedinUrl: string
+  seniority: string | null
+  icp: boolean | null
+  icpReason: string | null
+  companyName: string | null
+  comments: number
+}
+
 const emptySummary: SignalSummary = {
   projectId: null,
   posts: 0,
@@ -143,6 +166,39 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
       reactions: meta.reacoes ?? 0,
       ratio: meta.razao_comentarios_reacoes ?? 0,
     }
+  })
+}
+
+export async function loadSignalCompanies(projectId: string): Promise<SignalCompany[]> {
+  const [{ data: companies, error: companyError }, { data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
+    supabase.from("empresas").select("id, nome, setor, porte, linkedin_url").eq("projeto_id", projectId).order("nome"),
+    supabase.from("pessoas").select("id, empresa_id").eq("projeto_id", projectId),
+    supabase.from("comentarios").select("pessoa_id").eq("projeto_id", projectId),
+  ])
+  const firstError = [companyError, peopleError, commentsError].find(Boolean)
+  if (firstError) throw new Error(firstError.message)
+  const peopleByCompany = new Map<string, Set<string>>()
+  for (const person of people ?? []) if (person.empresa_id) peopleByCompany.set(person.empresa_id, new Set([...(peopleByCompany.get(person.empresa_id) ?? []), person.id]))
+  const commentsByCompany = new Map<string, number>()
+  const personCompany = new Map((people ?? []).map((person) => [person.id, person.empresa_id]))
+  for (const comment of comments ?? []) {
+    const companyId = personCompany.get(comment.pessoa_id)
+    if (companyId) commentsByCompany.set(companyId, (commentsByCompany.get(companyId) ?? 0) + 1)
+  }
+  return (companies ?? []).map((company) => ({ id: company.id, name: company.nome, sector: company.setor, size: company.porte, linkedinUrl: company.linkedin_url, people: peopleByCompany.get(company.id)?.size ?? 0, comments: commentsByCompany.get(company.id) ?? 0 }))
+}
+
+export async function loadSignalPeople(projectId: string): Promise<SignalPerson[]> {
+  const [{ data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
+    supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, empresa:empresas(nome)").eq("projeto_id", projectId).order("nome"),
+    supabase.from("comentarios").select("pessoa_id").eq("projeto_id", projectId),
+  ])
+  if (peopleError || commentsError) throw new Error(peopleError?.message ?? commentsError?.message ?? "Não foi possível carregar pessoas.")
+  const commentsByPerson = new Map<string, number>()
+  for (const comment of comments ?? []) commentsByPerson.set(comment.pessoa_id, (commentsByPerson.get(comment.pessoa_id) ?? 0) + 1)
+  return (people ?? []).map((person) => {
+    const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
+    return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, comments: commentsByPerson.get(person.id) ?? 0 }
   })
 }
 

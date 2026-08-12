@@ -106,6 +106,23 @@
 .source-monitorada { background: var(--signal-soft); color: var(--signal-brand-dark); }
 .source-candidata { background: #fff7e8; color: #825513; }
 .source-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.analysis-panel { overflow: hidden; }
+.company-list, .people-list { display: grid; }
+.company-row, .person-row { display: grid; align-items: center; gap: 14px; padding: 18px 24px; border-bottom: 1px solid var(--signal-border); }
+.company-row { grid-template-columns: 36px minmax(0, 1fr) auto auto; }
+.company-row:last-child, .person-row:last-child { border-bottom: 0; }
+.company-avatar { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--signal-soft); color: var(--signal-brand); }
+.company-info strong, .company-info span, .company-info a, .person-info strong, .person-info span, .person-info small, .person-info a { display: block; }
+.company-info strong, .person-info strong { font-size: 13px; }
+.company-info span, .person-info span, .person-info small { margin-top: 4px; color: var(--signal-muted); font-size: 11px; }
+.company-info a, .person-info a { margin-top: 6px; color: var(--signal-brand); font-size: 11px; font-weight: 600; text-decoration: none; }
+.company-metric, .person-signal { min-width: 74px; text-align: right; }
+.company-metric strong, .company-metric span, .person-signal strong, .person-signal > span:last-child { display: block; }
+.company-metric strong, .person-signal strong { font-size: 18px; letter-spacing: -.03em; }
+.company-metric span, .person-signal > span:last-child { color: var(--signal-muted); font-size: 10px; }
+.person-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
+.person-signal { display: grid; justify-items: end; gap: 3px; }
+.signal-tag-muted { background: #f2f4f2; color: var(--signal-muted); }
 .post-card-meta, .post-card-footer, .comment-card-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--signal-muted); font-size: 11px; }
 .post-card-meta { justify-content: space-between; }
 .post-card p { margin: 13px 0 16px; color: #33423a; font-size: 13px; line-height: 1.6; }
@@ -186,4 +203,6 @@
   .post-card-footer a { margin-left: 0; }
   .mode-switch { margin-left: 18px; margin-right: 18px; }
   .source-row { grid-template-columns: 1fr; gap: 10px; padding-left: 18px; padding-right: 18px; }
+  .company-row, .person-row { grid-template-columns: 34px minmax(0, 1fr); padding-left: 18px; padding-right: 18px; }
+  .company-metric, .person-signal { grid-column: 2; justify-self: start; text-align: left; }
 }

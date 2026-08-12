@@ -109,10 +109,19 @@
   configuração agora persiste projeto e termo no Supabase antes de permitir
   as ações.
 
+## PR4 — telas de análise
+
+- Tela de Posts alinhada ao protótipo com lista/detalhe e modo `Perfis
+  monitorados`.
+- Tela de Empresas passou a ler `empresas`, pessoas observadas e comentários
+  reais do Supabase, consolidando comentários por conta.
+- Tela de Pessoas passou a ler `pessoas` e comentários reais, com filtros
+  `Todas`, `Dentro do ICP` e `Fora ou pendentes`.
+- Estados vazios continuam sem dados fictícios quando ainda não existe coleta.
+
 ## Próximo gate
 
 Executar uma descoberta autenticada quando o limite do Apify permitir, validar
-as fontes brasileiras candidatas e então implementar `rodar-monitoramento` para
-ler somente fontes aprovadas como `monitorada`. A descoberta e o monitoramento
-já estão separados no backend; falta agora expor as duas ações de forma
-explícita na tela e testar o fluxo com uma fonte brasileira aprovada.
+as fontes brasileiras candidatas e testar o fluxo com uma fonte brasileira
+aprovada. Depois faltam o agendamento semanal, teto de custo, histórico de
+execuções na interface e refinamento final de paridade visual com o HTML.
