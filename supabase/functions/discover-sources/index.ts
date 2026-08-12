@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { profileUsername } from "../_shared/profile-identity.ts"
+import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -88,7 +89,7 @@ Deno.serve(async (request) => {
   const { data: { user }, error: userError } = await userClient.auth.getUser()
   if (userError || !user) return json({ error: "Sessão inválida. Faça login novamente." }, 401)
 
-  let body: { projectId?: string; projeto_id?: string; terms?: string[]; termos?: string[]; janela?: string }
+  let body: { projectId?: string; projeto_id?: string; terms?: string[]; termos?: string[]; janela?: string; teto_execucao_usd?: number }
   try { body = await request.json() } catch { return json({ error: "JSON inválido." }, 400) }
   const projectId = body.projectId ?? body.projeto_id
   const terms = (body.terms ?? body.termos ?? []).map((term) => term.trim()).filter(Boolean)
@@ -104,8 +105,12 @@ Deno.serve(async (request) => {
 
   let costUsd = 0
   try {
-    const result = await apifyRun("harvestapi/linkedin-post-search", { searchQueries: terms, maxPosts: 100, postedLimit: body.janela ?? "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }, apifyToken)
+    const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
+    const searchInput = { searchQueries: terms, maxPosts: 100, postedLimit: body.janela ?? "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }
+    assertCallWithinBudget(budget, "harvestapi/linkedin-post-search", searchInput)
+    const result = await apifyRun("harvestapi/linkedin-post-search", searchInput, apifyToken)
     costUsd = result.costUsd
+    registerActualCost(budget, result.costUsd)
     await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-search", itens: result.items.length, custo_usd: costUsd })
 
     const grouped = new Map<string, { url: string; name: string | null; posts: number; comments: number; reactions: number; discoveredBy: string }>()
@@ -133,8 +138,11 @@ Deno.serve(async (request) => {
       if (existingUrls.has(candidate.url)) continue
       if (!profileCache.has(candidate.url)) {
         const username = profileUsername(candidate.url)
-        const profile = await apifyRun("apimaestro/linkedin-profile-detail", { username, includeEmail: false }, apifyToken)
+        const profileInput = { username, includeEmail: false }
+        assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", profileInput)
+        const profile = await apifyRun("apimaestro/linkedin-profile-detail", profileInput, apifyToken)
         costUsd += profile.costUsd
+        registerActualCost(budget, profile.costUsd)
         await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: 1, custo_usd: profile.costUsd })
         profileCache.set(candidate.url, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
       }
@@ -147,7 +155,8 @@ Deno.serve(async (request) => {
     return json({ executionId: execution.id, status: "concluida", candidatesFound: grouped.size, candidatesInserted: inserted, candidatesRejected: rejected, costUsd })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido na descoberta."
-    await admin.from("execucoes").update({ status: "falhou", custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
-    return json({ error: message, executionId: execution.id }, 502)
+    const abortedByCost = error instanceof CostLimitError
+    await admin.from("execucoes").update({ status: abortedByCost ? "abortada_por_custo" : "falhou", custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    return json({ error: message, executionId: execution.id }, abortedByCost ? 402 : 502)
   }
 })

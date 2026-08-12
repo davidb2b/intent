@@ -55,6 +55,21 @@
   `start-collection` foram republicadas.
 - As três funções continuam protegidas: chamadas sem sessão retornam `401`.
 
+## Fase 5 — controle de custos
+
+- Criado controle compartilhado de custo para as Edge Functions.
+- Teto padrão por execução: US$ 15,00.
+- Teto mensal: US$ 300,00.
+- A próxima chamada é estimada antes de ser enviada ao Apify.
+- Execuções que atingem o limite são gravadas como
+  `abortada_por_custo` e não continuam novas chamadas.
+- O custo real continua sendo registrado por Actor em `custos`.
+- A descoberta e o monitoramento foram republicados com essa proteção.
+- Testes unitários cobrem a estimativa de comentários e o corte do teto por
+  execução.
+- Ainda falta testar o abortamento contra uma execução autenticada real com
+  teto reduzido para US$ 0,50, conforme o checklist do David.
+
 ## Concluído nesta etapa
 
 - Permissão de gerenciamento liberada na organização `B2B Insiders Pro`.

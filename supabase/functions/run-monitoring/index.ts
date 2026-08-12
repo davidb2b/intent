@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -98,7 +99,7 @@ Deno.serve(async (request) => {
   const { data: { user }, error: userError } = await userClient.auth.getUser()
   if (userError || !user) return json({ error: "Sessão inválida. Faça login novamente." }, 401)
 
-  let body: { projectId?: string; projeto_id?: string; janela?: string; origem?: string }
+  let body: { projectId?: string; projeto_id?: string; janela?: string; origem?: string; teto_execucao_usd?: number }
   try { body = await request.json() } catch { return json({ error: "JSON inválido." }, 400) }
   const projectId = body.projectId ?? body.projeto_id
   const janela = body.janela ?? "month"
@@ -119,8 +120,12 @@ Deno.serve(async (request) => {
   let commentsRead = 0
   let peopleNew = 0
   try {
-    const postResult = await apifyRun("harvestapi/linkedin-post-search", { authorUrls: monitoredSources.map((source) => source.linkedin_url), maxPosts: 200, postedLimit: janela, scrapeComments: false, scrapeReactions: false }, apifyToken)
+    const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
+    const postInput = { authorUrls: monitoredSources.map((source) => source.linkedin_url), maxPosts: 200, postedLimit: janela, scrapeComments: false, scrapeReactions: false }
+    assertCallWithinBudget(budget, "harvestapi/linkedin-post-search", postInput)
+    const postResult = await apifyRun("harvestapi/linkedin-post-search", postInput, apifyToken)
     costUsd += postResult.costUsd
+    registerActualCost(budget, postResult.costUsd)
     await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-search", itens: postResult.items.length, custo_usd: postResult.costUsd })
     const sourceByUrl = new Map(monitoredSources.map((source) => [sourceUrl(source.linkedin_url), source.id]))
     const postRows: Array<{ raw: ActorPost; postId: string; linkedinUrl: string }> = []
@@ -139,8 +144,11 @@ Deno.serve(async (request) => {
     for (const { raw, postId, linkedinUrl } of postRows) {
       const commentCount = countValue(raw.engagement?.comments, raw.commentsCount) ?? 0
       if (commentCount === 0) continue
-      const commentsResult = await apifyRun("harvestapi/linkedin-post-comments", { posts: [linkedinUrl], maxItems: 200, postedLimit: janela, scrapeReplies: false, profileScraperMode: "main" }, apifyToken)
+      const commentInput = { posts: [linkedinUrl], maxItems: 200, postedLimit: janela, scrapeReplies: false, profileScraperMode: "main" }
+      assertCallWithinBudget(budget, "harvestapi/linkedin-post-comments", commentInput)
+      const commentsResult = await apifyRun("harvestapi/linkedin-post-comments", commentInput, apifyToken)
       costUsd += commentsResult.costUsd
+      registerActualCost(budget, commentsResult.costUsd)
       await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-comments", itens: commentsResult.items.length, custo_usd: commentsResult.costUsd })
       for (const comment of commentsResult.items as ActorComment[]) {
         const actor = comment.actor
@@ -148,8 +156,11 @@ Deno.serve(async (request) => {
         const actorUrl = sourceUrl(actor.linkedinUrl)
         if (!profileCache.has(actorUrl)) {
           const username = profileUsername(actorUrl)
-          const profile = await apifyRun("apimaestro/linkedin-profile-detail", { username, includeEmail: false }, apifyToken)
+          const profileInput = { username, includeEmail: false }
+          assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", profileInput)
+          const profile = await apifyRun("apimaestro/linkedin-profile-detail", profileInput, apifyToken)
           costUsd += profile.costUsd
+          registerActualCost(budget, profile.costUsd)
           await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: 1, custo_usd: profile.costUsd })
           profileCache.set(actorUrl, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
         }
@@ -167,7 +178,8 @@ Deno.serve(async (request) => {
     return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, peopleNew, costUsd })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido no monitoramento."
-    await admin.from("execucoes").update({ status: "falhou", posts_lidos: postsRead, comentarios_lidos: commentsRead, custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
-    return json({ error: message, executionId: execution.id }, 502)
+    const abortedByCost = error instanceof CostLimitError
+    await admin.from("execucoes").update({ status: abortedByCost ? "abortada_por_custo" : "falhou", posts_lidos: postsRead, comentarios_lidos: commentsRead, custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    return json({ error: message, executionId: execution.id }, abortedByCost ? 402 : 502)
   }
 })
