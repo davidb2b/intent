@@ -16,6 +16,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { startCollection } from "@/application/collection/start-collection"
+import { loadSignalSummary, type SignalSummary } from "@/application/signals/load-signals"
 import { supabase } from "@/infrastructure/supabase/client"
 import "./App.css"
 
@@ -90,6 +91,8 @@ function App() {
   const [authPasswordVisible, setAuthPasswordVisible] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState("")
+  const [signalSummary, setSignalSummary] = useState<SignalSummary | null>(null)
+  const [summaryError, setSummaryError] = useState("")
 
   const content = viewCopy[activeView]
 
@@ -113,6 +116,20 @@ function App() {
       window.removeEventListener("popstate", onPopState)
     }
   }, [])
+
+  useEffect(() => {
+    if (!session) {
+      setSignalSummary(null)
+      setSummaryError("")
+      return
+    }
+    let active = true
+    setSummaryError("")
+    void loadSignalSummary(session.userId)
+      .then((summary) => { if (active) setSignalSummary(summary) })
+      .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
+    return () => { active = false }
+  }, [session])
 
   function navigate(view: View) {
     setActiveView(view)
@@ -237,10 +254,17 @@ function App() {
         {collectionMessage && <p aria-live="polite" className={`collection-message collection-message-${collectionState}`}>{collectionMessage}</p>}
 
         <section className="content-area">
+          {summaryError && <p aria-live="polite" className="collection-message collection-message-error">{summaryError}</p>}
+          {session && signalSummary?.projectId && <div className="signal-metrics" aria-label="Resumo dos sinais coletados">
+            <div><span>Posts</span><strong>{signalSummary.posts}</strong></div>
+            <div><span>Comentários</span><strong>{signalSummary.comments}</strong></div>
+            <div><span>Pessoas</span><strong>{signalSummary.people}</strong></div>
+            <div><span>Empresas</span><strong>{signalSummary.companies}</strong></div>
+          </div>}
           <div className="empty-state">
             <div className="empty-icon"><BarChart3 size={24} /></div>
-            <h2>{content.title}</h2>
-            <p>{content.description}</p>
+            <h2>{session && signalSummary?.posts ? "Sinais reais disponíveis" : content.title}</h2>
+            <p>{session && signalSummary?.posts ? "Os resultados persistidos no Supabase aparecerão nas áreas de Posts, Comments, Companies e People." : content.description}</p>
             {activeView === "overview" && (
               <Button className="empty-action" onClick={() => setSettingsOpen(true)}>
                 <Settings2 size={16} /> Configurar primeira pesquisa
