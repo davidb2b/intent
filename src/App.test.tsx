@@ -23,7 +23,7 @@ describe("Signal Lab foundation", () => {
     expect(screen.getByText("Nenhum post disponível")).toBeInTheDocument()
   })
 
-  it("requires a keyword before enabling the real collection action", () => {
+  it("requires both a keyword and an authenticated session before collecting", () => {
     render(<App />)
 
     expect(screen.getByRole("button", { name: /Atualizar agora/ })).toBeDisabled()
@@ -35,6 +35,7 @@ describe("Signal Lab foundation", () => {
     fireEvent.click(screen.getByRole("button", { name: /Salvar configuração/ }))
 
     expect(screen.getAllByText("cost breakdown").length).toBe(2)
-    expect(screen.getAllByRole("button", { name: /Atualizar agora/ })[0]).toBeEnabled()
+    expect(screen.getAllByRole("button", { name: /Atualizar agora/ })[0]).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Entrar" })).toBeInTheDocument()
   })
 })
