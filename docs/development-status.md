@@ -82,6 +82,11 @@
   tratar a resposta como zero perfis.
 - O payload de localização do Actor de perfil foi corrigido para ler
   `basic_info.location.country_code` e `basic_info.location.country`.
+- Edge Function `discover-sources` publicada com o contrato separado de
+  descoberta: busca posts sem comentários/reactions, agrupa autores, calcula
+  a razão comentários/reactions e grava somente perfis brasileiros novos em
+  `fontes` como `candidata`. Fontes já existentes, inclusive descartadas, não
+  são recriadas.
 
 ## PR3 — curadoria manual
 
@@ -95,6 +100,7 @@
 
 ## Próximo gate
 
-Executar uma coleta autenticada com uma palavra-chave real. Depois devemos
-confirmar posts, comentários, execução e custo no banco, e então seguir para a
-separação formal entre descoberta e monitoramento do PR2.
+Executar uma descoberta autenticada quando o limite do Apify permitir, validar
+as fontes brasileiras candidatas e então implementar `rodar-monitoramento` para
+ler somente fontes aprovadas como `monitorada`. A descoberta já está separada;
+posts e comentários continuam fora dela.
