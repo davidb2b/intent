@@ -87,6 +87,14 @@
 - O payload de localização do Actor de perfil foi corrigido para ler
   `basic_info.location.country_code` e `basic_info.location.country`.
 
+## PR3 — curadoria manual
+
+- Tela de Posts agora permite aprovar ou descartar cada post.
+- A decisão é persistida diretamente no Supabase com RLS do proprietário.
+- O status de curadoria fica visível e é atualizado sem dados mockados.
+- A análise automática continua apenas como sugestão; a decisão humana é a
+  que controla o status do post.
+
 ## Próximo gate
 
 Executar uma coleta autenticada com uma palavra-chave real. Depois devemos

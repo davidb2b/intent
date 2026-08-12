@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { startCollection } from "@/application/collection/start-collection"
 import { classifyComments } from "@/application/classification/classify-comments"
 import { analyzePosts } from "@/application/classification/analyze-posts"
+import { updatePostCuration, type CurationStatus } from "@/application/curation/update-post-curation"
 import { loadSignalComments, loadSignalPosts, loadSignalSummary, type SignalComment, type SignalPost, type SignalSummary } from "@/application/signals/load-signals"
 import { supabase } from "@/infrastructure/supabase/client"
 import "./App.css"
@@ -285,6 +286,18 @@ function App() {
     } finally { setPostAnalysisBusy(false) }
   }
 
+  async function handleCuration(postId: string, status: CurationStatus) {
+    try {
+      await updatePostCuration(postId, status)
+      setSignalPosts((posts) => posts.map((post) => post.id === postId ? { ...post, curationStatus: status } : post))
+      setCollectionState("success")
+      setCollectionMessage(status === "aprovado" ? "Post aprovado para monitoramento." : "Post descartado da curadoria.")
+    } catch (error) {
+      setCollectionState("error")
+      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível salvar a decisão do post.")
+    }
+  }
+
   return (
     <div className="signal-shell">
       <aside className="signal-sidebar">
@@ -376,7 +389,7 @@ function App() {
                 <div className="post-card-meta"><span>{post.authorName ?? "Autor não identificado"}</span><span>{formatDate(post.publishedAt)}</span></div>
                 <p>{shorten(post.text, 240)}</p>
                 {post.analysis.topic && <div className="post-analysis"><div><strong>Tópico</strong><span>{post.analysis.topic}</span></div><div><strong>Problema</strong><span>{post.analysis.problem}</span></div><div><strong>Por que faz sentido</strong><span>{post.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{post.analysis.collection}</span></div></div>}
-                <div className="post-card-footer"><span>{post.reactions ?? 0} reações</span><span>{post.comments ?? 0} comentários</span><span>{post.shares ?? 0} compartilhamentos</span><a href={post.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
+                <div className="post-card-footer"><span>{post.reactions ?? 0} reações</span><span>{post.comments ?? 0} comentários</span><span>{post.shares ?? 0} compartilhamentos</span><span className={`curation-status curation-${post.curationStatus}`}>{post.curationStatus}</span><Button type="button" size="sm" variant={post.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(post.id, "aprovado")}>Aprovar</Button><Button type="button" size="sm" variant={post.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(post.id, "descartado")}>Descartar</Button><a href={post.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
               </article>)}</div>
             </section>
           </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">

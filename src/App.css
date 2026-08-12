@@ -86,6 +86,9 @@
 .post-analysis span { color: #33423a; font-size: 12px; line-height: 1.5; }
 .post-card-footer a, .comment-card-footer a { color: var(--signal-brand); font-weight: 600; text-decoration: none; }
 .post-card-footer a { margin-left: auto; }
+.curation-status { border-radius: 999px; padding: 4px 8px; background: #f2f4f2; color: var(--signal-muted); font-size: 10px; text-transform: capitalize; }
+.curation-aprovado { background: var(--signal-soft); color: var(--signal-brand-dark); }
+.curation-descartado { background: #fff0f0; color: #8d3d3d; }
 .comment-card { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 13px; padding: 20px 24px; border-bottom: 1px solid var(--signal-border); }
 .comment-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--signal-soft); color: var(--signal-brand-dark); font-weight: 700; }
 .comment-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
