@@ -16,14 +16,15 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { discoverSources } from "@/application/collection/discover-sources"
-import { runMonitoring } from "@/application/collection/run-monitoring"
-import { classifyComments } from "@/application/classification/classify-comments"
-import { analyzePosts } from "@/application/classification/analyze-posts"
-import { updatePostCuration, type CurationStatus } from "@/application/curation/update-post-curation"
-import { loadSignalComments, loadSignalCompanies, loadSignalPeople, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalCompany, type SignalPerson, type SignalPost, type SignalSource, type SignalSummary } from "@/application/signals/load-signals"
-import { updateSourceStatus } from "@/application/sources/update-source-status"
-import { supabase } from "@/infrastructure/supabase/client"
+import { discoverSources } from "@/features/collection/services/discover-sources"
+import { runMonitoring } from "@/features/collection/services/run-monitoring"
+import { updateSourceStatus } from "@/features/collection/services/update-source-status"
+import { classifyComments } from "@/features/classification/services/classify-comments"
+import { analyzePosts } from "@/features/classification/services/analyze-posts"
+import { updatePostCuration, type CurationStatus } from "@/features/posts/services/update-post-curation"
+import { loadSignalComments, loadSignalCompanies, loadSignalPeople, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalCompany, type SignalPerson, type SignalPost, type SignalSource, type SignalSummary } from "@/features/analytics/services/load-signals"
+import { authService } from "@/features/auth/services/auth-service"
+import { saveResearch } from "@/features/research/services/save-research"
 import "./App.css"
 
 type View = "overview" | "posts" | "comments" | "companies" | "people"
@@ -131,8 +132,8 @@ function App() {
     const updateSession = (nextSession: { user?: { id: string; email?: string } } | null) => {
       setSession(nextSession?.user?.email ? { email: nextSession.user.email, userId: nextSession.user.id } : null)
     }
-    void supabase.auth.getSession().then(({ data }) => updateSession(data.session))
-    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+    void authService.getSession().then(({ data }) => updateSession(data.session))
+    const { data: listener } = authService.onAuthStateChange((event, nextSession) => {
       updateSession(nextSession)
       if (event === "PASSWORD_RECOVERY") {
         setAuthMode("update-password")
@@ -246,12 +247,12 @@ function App() {
     setAuthBusy(true)
     setAuthError("")
     const result = authMode === "signin"
-      ? await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword })
+      ? await authService.signInWithPassword(authEmail, authPassword)
       : authMode === "signup"
-        ? await supabase.auth.signUp({ email: authEmail, password: authPassword })
+        ? await authService.signUp(authEmail, authPassword)
         : authMode === "recovery"
-          ? await supabase.auth.resetPasswordForEmail(authEmail, { redirectTo: `${window.location.origin}/reset-password` })
-          : await supabase.auth.updateUser({ password: authPassword })
+          ? await authService.resetPasswordForEmail(authEmail, `${window.location.origin}/reset-password`)
+          : await authService.updatePassword(authPassword)
     setAuthBusy(false)
     if (result.error) { setAuthError(result.error.message); return }
     setAuthOpen(false)
@@ -264,11 +265,8 @@ function App() {
     setCollectionState("running")
     setCollectionMessage("Salvando configuração da pesquisa…")
     try {
-      const { data: project, error: projectError } = await supabase.from("projetos").upsert({ owner_id: session.userId, nome: "Signal Lab", categoria: keyword.trim() }, { onConflict: "owner_id" }).select("id").single()
-      if (projectError || !project) throw new Error(projectError?.message ?? "Não foi possível salvar o projeto.")
-      const { error: termError } = await supabase.from("termos").upsert({ projeto_id: project.id, termo: keyword.trim(), contexto_positivo: positiveContext.trim() || null, contexto_negativo: negativeContext.trim() || null, ativo: true }, { onConflict: "projeto_id,termo" })
-      if (termError) throw new Error(termError.message)
-      setSignalSummary((summary) => summary ? { ...summary, projectId: project.id, keyword: keyword.trim(), positiveContext: positiveContext.trim() || null, negativeContext: negativeContext.trim() || null } : { projectId: project.id, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: keyword.trim(), positiveContext: positiveContext.trim() || null, negativeContext: negativeContext.trim() || null })
+      const saved = await saveResearch({ ownerId: session.userId, keyword, positiveContext, negativeContext })
+      setSignalSummary((summary) => summary ? { ...summary, projectId: saved.projectId, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext } : { projectId: saved.projectId, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext })
       setSettingsOpen(false)
       setCollectionState("success")
       setCollectionMessage("Configuração salva. Escolha descobrir fontes ou atualizar o monitoramento.")
@@ -279,7 +277,7 @@ function App() {
   }
 
   async function handleLogout() {
-    const { error } = await supabase.auth.signOut()
+    const { error } = await authService.signOut()
     if (error) setCollectionMessage(error.message)
     else setCollectionMessage("Sessão encerrada.")
   }

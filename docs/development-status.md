@@ -30,6 +30,10 @@
   `projetos`. A spec publicada não declara essa coluna, mas o RLS atual e o
   login usam esse vínculo. A migration não será alterada sem resolver essa
   divergência.
+- A aplicação foi reorganizada por domínio em `src/features`, com auth,
+  research, collection, classification, posts e analytics separados.
+- A UI não importa mais o client do Supabase diretamente; autenticação e
+  persistência da pesquisa usam services próprios.
 
 ## Concluído nesta etapa
 
