@@ -18,6 +18,14 @@ type SearchPost = {
   engagement?: { comments?: number; reactions?: number | unknown[]; shares?: number }
 }
 
+type ProfileDetails = {
+  location?: unknown
+  geoLocation?: unknown
+  address?: unknown
+  country?: string
+  countryCode?: string
+}
+
 type CommentItem = {
   id?: string
   postId?: string
@@ -47,6 +55,22 @@ function dateValue(value: string | { date?: string } | undefined) {
 
 function countValue(value: number | unknown[] | undefined) {
   return Array.isArray(value) ? value.length : value ?? null
+}
+
+function normalized(value: unknown) {
+  return typeof value === "string" ? value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : ""
+}
+
+function isBrazilianProfile(profile: ProfileDetails | undefined) {
+  if (!profile) return false
+  const locations = [profile.location, profile.geoLocation, profile.address, profile.country, profile.countryCode]
+  const values = locations.flatMap((value) => {
+    if (typeof value === "string") return [normalized(value)]
+    if (!value || typeof value !== "object") return []
+    const item = value as Record<string, unknown>
+    return [item.countryCode, item.country, item.countryFull, item.name].map(normalized)
+  })
+  return values.some((value) => value === "br" || value === "brazil" || value === "brasil" || value.endsWith(", brazil") || value.endsWith(", brasil"))
 }
 
 async function apifyRun(actorId: string, input: Record<string, unknown>, token: string): Promise<{ items: unknown[]; costUsd: number }> {
@@ -106,6 +130,20 @@ Deno.serve(async (request) => {
 
   let costUsd = 0
   let postsRead = 0
+  const brazilProfileCache = new Map<string, boolean>()
+
+  async function isBrazilian(linkedinUrl: string) {
+    const username = linkedinUrl.split("/in/")[1]?.split(/[/?#]/)[0] ?? linkedinUrl
+    const cached = brazilProfileCache.get(username)
+    if (cached !== undefined) return cached
+    const profile = await apifyRun("apimaestro/linkedin-profile-detail", { username, includeEmail: false }, apifyToken)
+    costUsd += profile.costUsd
+    const details = profile.items[0] as ProfileDetails | undefined
+    const result = isBrazilianProfile(details)
+    brazilProfileCache.set(username, result)
+    return result
+  }
+
   try {
     const search = await apifyRun("harvestapi/linkedin-post-search", { searchQueries: [keyword], maxPosts: MAX_POSTS_PER_COLLECTION, postedLimit: "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }, apifyToken)
     costUsd += search.costUsd
@@ -114,6 +152,7 @@ Deno.serve(async (request) => {
     for (const raw of search.items as SearchPost[]) {
       if (!raw.id || !raw.linkedinUrl) continue
       const author = raw.author ?? raw.actor
+      if (!author?.linkedinUrl || !(await isBrazilian(author.linkedinUrl))) continue
       const { data: post, error: postError } = await admin.from("posts").upsert({ projeto_id: project.id, linkedin_url: raw.linkedinUrl, post_urn: raw.id, autor_nome: author?.name ?? null, autor_url: author?.linkedinUrl ?? null, texto: raw.text ?? raw.content ?? raw.commentary ?? null, publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null, total_reacoes: countValue(raw.engagement?.reactions), total_comentarios: raw.engagement?.comments ?? null, total_shares: raw.engagement?.shares ?? null }, { onConflict: "projeto_id,post_urn" }).select("id").single()
       if (postError || !post) throw new Error(`Não foi possível persistir o post ${raw.id}: ${postError?.message ?? "registro ausente"}`)
       postsRead += 1
@@ -123,6 +162,7 @@ Deno.serve(async (request) => {
       await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-comments", itens: comments.items.length, custo_usd: comments.costUsd })
       for (const comment of comments.items as CommentItem[]) {
         if (!comment.id || !comment.actor?.linkedinUrl || !comment.commentary) continue
+        if (!(await isBrazilian(comment.actor.linkedinUrl))) continue
         const { data: person } = await admin.from("pessoas").upsert({ projeto_id: project.id, linkedin_url: comment.actor.linkedinUrl, slug: comment.actor.linkedinUrl.split("/").filter(Boolean).pop() ?? comment.actor.id ?? comment.id, nome: comment.actor.name ?? "Perfil sem nome", headline: comment.actor.headline ?? comment.actor.position ?? null, cargo: comment.actor.experience?.[0]?.position ?? null }, { onConflict: "projeto_id,slug" }).select("id").single()
         if (!person) continue
         await admin.from("comentarios").upsert({ projeto_id: project.id, post_id: post.id, pessoa_id: person.id, comentario_urn: comment.id, texto: comment.commentary, publicado_em: comment.createdAt ?? null }, { onConflict: "projeto_id,comentario_urn" })

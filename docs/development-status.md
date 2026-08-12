@@ -40,6 +40,10 @@
   comentários e custo de `$0.012`.
 - O contrato do Actor foi normalizado para `author`, `content` e
   `postedAt.date`, evitando falhas silenciosas de persistência.
+- A coleta passa a aceitar somente autores e comentaristas com localização
+  brasileira confirmada pelo Actor `apimaestro/linkedin-profile-detail`.
+  Perfis fora do Brasil ou sem localização confirmada são descartados antes
+  da persistência.
 
 ## Próximo gate
 
