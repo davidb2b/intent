@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "../_shared/monitoring-posts.ts"
+import { normalizeCompanyKey, personPersistencePayload } from "../_shared/person-enrichment.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -185,8 +186,31 @@ Deno.serve(async (request) => {
         }
         if (!profileCache.get(actorUrl)) continue
         const slug = normalizeProfileSlug(actorUrl)
-        const { data: existingPerson } = await admin.from("pessoas").select("id").eq("projeto_id", projectId).eq("slug", slug).maybeSingle()
-        const { data: person } = await admin.from("pessoas").upsert({ projeto_id: projectId, linkedin_url: actorUrl, slug, nome: actor.name ?? "Perfil sem nome", headline: actor.headline ?? actor.position ?? null, cargo: actor.experience?.[0]?.position ?? null }, { onConflict: "projeto_id,slug" }).select("id").single()
+        const companyName = actor.experience?.[0]?.companyName?.trim() || null
+        let companyId: string | null = null
+        if (companyName) {
+          const companyKey = normalizeCompanyKey(companyName)
+          if (companyKey) {
+            const { data: company, error: companyError } = await admin.from("empresas").upsert({ projeto_id: projectId, nome: companyName, nome_chave: companyKey }, { onConflict: "projeto_id,nome_chave" }).select("id").single()
+            if (companyError || !company) throw new Error(`Não foi possível persistir a empresa ${companyName}: ${companyError?.message ?? "registro ausente"}`)
+            companyId = company.id
+          }
+        }
+        const { data: existingPerson } = await admin.from("pessoas").select("id, revisado_por_humano").eq("projeto_id", projectId).eq("slug", slug).maybeSingle()
+        const personPayload = personPersistencePayload({
+          linkedinUrl: actorUrl,
+          slug,
+          name: actor.name ?? "Perfil sem nome",
+          headline: actor.headline ?? actor.position ?? null,
+          cargo: actor.experience?.[0]?.position ?? null,
+          companyId,
+          companyName,
+          reviewedByHuman: existingPerson?.revisado_por_humano === true,
+        })
+        const { data: person, error: personError } = existingPerson
+          ? await admin.from("pessoas").update(personPayload).eq("id", existingPerson.id).select("id").single()
+          : await admin.from("pessoas").insert({ projeto_id: projectId, ...personPayload }).select("id").single()
+        if (personError) throw new Error(`Não foi possível persistir a pessoa ${slug}: ${personError.message}`)
         if (!person) continue
         if (!existingPerson) peopleNew += 1
         const { error } = await admin.from("comentarios").upsert({ projeto_id: projectId, post_id: postId, pessoa_id: person.id, comentario_urn: comment.id, texto: comment.commentary, publicado_em: comment.createdAt ?? null }, { onConflict: "projeto_id,comentario_urn" })
