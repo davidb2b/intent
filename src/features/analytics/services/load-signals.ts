@@ -53,6 +53,7 @@ export type SignalComment = {
   tone: string | null
   personName: string
   personHeadline: string | null
+  companyName: string | null
   personUrl: string
   postUrl: string
   confidence: number | null
@@ -264,7 +265,7 @@ export async function loadSignalPeople(projectId: string): Promise<SignalPerson[
 export async function loadSignalComments(projectId: string): Promise<SignalComment[]> {
   const { data, error } = await supabase
     .from("comentarios")
-    .select("id, texto, publicado_em, teor, teor_confianca, pessoa:pessoas!inner(nome, headline, linkedin_url), post:posts!inner(linkedin_url)")
+    .select("id, texto, publicado_em, teor, teor_confianca, pessoa:pessoas!inner(nome, headline, linkedin_url, empresa:empresas(nome)), post:posts!inner(linkedin_url)")
     .eq("projeto_id", projectId)
     .order("coletado_em", { ascending: false })
     .limit(100)
@@ -273,6 +274,7 @@ export async function loadSignalComments(projectId: string): Promise<SignalComme
   return (data ?? []).map((comment) => {
     const person = Array.isArray(comment.pessoa) ? comment.pessoa[0] : comment.pessoa
     const post = Array.isArray(comment.post) ? comment.post[0] : comment.post
+    const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
     return {
       id: comment.id,
       text: comment.texto,
@@ -280,6 +282,7 @@ export async function loadSignalComments(projectId: string): Promise<SignalComme
       tone: comment.teor,
       personName: person.nome,
       personHeadline: person.headline,
+      companyName: company?.nome ?? null,
       personUrl: person.linkedin_url,
       postUrl: post.linkedin_url,
       confidence: comment.teor_confianca,

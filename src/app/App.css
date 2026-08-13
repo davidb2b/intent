@@ -131,7 +131,38 @@
 .source-candidata { background: #fff7e8; color: #825513; }
 .source-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .analysis-panel { overflow: hidden; }
+.table-wrap { overflow-x: auto; }
+.table-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.table-wrap th { border-bottom: 1px solid var(--signal-border); color: var(--signal-muted); padding: 10px 14px; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-align: left; text-transform: uppercase; }
+.table-wrap td { border-bottom: 1px solid var(--signal-border); padding: 13px 14px; vertical-align: top; }
+.table-wrap tbody tr:last-child td { border-bottom: 0; }
+.table-wrap td strong, .table-wrap td small, .table-wrap td a { display: block; }
+.table-wrap td strong { font-size: 12px; }
+.table-wrap td small { margin-top: 4px; color: var(--signal-muted); font-size: 10px; }
+.table-wrap td a, .company-heading a { margin-top: 6px; color: var(--signal-brand); font-size: 11px; font-weight: 600; text-decoration: none; }
+.table-wrap td .signal-tag + .review-tag { margin: 6px 0 0; }
+.table-comment { min-width: 260px; max-width: 460px; color: #33423a; line-height: 1.5; }
+.company-layout { display: grid; grid-template-columns: minmax(250px, .78fr) minmax(0, 1.22fr); align-items: start; gap: 16px; }
+.company-results-panel { overflow: visible; }
+.company-results-panel .panel-heading { border-bottom: 0; padding-bottom: 14px; }
 .company-list, .people-list { display: grid; }
+.company-list { gap: 8px; padding: 0 18px 18px; }
+.company-card { display: grid; width: 100%; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid var(--signal-border); border-radius: 11px; background: var(--signal-surface); cursor: pointer; padding: 12px; text-align: left; }
+.company-card:hover { border-color: #b8c9bf; background: #fbfdfc; }
+.company-card.is-selected { border-color: var(--signal-brand); background: var(--signal-soft); }
+.company-detail-panel { padding: 18px; }
+.company-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--signal-border); padding-bottom: 15px; }
+.company-heading h2 { margin: 0 0 5px; font-size: 19px; letter-spacing: -.03em; }
+.company-heading p { margin: 0; color: var(--signal-muted); font-size: 12px; line-height: 1.5; }
+.summary-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 14px 0; border: 1px solid var(--signal-border); border-radius: 10px; background: var(--signal-border); }
+.summary-strip div { background: var(--signal-surface-soft); padding: 11px; }
+.summary-strip strong, .summary-strip span { display: block; }
+.summary-strip strong { font-size: 17px; }
+.summary-strip span { margin-top: 2px; color: var(--signal-muted); font-size: 10px; line-height: 1.35; }
+.people-section { padding-top: 14px; }
+.section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.section-heading h3 { margin: 0; font-size: 13px; }
+.section-heading p { margin: 3px 0 0; color: var(--signal-muted); font-size: 11px; }
 .company-row, .person-row { display: grid; align-items: center; gap: 14px; padding: 18px 24px; border-bottom: 1px solid var(--signal-border); }
 .company-row { grid-template-columns: 36px minmax(0, 1fr) auto auto; }
 .company-row:last-child, .person-row:last-child { border-bottom: 0; }
@@ -227,6 +258,9 @@
   .panel-heading-actions { align-items: flex-start; flex-direction: column; }
   .post-card-footer a { margin-left: 0; }
   .source-row { grid-template-columns: 1fr; gap: 10px; padding-left: 18px; padding-right: 18px; }
+  .company-layout { grid-template-columns: 1fr; }
+  .company-detail-panel { padding: 18px; }
+  .summary-strip { grid-template-columns: 1fr; }
   .company-row, .person-row { grid-template-columns: 34px minmax(0, 1fr); padding-left: 18px; padding-right: 18px; }
   .company-metric, .person-signal { grid-column: 2; justify-self: start; text-align: left; }
   .execution-row { grid-template-columns: 1fr auto; padding-left: 18px; padding-right: 18px; }
