@@ -98,7 +98,7 @@
 .comment-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px 0; }
 .comment-filters { display: flex; flex-wrap: wrap; gap: 6px; }
 .comment-toolbar input { width: min(100%, 280px); }
-.post-review-layout { display: grid; grid-template-columns: minmax(250px, .78fr) minmax(0, 1.22fr); gap: 16px; padding: 18px; }
+.post-review-layout { display: grid; grid-template-columns: minmax(250px, .78fr) minmax(0, 1.22fr); align-items: start; gap: 16px; padding: 18px; }
 .post-results-list, .comments-list { display: grid; gap: 0; }
 .post-results-list { align-content: start; border: 1px solid var(--signal-border); border-radius: 12px; overflow: hidden; }
 .post-card { padding: 16px; border-bottom: 1px solid var(--signal-border); cursor: pointer; outline: none; transition: background .15s, border-color .15s; }
@@ -106,7 +106,7 @@
 .post-card:hover, .post-card:focus-visible { background: #f6faf7; }
 .post-card.is-selected { background: var(--signal-soft); border-left: 3px solid var(--signal-brand); padding-left: 13px; }
 .post-card p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
-.post-detail-panel { min-width: 0; border: 1px solid var(--signal-border); border-radius: 12px; background: var(--signal-surface); padding: 20px; }
+.post-detail-panel { position: sticky; top: 16px; min-width: 0; max-height: calc(100vh - 32px); overflow-y: auto; border: 1px solid var(--signal-border); border-radius: 12px; background: var(--signal-surface); padding: 20px; }
 .post-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .post-detail-header h3 { margin: 0; font-size: 17px; letter-spacing: -.025em; }
 .post-detail-header > div > span { display: block; margin-top: 5px; color: var(--signal-muted); font-size: 11px; }
@@ -217,6 +217,7 @@
 @media (max-width: 780px) {
   .signal-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .post-review-layout { grid-template-columns: 1fr; padding: 12px; }
+  .post-detail-panel { position: static; max-height: none; }
   .panel-heading, .post-card, .comment-card { padding-left: 18px; padding-right: 18px; }
   .comment-toolbar { align-items: stretch; flex-direction: column; padding-left: 18px; padding-right: 18px; }
   .comment-toolbar input { width: 100%; }
