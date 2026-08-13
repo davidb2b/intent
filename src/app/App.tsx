@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { discoverSources } from "@/features/collection/services/discover-sources"
 import { discoveryFeedback } from "@/features/collection/lib/discovery-feedback"
+import { recommendedSourceIds } from "@/features/collection/lib/recommended-sources"
 import { runMonitoring } from "@/features/collection/services/run-monitoring"
 import { updateSourceStatus } from "@/features/collection/services/update-source-status"
 import { classifyComments } from "@/features/classification/services/classify-comments"
@@ -287,10 +288,8 @@ function App() {
   }
 
   function recommendedSources() {
-    return signalSources
-      .filter((source) => source.status === "candidata")
-      .sort((first, second) => second.ratio - first.ratio || second.comments - first.comments || second.posts - first.posts)
-      .slice(0, 3)
+    const ids = new Set(recommendedSourceIds(signalSources))
+    return signalSources.filter((source) => ids.has(source.id))
   }
 
   function toggleSourceSelection(sourceId: string) {
