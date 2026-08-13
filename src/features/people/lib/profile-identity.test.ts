@@ -31,7 +31,7 @@ describe("profile identity", () => {
   it("verifies profile URLs in one bounded batch", () => {
     expect(buildBrazilProfileBatchInput(Array.from({ length: 30 }, (_, index) => `https://www.linkedin.com/in/pessoa-${index}`))).toMatchObject({
       profileScraperMode: "Profile details no email ($4 per 1k)",
-      queries: Array.from({ length: 25 }, (_, index) => `https://www.linkedin.com/in/pessoa-${index}`),
+      queries: Array.from({ length: 12 }, (_, index) => `https://www.linkedin.com/in/pessoa-${index}`),
     })
   })
 

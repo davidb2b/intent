@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { canonicalProfileUrl, normalizeProfileSlug } from "../_shared/profile-identity.ts"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
-import { brazilRelevanceScore, buildBrazilFirstQueries, buildBrazilProfileSearchInput, isLinkedInPersonProfileUrl } from "../_shared/brazil-first-discovery.ts"
+import { brazilRelevanceScore, buildBrazilFirstQueries, isLinkedInPersonProfileUrl } from "../_shared/brazil-first-discovery.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 import { isStaleExecution } from "../_shared/execution-lock.ts"
@@ -28,15 +28,6 @@ type ProfileDetails = {
   country?: string
   countryCode?: string
   basic_info?: { location?: { country?: string; country_code?: string; full?: string } }
-}
-
-type ProfileSearchItem = {
-  linkedinUrl?: string
-  linkedin_url?: string
-  url?: string
-  profileUrl?: string
-  name?: string
-  fullName?: string
 }
 
 function json(body: unknown, status = 200) {
@@ -74,11 +65,6 @@ function metric(value: number | unknown[] | undefined, fallback?: number) {
   return Array.isArray(value) ? value.length : value ?? fallback ?? 0
 }
 
-function profileSearchUrl(profile: ProfileSearchItem) {
-  const value = profile.linkedinUrl ?? profile.linkedin_url ?? profile.profileUrl ?? profile.url ?? null
-  return isLinkedInPersonProfileUrl(value) ? canonicalProfileUrl(value!) : null
-}
-
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405)
@@ -114,7 +100,7 @@ Deno.serve(async (request) => {
   try {
     const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
     const searchQueries = buildBrazilFirstQueries(terms)
-    const searchInput = { searchQueries, maxPosts: 100, postedLimit: body.janela ?? "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }
+    const searchInput = { searchQueries, maxPosts: 50, postedLimit: body.janela ?? "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }
     assertCallWithinBudget(budget, "harvestapi/linkedin-post-search", searchInput)
     const result = await apifyRun("harvestapi/linkedin-post-search", searchInput, apifyToken)
     costUsd = result.costUsd
@@ -151,7 +137,6 @@ Deno.serve(async (request) => {
     let inserted = 0
     let rejected = 0
     let unverified = 0
-    let fallbackUsed = false
     const discoveryWarnings: string[] = []
     if (batchCandidates.length > 0) {
       const profileInput = buildBrazilProfileBatchInput(batchCandidates.map((candidate) => candidate.url))
@@ -186,51 +171,6 @@ Deno.serve(async (request) => {
       if (!error) inserted += 1
     }
     
-    // Post search can correctly find an English topic while returning only
-    // foreign authors. In that case, ask a location-aware actor for Brazilian
-    // people related to the same term and validate every profile again.
-    if (inserted === 0) {
-      const fallbackInput = buildBrazilProfileSearchInput(terms)
-      if (fallbackInput) {
-        fallbackUsed = true
-        assertCallWithinBudget(budget, "harvestapi/linkedin-profile-search", fallbackInput)
-        const fallbackResult = await apifyRun("harvestapi/linkedin-profile-search", fallbackInput, apifyToken)
-        costUsd += fallbackResult.costUsd
-        registerActualCost(budget, fallbackResult.costUsd)
-        await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-search", itens: fallbackResult.items.length, custo_usd: fallbackResult.costUsd })
-
-        const fallbackProfiles = (fallbackResult.items as ProfileSearchItem[])
-          .map((profile) => ({ url: profileSearchUrl(profile), name: profile.name ?? profile.fullName ?? null }))
-          .filter((profile): profile is { url: string; name: string | null } => Boolean(profile.url))
-          .filter((profile, index, profiles) => profiles.findIndex((candidate) => candidate.url === profile.url) === index)
-          .filter((profile) => !existingUrls.has(profile.url))
-          .slice(0, MAX_PROFILES_PER_DISCOVERY)
-
-        if (fallbackProfiles.length > 0) {
-          const verificationInput = buildBrazilProfileBatchInput(fallbackProfiles.map((profile) => profile.url))
-          try {
-            assertCallWithinBudget(budget, "harvestapi/linkedin-profile-scraper", verificationInput)
-            const verifiedProfiles = await apifyRun("harvestapi/linkedin-profile-scraper", verificationInput, apifyToken)
-            costUsd += verifiedProfiles.costUsd
-            registerActualCost(budget, verifiedProfiles.costUsd)
-            await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-scraper", itens: verifiedProfiles.items.length, custo_usd: verifiedProfiles.costUsd })
-            const brazilianSlugs = requestedProfileSlugs(fallbackProfiles.map((profile) => profile.url), (verifiedProfiles.items as ProfileDetails[]).filter(isBrazilianProfile))
-            const returnedSlugs = requestedProfileSlugs(fallbackProfiles.map((profile) => profile.url), verifiedProfiles.items as ProfileDetails[])
-            for (const profile of fallbackProfiles) {
-              const slug = normalizeProfileSlug(profile.url)
-              if (!returnedSlugs.has(slug)) { unverified += 1; continue }
-              if (!brazilianSlugs.has(slug)) { rejected += 1; continue }
-              const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: profile.url, nome: profile.name, meta: JSON.stringify({ posts: 0, comentarios: 0, reacoes: 0, razao_comentarios_reacoes: 0 }), status: "candidata", descoberta_em: terms[0] })
-              if (!error) inserted += 1
-            }
-          } catch (error) {
-            if (error instanceof CostLimitError) throw error
-            unverified += fallbackProfiles.length
-            discoveryWarnings.push("A busca alternativa encontrou perfis, mas a validação de localização não respondeu a tempo. Nenhuma fonte foi aceita sem confirmação.")
-          }
-        }
-      }
-    }
     const warnings = [
       ...discoveryWarnings,
       ...(deferredCandidates > 0 ? [`${deferredCandidates} autores ficaram para a próxima descoberta por limite de verificação.`] : []),
@@ -240,8 +180,8 @@ Deno.serve(async (request) => {
     const message = outcome === "no_posts"
       ? `Nenhum post público foi encontrado para “${terms.join(", ")}” na janela selecionada.`
       : outcome === "no_brazilian_profiles"
-        ? `Foram analisados ${result.items.length} posts e a busca alternativa de perfis no Brasil, mas nenhum perfil brasileiro foi confirmado.`
-        : `${inserted} perfis brasileiros foram encontrados${fallbackUsed ? " pela busca alternativa" : ""} e aguardam ativação.`
+        ? `Foram analisados ${result.items.length} posts, mas nenhum perfil brasileiro foi confirmado. Nenhuma fonte foi criada para evitar dados estrangeiros.`
+        : `${inserted} perfis brasileiros foram encontrados e aguardam ativação.`
     await admin.from("execucoes").update({
       status: "concluida",
       posts_lidos: result.items.length,
@@ -268,7 +208,7 @@ Deno.serve(async (request) => {
       warnings,
       outcome,
       message,
-      fallbackUsed,
+      fallbackUsed: false,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido na descoberta."

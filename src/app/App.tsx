@@ -7,6 +7,7 @@ import {
   Clock3,
   FileText,
   LayoutDashboard,
+  LoaderCircle,
   MessageCircle,
   Play,
   Settings2,
@@ -38,6 +39,7 @@ type AuthSession = { email: string; userId: string }
 type CommentFilter = "all" | "pain" | "question" | "experience" | "generic"
 type PostsMode = "search" | "sources"
 type PeopleFilter = "all" | "icp" | "without-icp"
+type CollectionAction = "discover" | "monitor" | "settings" | null
 
 const pathByView: Record<View, string> = {
   overview: "/overview",
@@ -138,6 +140,7 @@ function App() {
   const [positiveContext, setPositiveContext] = useState("")
   const [negativeContext, setNegativeContext] = useState("")
   const [collectionState, setCollectionState] = useState<CollectionState>("idle")
+  const [collectionAction, setCollectionAction] = useState<CollectionAction>(null)
   const [collectionMessage, setCollectionMessage] = useState("")
   const [session, setSession] = useState<AuthSession | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
@@ -273,7 +276,8 @@ function App() {
       return
     }
     setCollectionState("running")
-    setCollectionMessage("Executando coleta real no Apify…")
+    setCollectionAction("monitor")
+    setCollectionMessage("Coletando posts e comentários reais no Apify. Seus dados atuais continuam visíveis enquanto a busca é concluída.")
     try {
       if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de iniciar uma coleta.")
       const result = await runMonitoring(signalSummary.projectId)
@@ -283,6 +287,8 @@ function App() {
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar a coleta.")
+    } finally {
+      setCollectionAction(null)
     }
   }
 
@@ -292,7 +298,8 @@ function App() {
       return
     }
     setCollectionState("running")
-    setCollectionMessage("Descobrindo fontes brasileiras no Apify…")
+    setCollectionAction("discover")
+    setCollectionMessage("Buscando posts e validando a localização brasileira dos autores no Apify. Isso pode levar alguns instantes.")
     try {
       if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de descobrir fontes.")
       const result = await discoverSources(signalSummary.projectId, [keyword])
@@ -306,6 +313,8 @@ function App() {
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível descobrir fontes.")
+    } finally {
+      setCollectionAction(null)
     }
   }
 
@@ -330,6 +339,7 @@ function App() {
     event.preventDefault()
     if (!session || !keyword.trim()) return
     setCollectionState("running")
+    setCollectionAction("settings")
     setCollectionMessage("Salvando configuração da pesquisa…")
     try {
       const saved = await saveResearch({ ownerId: session.userId, keyword, positiveContext, negativeContext })
@@ -347,6 +357,8 @@ function App() {
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível salvar a configuração.")
+    } finally {
+      setCollectionAction(null)
     }
   }
 
@@ -534,13 +546,20 @@ function App() {
         </section>
 
         <section className="collection-bar" aria-label="Status da coleta">
-          <div className={`collection-status collection-${collectionState}`}><span className="status-dot" /> {collectionState === "running" ? "Coleta em andamento" : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : signalSummary?.lastExecutionAt ? `Última coleta ${formatDate(signalSummary.lastExecutionAt)}` : "Coleta não iniciada"}</div>
+          <div aria-live="polite" className={`collection-status collection-${collectionState}`}>
+            {collectionState === "running" ? <LoaderCircle aria-hidden="true" className="collection-spinner" size={14} /> : <span className="status-dot" />}
+            {collectionState === "running"
+              ? collectionAction === "discover" || collectionAction === "settings" ? "Buscando fontes brasileiras" : "Coletando posts e comentários"
+              : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : signalSummary?.lastExecutionAt ? `Última coleta ${formatDate(signalSummary.lastExecutionAt)}` : "Coleta não iniciada"}
+          </div>
           <div className="collection-meta"><Clock3 size={15} /> Próxima: segunda, 06h</div>
           <div className="collection-meta"><span className="cost-label">Próxima estimativa</span> {formatCurrency(signalSummary?.estimatedNextCostUsd ?? 0)}</div>
           <div className="collection-actions">
-            <Button className="discover-button" variant="outline" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleDiscover}>Descobrir fontes</Button>
+            <Button className="discover-button" variant="outline" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleDiscover}>
+              {collectionAction === "discover" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Buscando fontes…</> : "Descobrir fontes"}
+            </Button>
             <Button className="collect-button" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
-              <Play size={14} /> {collectionState === "running" ? "Coletando…" : "Atualizar agora"}
+              {collectionAction === "monitor" ? <LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> : <Play size={14} />} {collectionAction === "monitor" ? "Coletando…" : "Atualizar agora"}
             </Button>
           </div>
         </section>
@@ -668,7 +687,7 @@ function App() {
               <textarea id="negative-context" onChange={(event) => setNegativeContext(event.target.value)} placeholder="consumer spending, publicidade" value={negativeContext} />
               <div className="modal-actions">
                 <Button onClick={() => setSettingsOpen(false)} type="button" variant="ghost">Cancelar</Button>
-                <Button disabled={!keyword.trim()} type="submit">Salvar configuração</Button>
+                <Button disabled={!keyword.trim() || collectionState === "running"} type="submit">{collectionAction === "settings" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Buscando fontes…</> : "Salvar configuração"}</Button>
               </div>
             </form>
             {session && signalSummary?.projectId && <section className="settings-history" aria-labelledby="settings-history-title">

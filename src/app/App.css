@@ -58,6 +58,8 @@
 .query-context { margin-left: auto; max-width: 52%; color: var(--signal-muted); font-size: 11px; text-align: right; }
 .collection-bar { display: flex; align-items: center; gap: 20px; border-top: 0; border-radius: 0 0 12px 12px; padding: 11px 18px; font-size: 11px; }
 .collection-status { display: flex; align-items: center; gap: 7px; color: #54635b; font-weight: 600; }
+.collection-spinner, .button-spinner { animation: signal-spin .85s linear infinite; }
+@keyframes signal-spin { to { transform: rotate(360deg); } }
 .collection-running .status-dot { background: #c88a2c; }
 .collection-error .status-dot { background: #b34a4a; }
 .collection-success .status-dot { background: #258b5b; }

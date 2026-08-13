@@ -8,7 +8,9 @@ type ProfileResult = {
   basic_info?: { location?: unknown }
 }
 
-export const MAX_PROFILES_PER_DISCOVERY = 25
+// A small bounded batch keeps discovery responsive while still verifying
+// enough authors to find viable Brazilian sources.
+export const MAX_PROFILES_PER_DISCOVERY = 12
 
 /**
  * HarvestAPI receives profile URLs through `queries`. One bounded batch

@@ -2,8 +2,8 @@ import { supabase } from "@/infrastructure/supabase/client"
 
 export type SaveResearchInput = { ownerId: string; keyword: string; positiveContext: string; negativeContext: string }
 
-export function shouldStartNewResearch(activeKeyword: string | null, nextKeyword: string, executionCount: number) {
-  return activeKeyword?.trim().toLocaleLowerCase("pt-BR") !== nextKeyword.trim().toLocaleLowerCase("pt-BR") || executionCount > 0
+export function shouldStartNewResearch(activeKeyword: string | null, nextKeyword: string) {
+  return activeKeyword?.trim().toLocaleLowerCase("pt-BR") !== nextKeyword.trim().toLocaleLowerCase("pt-BR")
 }
 
 export function normalizeResearchInput(input: SaveResearchInput) {
@@ -19,10 +19,9 @@ export async function saveResearch(input: SaveResearchInput) {
   const normalized = normalizeResearchInput(input)
   const keyword = normalized.keyword
   if (!keyword) throw new Error("Informe uma palavra-chave.")
-  const { data: activeProject, error: activeProjectError } = await supabase.from("projetos").select("id, categoria, execucoes(id)").eq("owner_id", normalized.ownerId).eq("ativo", true).maybeSingle()
+  const { data: activeProject, error: activeProjectError } = await supabase.from("projetos").select("id, categoria").eq("owner_id", normalized.ownerId).eq("ativo", true).maybeSingle()
   if (activeProjectError) throw new Error(activeProjectError.message)
-  const executionCount = activeProject?.execucoes?.length ?? 0
-  const mustCreateResearch = !activeProject || shouldStartNewResearch(activeProject.categoria, keyword, executionCount)
+  const mustCreateResearch = !activeProject || shouldStartNewResearch(activeProject.categoria, keyword)
 
   if (mustCreateResearch && activeProject) {
     const { error } = await supabase.from("projetos").update({ ativo: false }).eq("id", activeProject.id)

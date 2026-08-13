@@ -17,9 +17,8 @@ describe("research configuration", () => {
 })
 
 describe("research isolation", () => {
-  it("starts a separate research when the keyword changes or a prior run exists", () => {
-    expect(shouldStartNewResearch("compras", "cost breakdown", 0)).toBe(true)
-    expect(shouldStartNewResearch("cost breakdown", "cost breakdown", 1)).toBe(true)
-    expect(shouldStartNewResearch("cost breakdown", "cost breakdown", 0)).toBe(false)
+  it("starts a separate research only when the keyword changes", () => {
+    expect(shouldStartNewResearch("compras", "cost breakdown")).toBe(true)
+    expect(shouldStartNewResearch("cost breakdown", "cost breakdown")).toBe(false)
   })
 })
