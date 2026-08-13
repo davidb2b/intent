@@ -217,9 +217,12 @@ function App() {
         if (!active) return
         setSignalSummary(summary)
         setCollectionState(stateFromLatestExecution(summary))
-        setCollectionMessage(summary.executionHistory[0]?.status === "falhou" || summary.executionHistory[0]?.status === "abortada_por_custo"
-          ? summary.executionHistory[0].error ?? "A última coleta não foi concluída."
-          : "")
+        const latestExecution = summary.executionHistory[0]
+        setCollectionMessage(latestExecution?.status === "falhou" || latestExecution?.status === "abortada_por_custo"
+          ? latestExecution.error ?? "A última coleta não foi concluída."
+          : latestExecution?.outcome === "no_posts" || latestExecution?.outcome === "no_brazilian_profiles"
+            ? latestExecution.message ?? "A coleta foi concluída, mas não encontrou fontes brasileiras válidas para este tema."
+            : "")
         setKeyword(summary.keyword ?? "")
         setPositiveContext(summary.positiveContext ?? "")
         setNegativeContext(summary.negativeContext ?? "")

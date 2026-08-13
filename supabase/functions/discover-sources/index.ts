@@ -236,13 +236,26 @@ Deno.serve(async (request) => {
       ...(deferredCandidates > 0 ? [`${deferredCandidates} autores ficaram para a próxima descoberta por limite de verificação.`] : []),
       ...(unverified > 0 ? [`${unverified} perfis não foram retornados pelo Actor e permaneceram pendentes de verificação.`] : []),
     ]
-    await admin.from("execucoes").update({ status: "concluida", posts_lidos: result.items.length, custo_usd: costUsd, parametros: { termos: terms, consultas: searchQueries, janela: body.janela ?? "3months", origem: "manual", avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
     const outcome = result.items.length === 0 ? "no_posts" : inserted === 0 ? "no_brazilian_profiles" : "sources_found"
     const message = outcome === "no_posts"
       ? `Nenhum post público foi encontrado para “${terms.join(", ")}” na janela selecionada.`
       : outcome === "no_brazilian_profiles"
         ? `Foram analisados ${result.items.length} posts e a busca alternativa de perfis no Brasil, mas nenhum perfil brasileiro foi confirmado.`
         : `${inserted} perfis brasileiros foram encontrados${fallbackUsed ? " pela busca alternativa" : ""} e aguardam ativação.`
+    await admin.from("execucoes").update({
+      status: "concluida",
+      posts_lidos: result.items.length,
+      custo_usd: costUsd,
+      parametros: {
+        termos: terms,
+        consultas: searchQueries,
+        janela: body.janela ?? "3months",
+        origem: "manual",
+        avisos: warnings,
+        resultado: { outcome, message },
+      },
+      concluida_em: new Date().toISOString(),
+    }).eq("id", execution.id)
     return json({
       executionId: execution.id,
       status: "concluida",
