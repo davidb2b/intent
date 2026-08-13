@@ -3,6 +3,7 @@ import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_
 import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
 import { brazilRelevanceScore, buildBrazilFirstQueries, isLinkedInPersonProfileUrl } from "../_shared/brazil-first-discovery.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
+import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,7 +48,7 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
   const output = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?clean=true`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) })
   if (!output.ok) throw new Error("Não foi possível ler o dataset do Apify.")
   const items = await output.json()
-  if (Array.isArray(items) && items.some((item) => item && typeof item.message === "string" && item.message.toLowerCase().includes("free-tier limit"))) {
+  if (Array.isArray(items) && hasApifyItemLimit(items)) {
     throw new Error("O limite diário gratuito do Apify para perfis foi atingido. Aguarde a renovação do limite ou atualize o plano antes de validar a origem brasileira.")
   }
   return { items: Array.isArray(items) ? items : [], costUsd: Number(run.data?.usageTotalUsd ?? 0) }
@@ -152,18 +153,17 @@ Deno.serve(async (request) => {
       } catch (error) {
         if (error instanceof CostLimitError) throw error
 
-        // Fallback is intentionally narrow: if the bulk provider is down, the
-        // original profile-detail Actor verifies the first candidate and either
-        // returns an explicit error or proves the fallback contract still works.
-        const candidate = batchCandidates[0]
-        const fallbackInput = { username: profileUsername(candidate.url), includeEmail: false }
-        assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", fallbackInput)
-        const profile = await apifyRun("apimaestro/linkedin-profile-detail", fallbackInput, apifyToken)
-        costUsd += profile.costUsd
-        registerActualCost(budget, profile.costUsd)
-        await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: 1, custo_usd: profile.costUsd })
-        profileCache.set(candidate.url, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
-        for (const remaining of batchCandidates.slice(1)) profileCache.set(remaining.url, false)
+        // Profile Details is billed per profile and is a complete fallback:
+        // a quota on the bulk Actor cannot silently reject the rest of a batch.
+        for (const candidate of batchCandidates) {
+          const fallbackInput = { username: profileUsername(candidate.url), includeEmail: false }
+          assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", fallbackInput)
+          const profile = await apifyRun("apimaestro/linkedin-profile-detail", fallbackInput, apifyToken)
+          costUsd += profile.costUsd
+          registerActualCost(budget, profile.costUsd)
+          await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: profile.items.length, custo_usd: profile.costUsd })
+          profileCache.set(candidate.url, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
+        }
       }
     }
 

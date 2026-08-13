@@ -3,6 +3,7 @@ import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "../_shared/monitoring-posts.ts"
 import { normalizeCompanyKey, personPersistencePayload } from "../_shared/person-enrichment.ts"
+import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -77,7 +78,7 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
   const output = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?clean=true`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) })
   if (!output.ok) throw new Error("Não foi possível ler o dataset do Apify.")
   const items = await output.json()
-  if (Array.isArray(items) && items.some((item) => item && typeof item.message === "string" && item.message.toLowerCase().includes("free-tier limit"))) {
+  if (Array.isArray(items) && hasApifyItemLimit(items)) {
     throw new Error("O limite diário gratuito do Apify foi atingido. Aguarde a renovação do limite ou atualize o plano antes de monitorar.")
   }
   return { items: Array.isArray(items) ? items : [], costUsd: Number(run.data?.usageTotalUsd ?? 0) }

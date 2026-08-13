@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -100,7 +101,7 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
   const output = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?clean=true`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) })
   if (!output.ok) throw new Error("Não foi possível ler o dataset do Apify.")
   const items = await output.json()
-  if (Array.isArray(items) && items.some((item) => item && typeof item === "object" && typeof item.message === "string" && item.message.toLowerCase().includes("free-tier limit"))) {
+  if (Array.isArray(items) && hasApifyItemLimit(items)) {
     throw new Error("O limite diário gratuito do Apify para perfis foi atingido. Aguarde a renovação do limite ou atualize o plano antes de validar a origem brasileira.")
   }
   return { items: Array.isArray(items) ? items : [], costUsd: Number(run.data?.usageTotalUsd ?? 0) }
