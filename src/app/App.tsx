@@ -42,7 +42,7 @@ type AuthMode = "signin" | "signup" | "recovery" | "update-password"
 type AuthSession = { email: string; userId: string }
 type CommentFilter = "all" | "pain" | "question" | "experience" | "generic"
 type PostsMode = "search" | "sources"
-type PeopleFilter = "all" | "icp" | "without-icp"
+type PeopleFilter = "all" | "observed" | "icp" | "without-icp"
 type CollectionAction = "discover" | "monitor" | "settings" | null
 
 const pathByView: Record<View, string> = {
@@ -169,6 +169,7 @@ function App() {
   const [signalComments, setSignalComments] = useState<SignalComment[]>([])
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("all")
   const [commentSearch, setCommentSearch] = useState("")
+  const [debouncedCommentSearch, setDebouncedCommentSearch] = useState("")
   const [summaryError, setSummaryError] = useState("")
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [classificationBusy, setClassificationBusy] = useState(false)
@@ -273,6 +274,11 @@ function App() {
     }
     setSelectedPostId((current) => current && reviewPosts.some((post) => post.id === current) ? current : reviewPosts[0].id)
   }, [signalPosts, discoveredPosts])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedCommentSearch(commentSearch), 180)
+    return () => window.clearTimeout(timer)
+  }, [commentSearch])
 
   function navigate(view: View) {
     setActiveView(view)
@@ -460,7 +466,7 @@ function App() {
   }
 
   function visibleComments() {
-    const query = commentSearch.trim().toLowerCase()
+    const query = debouncedCommentSearch.trim().toLowerCase()
     return signalComments.filter((comment) => {
       if (!commentMatchesFilter(comment)) return false
       if (!query) return true
@@ -469,7 +475,18 @@ function App() {
   }
 
   function visiblePeople() {
-    return signalPeople.filter((person) => peopleFilter === "all" || (peopleFilter === "icp" ? person.icp === true : person.icp !== true))
+    return signalPeople.filter((person) => {
+      if (peopleFilter === "all") return true
+      if (peopleFilter === "observed") return person.comments > 0
+      return peopleFilter === "icp" ? person.icp === true : person.icp !== true
+    })
+  }
+
+  function openCompanyFromPerson(companyName: string | null) {
+    const company = signalCompanies.find((candidate) => candidate.name === companyName)
+    if (!company) return
+    setSelectedCompanyId(company.id)
+    navigate("companies")
   }
 
   const selectedPost = reviewPosts.find((post) => post.id === selectedPostId) ?? reviewPosts[0]
@@ -745,9 +762,9 @@ function App() {
             <section className="signal-panel company-results-panel"><div className="panel-heading"><div><h2>Empresas identificadas</h2><p>Ordenadas pela participação observada.</p></div><span className="signal-tag">{signalCompanies.length} contas</span></div><div className="company-list">{signalCompanies.map((company) => <button className={`company-card ${selectedCompany.id === company.id ? "is-selected" : ""}`} type="button" key={company.id} onClick={() => setSelectedCompanyId(company.id)}><div className="company-avatar"><Building2 size={17} /></div><div className="company-info"><strong>{company.name}</strong><span>{company.people} pessoa{company.people === 1 ? "" : "s"} observada{company.people === 1 ? "" : "s"}</span></div><div className="company-metric"><strong>{company.comments}</strong><span>comentários</span></div></button>)}</div></section>
             <section className="signal-panel company-detail-panel"><div className="company-heading"><div><h2>{selectedCompany.name}</h2><p>{selectedCompany.sector ?? "Setor não informado"}{selectedCompany.size ? ` · ${selectedCompany.size}` : ""}<br />A conta apareceu a partir de pessoas que comentaram posts monitorados.</p></div>{selectedCompany.linkedinUrl && <a href={selectedCompany.linkedinUrl} target="_blank" rel="noreferrer">Ver empresa</a>}</div><div className="summary-strip"><div><strong>{selectedCompany.people}</strong><span>pessoas com sinal observado</span></div><div><strong>{selectedCompany.comments}</strong><span>comentários coletados</span></div><div><strong>{signalPeople.filter((person) => person.companyName === selectedCompany.name && person.icp === true).length}</strong><span>dentro do ICP</span></div></div>{selectedCompanyTones.length > 0 && <div className="company-topics" aria-label="Teores observados na empresa">{selectedCompanyTones.map((tone) => <span className="signal-tag" key={tone}>{tone}</span>)}</div>}<section className="people-section"><div className="section-heading"><div><h3>Pessoas observadas</h3><p>Entraram porque comentaram posts monitorados.</p></div><span className="signal-tag">Sinal comprovado</span></div>{signalPeople.filter((person) => person.companyName === selectedCompany.name).length > 0 ? signalPeople.filter((person) => person.companyName === selectedCompany.name).map((person) => <div className="person-row" key={person.id}><div className="comment-avatar">{person.name.slice(0, 1).toUpperCase()}</div><div className="person-info"><strong>{person.name}</strong><span>{person.headline ?? person.role ?? "Perfil público"}</span></div><div className="person-signal"><strong>{person.comments} comentário{person.comments === 1 ? "" : "s"}</strong><span>{person.icp === true ? "Dentro do ICP" : "ICP pendente ou fora"}</span></div></div>) : <div className="filtered-empty"><strong>Nenhuma pessoa disponível</strong><span>Os perfis aparecerão após uma coleta válida de comentários.</span></div>}</section></section>
           </div> : activeView === "people" && session && signalSummary?.projectId && signalPeople.length > 0 ? <section className="signal-panel analysis-panel">
-            <div className="comment-toolbar"><div className="comment-filters" role="group" aria-label="Filtrar pessoas"><Button type="button" size="sm" variant={peopleFilter === "all" ? "default" : "outline"} onClick={() => setPeopleFilter("all")}>Todas</Button><Button type="button" size="sm" variant={peopleFilter === "icp" ? "default" : "outline"} onClick={() => setPeopleFilter("icp")}>Dentro do ICP</Button><Button type="button" size="sm" variant={peopleFilter === "without-icp" ? "default" : "outline"} onClick={() => setPeopleFilter("without-icp")}>Fora ou pendentes</Button></div></div>
+            <div className="comment-toolbar"><div className="comment-filters" role="group" aria-label="Filtrar pessoas"><Button type="button" size="sm" variant={peopleFilter === "all" ? "default" : "outline"} onClick={() => setPeopleFilter("all")}>Todas</Button><Button type="button" size="sm" variant={peopleFilter === "observed" ? "default" : "outline"} onClick={() => setPeopleFilter("observed")}>Com sinal observado</Button><Button type="button" size="sm" variant={peopleFilter === "icp" ? "default" : "outline"} onClick={() => setPeopleFilter("icp")}>Dentro do ICP</Button><Button type="button" size="sm" variant={peopleFilter === "without-icp" ? "default" : "outline"} onClick={() => setPeopleFilter("without-icp")}>Fora ou pendentes</Button></div></div>
             <div className="panel-heading"><div><p className="eyebrow">Pessoas</p><h2>{visiblePeople().length} pessoas observadas</h2><p>Pessoas que demonstraram um sinal público em comentários coletados.</p></div><span className="signal-tag">Dados reais</span></div>
-            <div className="table-wrap"><table><thead><tr><th>Pessoa</th><th>Empresa</th><th>Origem</th><th>Atividade pública</th><th /></tr></thead><tbody>{visiblePeople().map((person) => <tr key={person.id}><td><strong>{person.name}</strong><small>{person.headline ?? person.role ?? "Perfil público"}</small><a href={person.linkedinUrl} target="_blank" rel="noreferrer">Ver perfil</a></td><td>{person.companyName ?? "Empresa não identificada"}</td><td><span className={`signal-tag ${person.icp === true ? "" : "signal-tag-muted"}`}>{person.icp === true ? "Dentro do ICP" : person.icp === false ? "Fora do ICP" : "ICP pendente"}</span></td><td><strong>{person.comments}</strong> <small>comentário{person.comments === 1 ? "" : "s"}</small></td><td><Button type="button" size="xs" variant="outline" onClick={() => openPersonReview(person)}>Revisar</Button></td></tr>)}</tbody></table></div>
+            <div className="table-wrap"><table><thead><tr><th>Pessoa</th><th>Empresa</th><th>Origem</th><th>Atividade pública</th><th /></tr></thead><tbody>{visiblePeople().map((person) => <tr key={person.id}><td><strong>{person.name}</strong><small>{person.headline ?? person.role ?? "Perfil público"}</small><a href={person.linkedinUrl} target="_blank" rel="noreferrer">Ver perfil</a></td><td>{person.companyName && signalCompanies.some((company) => company.name === person.companyName) ? <button className="company-link" type="button" onClick={() => openCompanyFromPerson(person.companyName)}>{person.companyName}</button> : person.companyName ?? "Empresa não identificada"}</td><td><span className={`signal-tag ${person.icp === true ? "" : "signal-tag-muted"}`}>{person.icp === true ? "Dentro do ICP" : person.icp === false ? "Fora do ICP" : "ICP pendente"}</span></td><td><strong>{person.comments}</strong> <small>comentário{person.comments === 1 ? "" : "s"}</small></td><td><Button type="button" size="xs" variant="outline" onClick={() => openPersonReview(person)}>Revisar</Button></td></tr>)}</tbody></table></div>
           </section> : activeView === "overview" && session && signalSummary?.projectId ? null : summaryLoading ? <div className="empty-state" aria-busy="true">
             <div className="empty-icon"><Clock3 size={24} /></div>
             <h2>Carregando dados reais</h2>

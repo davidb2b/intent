@@ -173,6 +173,8 @@
 .table-wrap td strong { font-size: 12px; }
 .table-wrap td small { margin-top: 4px; color: var(--signal-muted); font-size: 10px; }
 .table-wrap td a, .company-heading a { margin-top: 6px; color: var(--signal-brand); font-size: 11px; font-weight: 600; text-decoration: none; }
+.company-link { border: 0; background: transparent; color: var(--signal-brand); cursor: pointer; font: inherit; font-weight: 650; padding: 0; text-align: left; }
+.company-link:hover { text-decoration: underline; }
 .table-wrap td .signal-tag + .review-tag { margin: 6px 0 0; }
 .table-comment { min-width: 260px; max-width: 460px; color: #33423a; line-height: 1.5; }
 .company-layout { display: grid; grid-template-columns: minmax(250px, .78fr) minmax(0, 1.22fr); align-items: start; gap: 16px; }
