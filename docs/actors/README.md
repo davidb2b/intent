@@ -58,10 +58,17 @@ O par principal validado é `linkedin-post-search` +
 normalizada mínima e um vínculo entre comentário, post e ator. O enriquecimento
 de empresa/perfil será tratado separadamente, sem bloquear a descoberta.
 
-O Actor `apimaestro/linkedin-profile-detail` fica como enriquecimento
-direcionado/futuro, e não como dependência da primeira coleta. O fallback deve
-ser encapsulado por uma interface de provider, porque seu formato de saída não
-é garantidamente idêntico ao HarvestAPI.
+Para a verificação de origem brasileira, a descoberta usa
+`harvestapi/linkedin-profile-scraper` em lote de até 25 URLs de autores. O
+retorno só é aceito quando a URL normalizada corresponde ao autor encontrado
+na busca de posts e a localização confirma Brasil. O lote evita uma chamada
+sequencial por autor e mantém o custo dentro do teto da execução.
+
+`apimaestro/linkedin-profile-detail` permanece como fallback estreito para uma
+indisponibilidade do provider em lote. Ele nunca libera uma fonte sem a
+localização brasileira explícita. O limite gratuito observado nesse Actor é
+tratado como erro explícito; não deve ser convertido em lista vazia ou dado
+estrangeiro.
 
 Os arquivos contêm somente saída dos Actors; nunca devem conter credenciais,
 cookies ou tokens.
