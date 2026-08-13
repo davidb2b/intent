@@ -7,13 +7,13 @@
   --signal-brand: #146b49;
   --signal-brand-dark: #0f5238;
   --signal-soft: #dff3e9;
-  --signal-sidebar: 210px;
+  --signal-sidebar: 224px;
 }
 
 * { box-sizing: border-box; }
 
-.signal-shell { min-height: 100vh; display: flex; align-items: flex-start; background: var(--signal-bg); color: #142019; }
-.signal-sidebar { position: sticky; top: 14px; width: var(--signal-sidebar); max-height: calc(100vh - 28px); flex: 0 0 var(--signal-sidebar); display: flex; flex-direction: column; align-self: flex-start; margin: 14px 0 14px 14px; overflow-y: auto; border: 1px solid var(--signal-border); border-radius: 16px; background: var(--signal-surface); box-shadow: 0 10px 28px rgb(20 48 31 / 5%); padding: 18px 14px; }
+.signal-shell { min-height: 100vh; display: flex; align-items: stretch; background: var(--signal-bg); color: #142019; }
+.signal-sidebar { position: sticky; top: 0; width: var(--signal-sidebar); height: 100vh; flex: 0 0 var(--signal-sidebar); display: flex; flex-direction: column; align-self: flex-start; overflow-y: auto; border-right: 1px solid var(--signal-border); background: #f8faf8; padding: 20px 14px; }
 .brand-lockup { display: flex; align-items: center; gap: 10px; padding: 0 8px 16px; }
 .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: white; background: var(--signal-brand); box-shadow: 0 8px 18px rgb(20 107 73 / 22%); font-weight: 700; }
 .brand-lockup strong, .brand-lockup span { display: block; }
@@ -194,7 +194,7 @@
 .modal-actions button:last-child { background: var(--signal-brand); color: white; }
 
 @media (max-width: 860px) {
-  .signal-sidebar { top: 10px; width: 72px; max-height: calc(100vh - 20px); flex-basis: 72px; margin: 10px 0 10px 10px; padding: 20px 10px; }
+  .signal-sidebar { top: 0; width: 72px; height: 100vh; max-height: none; flex-basis: 72px; margin: 0; padding: 20px 10px; }
   .brand-lockup { justify-content: center; padding: 0 0 22px; }
   .brand-lockup > div:last-child, .workspace-selector, .nav-item span:not(.nav-index), .sidebar-footer { display: none; }
   .nav-item { justify-content: center; padding: 11px 5px; }
