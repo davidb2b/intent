@@ -25,6 +25,7 @@ import { analyzePosts } from "@/features/classification/services/analyze-posts"
 import { updatePostCuration, type CurationStatus } from "@/features/posts/services/update-post-curation"
 import { reviewPerson, seniorityOptions, type PersonSeniority } from "@/features/people/services/review-person"
 import { loadSignalComments, loadSignalCompanies, loadSignalPeople, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalCompany, type SignalPerson, type SignalPost, type SignalSource, type SignalSummary } from "@/features/analytics/services/load-signals"
+import { getOverviewMetrics, getTopCompanies, getUsefulComments } from "@/features/analytics/lib/overview"
 import { authService } from "@/features/auth/services/auth-service"
 import { saveResearch } from "@/features/research/services/save-research"
 import "./App.css"
@@ -169,6 +170,9 @@ function App() {
 
   const content = viewCopy[activeView]
   const recentExecutions = signalSummary?.executionHistory.slice(0, 5) ?? []
+  const overviewMetrics = getOverviewMetrics(signalPosts, signalSources, signalComments, signalCompanies)
+  const usefulComments = getUsefulComments(signalComments)
+  const topCompanies = getTopCompanies(signalCompanies)
 
   useEffect(() => {
     const updateSession = (nextSession: { user?: { id: string; email?: string } } | null) => {
@@ -526,13 +530,36 @@ function App() {
 
         <section className="content-area">
           {summaryError && <p aria-live="polite" className="collection-message collection-message-error">{summaryError}</p>}
-          {session && signalSummary?.projectId && <div className="signal-metrics" aria-label="Resumo dos sinais coletados">
+          {activeView !== "overview" && session && signalSummary?.projectId && <div className="signal-metrics" aria-label="Resumo dos sinais coletados">
             <div><span>Posts</span><strong>{signalSummary.posts}</strong></div>
             <div><span>Comentários</span><strong>{signalSummary.comments}</strong></div>
             <div><span>Pessoas</span><strong>{signalSummary.people}</strong></div>
             <div><span>Empresas</span><strong>{signalSummary.companies}</strong></div>
           </div>}
-          {activeView === "overview" && session && signalSummary?.projectId && <section className="signal-panel execution-history-panel">
+          {activeView === "overview" && session && signalSummary?.projectId && <>
+            <section className="overview-workspace" aria-label="Visão geral dos sinais reais coletados">
+              <div className="overview-stats">
+                <div className="overview-stat"><span>Resultados iniciais</span><strong>{overviewMetrics.initialResults}</strong></div>
+                <div className="overview-stat"><span>Posts aprovados</span><strong>{overviewMetrics.approvedPosts}</strong></div>
+                <div className="overview-stat"><span>Autores monitorados</span><strong>{overviewMetrics.monitoredAuthors}</strong></div>
+                <div className="overview-stat is-current"><span>Comentários analisados</span><strong>{overviewMetrics.analyzedComments}</strong></div>
+                <div className="overview-stat"><span>Empresas identificadas</span><strong>{overviewMetrics.identifiedCompanies}</strong></div>
+              </div>
+              <div className="overview-grid">
+                <section className="signal-panel overview-panel">
+                  <div className="panel-heading"><div><h2>O que as pessoas estão dizendo</h2><p>Comentários com maior utilidade para investigação.</p></div><Button type="button" size="sm" variant="outline" onClick={() => navigate("comments")}>Ver todos</Button></div>
+                  {usefulComments.length > 0 ? <div className="overview-comment-list">{usefulComments.map((comment) => <article className="overview-comment-card" key={comment.id}>
+                    <div className="comment-avatar">{comment.personName.slice(0, 1).toUpperCase()}</div>
+                    <div className="overview-comment-content"><strong>{comment.personName}</strong><span>{comment.personHeadline ?? "Perfil público"} · {comment.companyName ?? "Empresa não identificada"}</span><p>“{shorten(comment.text, 220)}”</p><div className="overview-comment-tags"><span className="signal-tag">{commentToneLabel(comment.tone)}</span><span>{formatDate(comment.publishedAt)}</span></div></div>
+                  </article>)}</div> : <div className="overview-empty">Ainda não há comentários classificados como sinal de interesse.</div>}
+                </section>
+                <section className="signal-panel overview-panel">
+                  <div className="panel-heading"><div><h2>Empresas mais presentes</h2><p>Consolidação dos comentaristas por conta.</p></div><Button type="button" size="sm" variant="outline" onClick={() => navigate("companies")}>Explorar</Button></div>
+                  {topCompanies.length > 0 ? <div className="overview-company-list">{topCompanies.map((company) => <button className="overview-company-card" key={company.id} type="button" onClick={() => { setSelectedCompanyId(company.id); navigate("companies") }}><div className="company-avatar"><Building2 size={17} /></div><div className="company-info"><strong>{company.name}</strong><span>{company.people} pessoa{company.people === 1 ? "" : "s"} observada{company.people === 1 ? "" : "s"}</span></div><div className="company-metric"><strong>{company.comments}</strong><span>comentários</span></div></button>)}</div> : <div className="overview-empty">As empresas aparecerão aqui a partir de comentários reais coletados.</div>}
+                </section>
+              </div>
+            </section>
+            <section className="signal-panel execution-history-panel">
             <div className="panel-heading">
               <div><p className="eyebrow">Histórico</p><h2>Últimas execuções</h2><p>Acompanhe o resultado e o custo das coletas reais.</p></div>
               <span className="signal-tag">{signalSummary.executionHistory.length} registros</span>
@@ -546,7 +573,8 @@ function App() {
               </article>)}</div>
               {signalSummary.executionHistory.length > recentExecutions.length && <p className="execution-more">Mostrando as últimas {recentExecutions.length} execuções.</p>}
             </> : <div className="filtered-empty"><strong>Nenhuma execução registrada</strong><span>As próximas descobertas e monitoramentos aparecerão aqui.</span></div>}
-          </section>}
+            </section>
+          </>}
           {activeView === "posts" && session && signalSummary?.projectId ? <div className="posts-workspace">
             <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
             {postsMode === "search" ? <div className="post-review-layout">
