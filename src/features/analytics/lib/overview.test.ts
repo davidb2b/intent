@@ -19,11 +19,11 @@ describe("overview derivation", () => {
       { id: "company-2", name: "Empresa maior", people: 2, comments: 3 },
     ] as never
 
-    expect(getOverviewMetrics(posts, sources, comments, companies)).toEqual({
-      discoveredSources: 1,
-      collectedPosts: 2,
-      observedPeople: 3,
-      collectedComments: 3,
+    expect(getOverviewMetrics(posts, sources, comments, companies, [])).toEqual({
+      initialResults: 0,
+      approvedPosts: 1,
+      monitoredAuthors: 1,
+      analyzedComments: 2,
       identifiedCompanies: 2,
     })
     expect(getUsefulComments(comments).map((comment) => comment.id)).toEqual(["comment-1"])
@@ -36,7 +36,8 @@ describe("overview derivation", () => {
       { id: "source-2", linkedinUrl: "https://linkedin.com/in/bruno", name: "Bruno", status: "candidata" },
     ] as never
 
-    expect(getOverviewMetrics([], sources, [], []).discoveredSources).toBe(2)
+    const discoveredPosts = [{ id: "post-1", curationStatus: "pendente" }] as never
+    expect(getOverviewMetrics([], sources, [], [], discoveredPosts).initialResults).toBe(1)
   })
 
   it("shows real comments while classification is still pending", () => {

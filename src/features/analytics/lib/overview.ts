@@ -1,10 +1,10 @@
 import type { SignalComment, SignalCompany, SignalPost, SignalSource } from "@/features/analytics/services/load-signals"
 
 export type OverviewMetrics = {
-  discoveredSources: number
-  collectedPosts: number
-  observedPeople: number
-  collectedComments: number
+  initialResults: number
+  approvedPosts: number
+  monitoredAuthors: number
+  analyzedComments: number
   identifiedCompanies: number
 }
 
@@ -17,18 +17,13 @@ export function getOverviewMetrics(
   sources: SignalSource[],
   comments: SignalComment[],
   companies: SignalCompany[],
+  discoveredPosts: SignalPost[],
 ): OverviewMetrics {
-  const observedPeople = new Set(
-    comments
-      .map((comment) => comment.personUrl || comment.personName)
-      .filter(Boolean),
-  )
-
   return {
-    discoveredSources: sources.length,
-    collectedPosts: posts.length,
-    observedPeople: observedPeople.size,
-    collectedComments: comments.length,
+    initialResults: discoveredPosts.length,
+    approvedPosts: [...discoveredPosts, ...posts].filter((post) => post.curationStatus === "aprovado").length,
+    monitoredAuthors: sources.filter((source) => source.status === "monitorada").length,
+    analyzedComments: comments.filter((comment) => Boolean(comment.tone)).length,
     identifiedCompanies: companies.length,
   }
 }

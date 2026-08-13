@@ -181,7 +181,7 @@ function App() {
 
   const content = viewCopy[activeView]
   const recentExecutions = signalSummary?.executionHistory.slice(0, 5) ?? []
-  const overviewMetrics = getOverviewMetrics(signalPosts, signalSources, signalComments, signalCompanies)
+  const overviewMetrics = getOverviewMetrics(signalPosts, signalSources, signalComments, signalCompanies, discoveredPosts)
   const usefulComments = getUsefulComments(signalComments)
   const topCompanies = getTopCompanies(signalCompanies)
 
@@ -669,10 +669,10 @@ function App() {
           {activeView === "overview" && session && signalSummary?.projectId && <>
             <section className="overview-workspace" aria-label="Visão geral dos sinais reais coletados">
               <div className="overview-stats">
-                <div className="overview-stat"><span>Fontes brasileiras</span><strong>{overviewMetrics.discoveredSources}</strong></div>
-                <div className="overview-stat"><span>Posts coletados</span><strong>{overviewMetrics.collectedPosts}</strong></div>
-                <div className="overview-stat"><span>Pessoas com sinal</span><strong>{overviewMetrics.observedPeople}</strong></div>
-                <div className="overview-stat is-current"><span>Comentários coletados</span><strong>{overviewMetrics.collectedComments}</strong></div>
+                <div className="overview-stat"><span>Resultados iniciais</span><strong>{overviewMetrics.initialResults}</strong></div>
+                <div className="overview-stat"><span>Posts aprovados</span><strong>{overviewMetrics.approvedPosts}</strong></div>
+                <div className="overview-stat"><span>Autores monitorados</span><strong>{overviewMetrics.monitoredAuthors}</strong></div>
+                <div className="overview-stat is-current"><span>Comentários analisados</span><strong>{overviewMetrics.analyzedComments}</strong></div>
                 <div className="overview-stat"><span>Empresas identificadas</span><strong>{overviewMetrics.identifiedCompanies}</strong></div>
               </div>
               <div className="overview-grid">

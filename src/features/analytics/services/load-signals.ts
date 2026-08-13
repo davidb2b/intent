@@ -74,6 +74,9 @@ export type SignalSource = {
   comments: number
   reactions: number
   ratio: number
+  people: number
+  icp: number
+  yield: number | null
   previewPost: string | null
 }
 
@@ -250,27 +253,54 @@ export async function loadDiscoveredPosts(projectId: string): Promise<SignalPost
 }
 
 export async function loadSignalSources(projectId: string): Promise<SignalSource[]> {
-  const { data, error } = await supabase
-    .from("fontes")
-    .select("id, linkedin_url, nome, status, meta")
-    .eq("projeto_id", projectId)
-    .neq("status", "descartada")
-    .order("status", { ascending: true })
-    .order("criado_em", { ascending: false })
+  const [sourcesResult, postsResult, commentsResult, peopleResult] = await Promise.all([
+    supabase.from("fontes").select("id, linkedin_url, nome, status, meta").eq("projeto_id", projectId).neq("status", "descartada").order("status", { ascending: true }).order("criado_em", { ascending: false }),
+    supabase.from("posts").select("id, fonte_id, total_reacoes").eq("projeto_id", projectId),
+    supabase.from("comentarios").select("post_id, pessoa_id").eq("projeto_id", projectId),
+    supabase.from("pessoas").select("id, icp").eq("projeto_id", projectId),
+  ])
+  const firstError = [sourcesResult, postsResult, commentsResult, peopleResult].find((result) => result.error)?.error
+  if (firstError) throw new Error(firstError.message)
 
-  if (error) throw new Error(error.message)
-  return (data ?? []).filter((source) => Boolean(source.nome?.trim())).map((source) => {
+  const postSource = new Map((postsResult.data ?? []).flatMap((post) => post.fonte_id ? [[post.id, post.fonte_id] as const] : []))
+  const sourceStats = new Map<string, { posts: number; reactions: number; comments: number; people: Set<string>; icp: Set<string> }>()
+  for (const post of postsResult.data ?? []) {
+    if (!post.fonte_id) continue
+    const stats = sourceStats.get(post.fonte_id) ?? { posts: 0, reactions: 0, comments: 0, people: new Set<string>(), icp: new Set<string>() }
+    stats.posts += 1
+    stats.reactions += post.total_reacoes ?? 0
+    sourceStats.set(post.fonte_id, stats)
+  }
+  const icpByPerson = new Map((peopleResult.data ?? []).map((person) => [person.id, person.icp === true]))
+  for (const comment of commentsResult.data ?? []) {
+    const sourceId = postSource.get(comment.post_id)
+    if (!sourceId) continue
+    const stats = sourceStats.get(sourceId) ?? { posts: 0, reactions: 0, comments: 0, people: new Set<string>(), icp: new Set<string>() }
+    stats.comments += 1
+    stats.people.add(comment.pessoa_id)
+    if (icpByPerson.get(comment.pessoa_id)) stats.icp.add(comment.pessoa_id)
+    sourceStats.set(sourceId, stats)
+  }
+
+  return (sourcesResult.data ?? []).filter((source) => Boolean(source.nome?.trim())).map((source) => {
     let meta: { posts?: number; comentarios?: number; reacoes?: number; razao_comentarios_reacoes?: number; pre_visualizacao_post?: string } = {}
     try { meta = source.meta ? JSON.parse(source.meta) as typeof meta : {} } catch { meta = {} }
+    const observed = sourceStats.get(source.id)
+    const hasObservedData = source.status === "monitorada" && Boolean(observed)
+    const people = observed?.people.size ?? 0
+    const icp = observed?.icp.size ?? 0
     return {
       id: source.id,
       linkedinUrl: source.linkedin_url,
       name: source.nome,
       status: source.status,
-      posts: meta.posts ?? 0,
-      comments: meta.comentarios ?? 0,
-      reactions: meta.reacoes ?? 0,
+      posts: hasObservedData ? observed!.posts : meta.posts ?? 0,
+      comments: hasObservedData ? observed!.comments : meta.comentarios ?? 0,
+      reactions: hasObservedData ? observed!.reactions : meta.reacoes ?? 0,
       ratio: meta.razao_comentarios_reacoes ?? 0,
+      people,
+      icp,
+      yield: hasObservedData && people > 0 ? Math.round((icp / people) * 100) : null,
       previewPost: meta.pre_visualizacao_post?.trim() || null,
     }
   })
