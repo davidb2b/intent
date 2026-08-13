@@ -148,6 +148,7 @@ function App() {
   const [collectionMessage, setCollectionMessage] = useState("")
   const [collectionProgress, setCollectionProgress] = useState<CollectionProgress | null>(null)
   const [session, setSession] = useState<AuthSession | null>(null)
+  const [authReady, setAuthReady] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>("signin")
   const [authEmail, setAuthEmail] = useState("")
@@ -171,7 +172,7 @@ function App() {
   const [commentSearch, setCommentSearch] = useState("")
   const [debouncedCommentSearch, setDebouncedCommentSearch] = useState("")
   const [summaryError, setSummaryError] = useState("")
-  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summaryLoading, setSummaryLoading] = useState(true)
   const [classificationBusy, setClassificationBusy] = useState(false)
   const [postAnalysisBusy, setPostAnalysisBusy] = useState(false)
   const [personUnderReview, setPersonUnderReview] = useState<SignalPerson | null>(null)
@@ -181,6 +182,7 @@ function App() {
   const [reviewBusy, setReviewBusy] = useState(false)
 
   const content = viewCopy[activeView]
+  const isInitialDataLoading = !authReady || (Boolean(session) && summaryLoading && !signalSummary)
   const recentExecutions = signalSummary?.executionHistory.slice(0, 5) ?? []
   const overviewMetrics = getOverviewMetrics(signalPosts, signalSources, signalComments, signalCompanies, discoveredPosts)
   const usefulComments = getUsefulComments(signalComments)
@@ -196,9 +198,12 @@ function App() {
     const updateSession = (nextSession: { user?: { id: string; email?: string } } | null) => {
       setSession(nextSession?.user?.email ? { email: nextSession.user.email, userId: nextSession.user.id } : null)
     }
-    void authService.getSession().then(({ data }) => updateSession(data.session))
+    void authService.getSession()
+      .then(({ data }) => updateSession(data.session))
+      .finally(() => setAuthReady(true))
     const { data: listener } = authService.onAuthStateChange((event, nextSession) => {
       updateSession(nextSession)
+      setAuthReady(true)
       if (event === "PASSWORD_RECOVERY") {
         setAuthMode("update-password")
         setAuthOpen(true)
@@ -214,6 +219,7 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!authReady) return
     if (!session) {
       setSignalSummary(null)
       setSignalPosts([])
@@ -263,7 +269,7 @@ function App() {
       .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
       .finally(() => { if (active) setSummaryLoading(false) })
     return () => { active = false }
-  }, [session])
+  }, [authReady, session])
 
   const reviewPosts = discoveredPosts.length > 0 ? discoveredPosts : signalPosts
 
@@ -273,7 +279,7 @@ function App() {
       return
     }
     setSelectedPostId((current) => current && reviewPosts.some((post) => post.id === current) ? current : reviewPosts[0].id)
-  }, [signalPosts, discoveredPosts])
+  }, [reviewPosts])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedCommentSearch(commentSearch), 180)
@@ -495,15 +501,22 @@ function App() {
     ? [...new Set(signalComments.filter((comment) => comment.companyName === selectedCompany.name).map((comment) => commentToneLabel(comment.tone)).filter((tone) => tone !== "Pendente"))]
     : []
 
-  function exportComments() {
-    const rows = [["Pessoa", "Empresa", "Cargo", "Teor", "Comentário", "Data", "Perfil", "Post"], ...visibleComments().map((comment) => [comment.personName, comment.companyName ?? "", comment.personHeadline ?? "", comment.tone ?? "", comment.text, formatDate(comment.publishedAt), comment.personUrl, comment.postUrl])]
+  function downloadCsv(filename: string, rows: string[][]) {
     const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(";")).join("\n")
     const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }))
     const anchor = document.createElement("a")
     anchor.href = url
-    anchor.download = "signal-lab-comentarios.csv"
+    anchor.download = filename
     anchor.click()
     URL.revokeObjectURL(url)
+  }
+
+  function exportComments() {
+    downloadCsv("signal-lab-comentarios.csv", [["Pessoa", "Empresa", "Cargo", "Teor", "Comentário", "Data", "Perfil", "Post"], ...visibleComments().map((comment) => [comment.personName, comment.companyName ?? "", comment.personHeadline ?? "", comment.tone ?? "", comment.text, formatDate(comment.publishedAt), comment.personUrl, comment.postUrl])])
+  }
+
+  function exportCompanies() {
+    downloadCsv("signal-lab-empresas.csv", [["Empresa", "Setor", "Porte", "Pessoas observadas", "Comentários", "LinkedIn"], ...signalCompanies.map((company) => [company.name, company.sector ?? "", company.size ?? "", String(company.people), String(company.comments), company.linkedinUrl ?? ""])])
   }
 
   async function handleClassifyComments() {
@@ -605,7 +618,7 @@ function App() {
 
         <div className="workspace-selector" aria-label="Pesquisa ativa">
           <span>Pesquisa ativa</span>
-          <strong>{keyword || "Nenhuma configurada"}</strong>
+          <strong>{isInitialDataLoading ? "Carregando…" : keyword || "Nenhuma configurada"}</strong>
           <ChevronDown size={15} aria-hidden="true" />
         </div>
 
@@ -625,7 +638,7 @@ function App() {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="cost-box"><p className="eyebrow">Gasto desta pesquisa</p><strong>{formatCurrency(signalSummary?.monthlyCostUsd ?? 0)}</strong><div className="cost-bar"><span style={{ width: `${Math.min(((signalSummary?.monthlyCostUsd ?? 0) / 300) * 100, 100)}%` }} /></div><small>Teto de US$ 300,00 no mês{(signalSummary?.monthlyCostUsd ?? 0) >= 225 ? " · Atenção" : ""}</small></div>
+          <div className="cost-box"><p className="eyebrow">Gasto desta pesquisa</p><strong>{isInitialDataLoading ? "—" : formatCurrency(signalSummary?.monthlyCostUsd ?? 0)}</strong><div className="cost-bar"><span style={{ width: `${isInitialDataLoading ? 0 : Math.min(((signalSummary?.monthlyCostUsd ?? 0) / 300) * 100, 100)}%` }} /></div><small>Teto de US$ 300,00 no mês{(signalSummary?.monthlyCostUsd ?? 0) >= 225 ? " · Atenção" : ""}</small></div>
           <div className="status-line"><span className="status-dot" /> Ambiente preparado</div>
           <button className="help-link" type="button"><CircleHelp size={15} /> Ajuda</button>
         </div>
@@ -648,7 +661,7 @@ function App() {
           <div className="query-icon"><BarChart3 size={18} /></div>
           <div className="query-value">
             <span>Termo monitorado</span>
-            <strong>{keyword || "Nenhum termo definido"}</strong>
+            <strong>{isInitialDataLoading ? "Carregando pesquisa…" : keyword || "Nenhum termo definido"}</strong>
           </div>
           <div className="query-context">
             {positiveContext || negativeContext ? (
@@ -664,15 +677,16 @@ function App() {
             {collectionState === "running" ? <LoaderCircle aria-hidden="true" className="collection-spinner" size={14} /> : <span className="status-dot" />}
             {collectionState === "running"
               ? collectionProgress?.message ?? (collectionAction === "discover" || collectionAction === "settings" ? "Buscando fontes brasileiras" : "Coletando posts e comentários")
+              : isInitialDataLoading ? "Carregando dados reais"
               : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : signalSummary?.lastExecutionAt ? `Última coleta ${formatDate(signalSummary.lastExecutionAt)}` : "Coleta não iniciada"}
           </div>
           <div className="collection-meta"><Clock3 size={15} /> Próxima: segunda, 06h</div>
-          <div className="collection-meta"><span className="cost-label">Próxima estimativa</span> {formatCurrency(signalSummary?.estimatedNextCostUsd ?? 0)}</div>
+          <div className="collection-meta"><span className="cost-label">Próxima estimativa</span> {isInitialDataLoading ? "—" : formatCurrency(signalSummary?.estimatedNextCostUsd ?? 0)}</div>
           <div className="collection-actions">
-            <Button className="discover-button" variant="outline" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleDiscover}>
+            <Button className="discover-button" variant="outline" disabled={isInitialDataLoading || !keyword.trim() || !session || collectionState === "running"} onClick={handleDiscover}>
               {collectionAction === "discover" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Buscando fontes…</> : "Descobrir fontes"}
             </Button>
-            <Button className="collect-button" disabled={!keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
+            <Button className="collect-button" disabled={isInitialDataLoading || !keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
               {collectionAction === "monitor" ? <LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> : <Play size={14} />} {collectionAction === "monitor" ? "Coletando…" : "Atualizar agora"}
             </Button>
           </div>
@@ -756,10 +770,10 @@ function App() {
               </div>
               <Input value={commentSearch} onChange={(event) => setCommentSearch(event.target.value)} placeholder="Buscar pessoa ou comentário" aria-label="Buscar comentários" />
             </div>
-            <div className="panel-heading"><div><p className="eyebrow">Comentários</p><h2>{visibleComments().length} comentários encontrados</h2><p>Classificação automática com evidência preservada.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" disabled={classificationBusy} onClick={handleClassifyComments}>{classificationBusy ? "Classificando…" : "Classificar pendentes"}</Button><Button type="button" size="sm" variant="outline" onClick={exportComments}>Baixar CSV</Button></div></div>
+            <div className="panel-heading"><div><p className="eyebrow">Comentários</p><h2>{visibleComments().length} comentários encontrados</h2><p>Classificação automática com evidência preservada.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" disabled={classificationBusy} onClick={handleClassifyComments}>{classificationBusy ? "Classificando…" : "Classificar próximo lote (até 12)"}</Button><Button type="button" size="sm" variant="outline" onClick={exportComments}>Baixar CSV</Button></div></div>
             {visibleComments().length > 0 ? <div className="table-wrap"><table><thead><tr><th>Pessoa</th><th>Empresa</th><th>Teor</th><th>Comentário</th><th>Post</th></tr></thead><tbody>{visibleComments().map((comment) => <tr key={comment.id}><td><strong>{comment.personName}</strong><small>{comment.personHeadline ?? "Perfil público"}</small><a href={comment.personUrl} target="_blank" rel="noreferrer">Ver perfil</a></td><td><strong>{comment.companyName ?? "Empresa não identificada"}</strong><small>{formatDate(comment.publishedAt)}</small></td><td><span className="signal-tag">{commentToneLabel(comment.tone)}</span>{comment.confidence !== null && comment.confidence < 0.6 && <span className="review-tag">Revisar</span>}</td><td className="table-comment">“{comment.text}”</td><td><a href={comment.postUrl} target="_blank" rel="noreferrer">Ver post</a></td></tr>)}</tbody></table></div> : <div className="filtered-empty"><strong>Nenhum comentário encontrado</strong><span>Remova um filtro ou altere a busca.</span></div>}
           </section> : activeView === "companies" && session && signalSummary?.projectId && selectedCompany ? <div className="company-layout">
-            <section className="signal-panel company-results-panel"><div className="panel-heading"><div><h2>Empresas identificadas</h2><p>Ordenadas pela participação observada.</p></div><span className="signal-tag">{signalCompanies.length} contas</span></div><div className="company-list">{signalCompanies.map((company) => <button className={`company-card ${selectedCompany.id === company.id ? "is-selected" : ""}`} type="button" key={company.id} onClick={() => setSelectedCompanyId(company.id)}><div className="company-avatar"><Building2 size={17} /></div><div className="company-info"><strong>{company.name}</strong><span>{company.people} pessoa{company.people === 1 ? "" : "s"} observada{company.people === 1 ? "" : "s"}</span></div><div className="company-metric"><strong>{company.comments}</strong><span>comentários</span></div></button>)}</div></section>
+            <section className="signal-panel company-results-panel"><div className="panel-heading"><div><h2>Empresas identificadas</h2><p>Ordenadas pela participação observada.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalCompanies.length} contas</span><Button type="button" size="sm" variant="outline" onClick={exportCompanies}>Baixar CSV</Button></div></div><div className="company-list">{signalCompanies.map((company) => <button className={`company-card ${selectedCompany.id === company.id ? "is-selected" : ""}`} type="button" key={company.id} onClick={() => setSelectedCompanyId(company.id)}><div className="company-avatar"><Building2 size={17} /></div><div className="company-info"><strong>{company.name}</strong><span>{company.people} pessoa{company.people === 1 ? "" : "s"} observada{company.people === 1 ? "" : "s"}</span></div><div className="company-metric"><strong>{company.comments}</strong><span>comentários</span></div></button>)}</div></section>
             <section className="signal-panel company-detail-panel"><div className="company-heading"><div><h2>{selectedCompany.name}</h2><p>{selectedCompany.sector ?? "Setor não informado"}{selectedCompany.size ? ` · ${selectedCompany.size}` : ""}<br />A conta apareceu a partir de pessoas que comentaram posts monitorados.</p></div>{selectedCompany.linkedinUrl && <a href={selectedCompany.linkedinUrl} target="_blank" rel="noreferrer">Ver empresa</a>}</div><div className="summary-strip"><div><strong>{selectedCompany.people}</strong><span>pessoas com sinal observado</span></div><div><strong>{selectedCompany.comments}</strong><span>comentários coletados</span></div><div><strong>{signalPeople.filter((person) => person.companyName === selectedCompany.name && person.icp === true).length}</strong><span>dentro do ICP</span></div></div>{selectedCompanyTones.length > 0 && <div className="company-topics" aria-label="Teores observados na empresa">{selectedCompanyTones.map((tone) => <span className="signal-tag" key={tone}>{tone}</span>)}</div>}<section className="people-section"><div className="section-heading"><div><h3>Pessoas observadas</h3><p>Entraram porque comentaram posts monitorados.</p></div><span className="signal-tag">Sinal comprovado</span></div>{signalPeople.filter((person) => person.companyName === selectedCompany.name).length > 0 ? signalPeople.filter((person) => person.companyName === selectedCompany.name).map((person) => <div className="person-row" key={person.id}><div className="comment-avatar">{person.name.slice(0, 1).toUpperCase()}</div><div className="person-info"><strong>{person.name}</strong><span>{person.headline ?? person.role ?? "Perfil público"}</span></div><div className="person-signal"><strong>{person.comments} comentário{person.comments === 1 ? "" : "s"}</strong><span>{person.icp === true ? "Dentro do ICP" : "ICP pendente ou fora"}</span></div></div>) : <div className="filtered-empty"><strong>Nenhuma pessoa disponível</strong><span>Os perfis aparecerão após uma coleta válida de comentários.</span></div>}</section></section>
           </div> : activeView === "people" && session && signalSummary?.projectId && signalPeople.length > 0 ? <section className="signal-panel analysis-panel">
             <div className="comment-toolbar"><div className="comment-filters" role="group" aria-label="Filtrar pessoas"><Button type="button" size="sm" variant={peopleFilter === "all" ? "default" : "outline"} onClick={() => setPeopleFilter("all")}>Todas</Button><Button type="button" size="sm" variant={peopleFilter === "observed" ? "default" : "outline"} onClick={() => setPeopleFilter("observed")}>Com sinal observado</Button><Button type="button" size="sm" variant={peopleFilter === "icp" ? "default" : "outline"} onClick={() => setPeopleFilter("icp")}>Dentro do ICP</Button><Button type="button" size="sm" variant={peopleFilter === "without-icp" ? "default" : "outline"} onClick={() => setPeopleFilter("without-icp")}>Fora ou pendentes</Button></div></div>

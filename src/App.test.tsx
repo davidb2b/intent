@@ -7,16 +7,17 @@ import App from "./app/App"
 describe("Signal Lab foundation", () => {
   afterEach(() => cleanup())
 
-  it("starts with an honest empty state instead of fabricated metrics", () => {
+  it("starts with an honest empty state instead of fabricated metrics", async () => {
     render(<App />)
 
-    expect(screen.getByText("Nenhum sinal coletado ainda")).toBeInTheDocument()
+    expect(await screen.findByText("Nenhum sinal coletado ainda")).toBeInTheDocument()
     expect(screen.getByText("Coleta não iniciada")).toBeInTheDocument()
     expect(screen.queryByText("42")).not.toBeInTheDocument()
   })
 
-  it("navigates between the five product areas", () => {
+  it("navigates between the five product areas", async () => {
     render(<App />)
+    await screen.findByText("Nenhum sinal coletado ainda")
 
     fireEvent.click(screen.getByRole("button", { name: /02Posts/ }))
 
@@ -33,16 +34,17 @@ describe("Signal Lab foundation", () => {
     expect(window.location.pathname).toBe("/posts")
   })
 
-  it("opens the correct product area from a direct route", () => {
+  it("opens the correct product area from a direct route", async () => {
     window.history.replaceState({}, "", "/people")
 
     render(<App />)
 
-    expect(screen.getByText("Nenhuma pessoa identificada")).toBeInTheDocument()
+    expect(await screen.findByText("Nenhuma pessoa identificada")).toBeInTheDocument()
   })
 
-  it("requires both a keyword and an authenticated session before collecting", () => {
+  it("requires both a keyword and an authenticated session before collecting", async () => {
     render(<App />)
+    await screen.findByRole("button", { name: "Entrar" })
 
     expect(screen.getByRole("button", { name: /Atualizar agora/ })).toBeDisabled()
     fireEvent.click(screen.getByRole("button", { name: /Configurar pesquisa/ }))
@@ -57,8 +59,9 @@ describe("Signal Lab foundation", () => {
     expect(screen.getByRole("button", { name: "Entrar" })).toBeInTheDocument()
   })
 
-  it("offers password recovery and password visibility controls", () => {
+  it("offers password recovery and password visibility controls", async () => {
     render(<App />)
+    await screen.findByRole("button", { name: "Entrar" })
     fireEvent.click(screen.getByRole("button", { name: "Entrar" }))
     fireEvent.click(screen.getByRole("button", { name: "Esqueci a senha" }))
 
