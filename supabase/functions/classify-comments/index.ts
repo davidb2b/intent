@@ -21,7 +21,9 @@ Devolva um objeto JSON exatamente neste formato: {"resultados":[{"id":"<id>","te
 Não escreva nada além do JSON.`
 
 const allowedTones = new Set(["dor", "pergunta", "fornecedor", "pratica", "generico"])
-const MAX_BATCH = 40
+// A single response for 40 long LinkedIn comments can be truncated by the
+// model. Small complete batches are safer than accepting a partial result.
+const MAX_BATCH = 12
 
 type Classification = { id: string; teor: string; confianca: number }
 
@@ -90,7 +92,7 @@ Deno.serve(async (request) => {
   const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "gpt-4o-mini", temperature: 0, response_format: { type: "json_object" }, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: JSON.stringify(promptInput) }] }),
+    body: JSON.stringify({ model: "gpt-4o-mini", temperature: 0, max_tokens: 2200, response_format: { type: "json_object" }, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: JSON.stringify(promptInput) }] }),
   })
   if (!aiResponse.ok) return json({ error: `Falha na classificação por IA (${aiResponse.status}).` }, 502)
   const completion = await aiResponse.json()
