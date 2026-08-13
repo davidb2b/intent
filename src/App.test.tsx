@@ -32,6 +32,14 @@ describe("Signal Lab foundation", () => {
     expect(window.location.pathname).toBe("/posts")
   })
 
+  it("opens the correct product area from a direct route", () => {
+    window.history.replaceState({}, "", "/people")
+
+    render(<App />)
+
+    expect(screen.getByText("Nenhuma pessoa identificada")).toBeInTheDocument()
+  })
+
   it("requires both a keyword and an authenticated session before collecting", () => {
     render(<App />)
 

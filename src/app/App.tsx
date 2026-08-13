@@ -103,7 +103,7 @@ const viewCopy: Record<View, { eyebrow: string; title: string; description: stri
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<View>("overview")
+  const [activeView, setActiveView] = useState<View>(() => viewFromPath(window.location.pathname))
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [keyword, setKeyword] = useState("")
   const [positiveContext, setPositiveContext] = useState("")
