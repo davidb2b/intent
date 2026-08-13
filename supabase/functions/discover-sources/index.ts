@@ -19,12 +19,15 @@ type ActorPost = {
   linkedinUrl?: string
   author?: { name?: string; linkedinUrl?: string; id?: string }
   actor?: { name?: string; linkedinUrl?: string; id?: string }
-  engagement?: { comments?: number; reactions?: number | unknown[] }
+  engagement?: { comments?: number; reactions?: number | unknown[]; shares?: number }
   commentsCount?: number
   reactionsCount?: number
   content?: string
   text?: string
   commentary?: string
+  postedAt?: string | { date?: string }
+  createdAt?: string
+  sharesCount?: number
 }
 
 type ProfileDetails = {
@@ -68,6 +71,10 @@ function profileUrl(post: ActorPost) {
 
 function metric(value: number | unknown[] | undefined, fallback?: number) {
   return Array.isArray(value) ? value.length : value ?? fallback ?? 0
+}
+
+function dateValue(value: string | { date?: string } | undefined) {
+  return typeof value === "string" ? value : value?.date ?? null
 }
 
 Deno.serve(async (request) => {
@@ -115,6 +122,7 @@ Deno.serve(async (request) => {
     await persistExecutionProgress(admin, execution.id, { stage: "avaliando_posts", progress: 38, message: "Avaliando a relevância dos posts encontrados." })
 
     const grouped = new Map<string, { url: string; name: string | null; posts: number; comments: number; reactions: number; brazilScore: number; discoveredBy: string; previewText: string | null }>()
+    const discoveredPostCandidates: Array<{ raw: ActorPost; authorUrl: string; authorName: string; text: string; relevance: number }> = []
     for (const item of result.items as ActorPost[]) {
       const postText = item.content ?? item.text ?? item.commentary ?? null
       if (!matchesTopic({ text: postText, keyword: terms[0] })) continue
@@ -130,13 +138,16 @@ Deno.serve(async (request) => {
       current.brazilScore += brazilRelevanceScore(postText)
       if (!current.name && author?.name) current.name = author.name
       grouped.set(url, current)
+      const authorName = usablePersonName(author?.name)
+      if (item.id && authorName && postText) discoveredPostCandidates.push({ raw: item, authorUrl: url, authorName, text: postText, relevance: brazilRelevanceScore(postText) })
     }
 
     const urls = [...grouped.keys()]
     // Legacy rows may contain LinkedIn `?trk` parameters. Compare canonical
     // URLs in application code so a new discovery cannot duplicate them.
-    const { data: existing } = urls.length ? await admin.from("fontes").select("linkedin_url").eq("projeto_id", projectId) : { data: [] }
-    const existingUrls = new Set((existing ?? []).map((source) => canonicalProfileUrl(source.linkedin_url)))
+    const { data: existing } = urls.length ? await admin.from("fontes").select("id, linkedin_url").eq("projeto_id", projectId) : { data: [] }
+    const existingSourceIds = new Map((existing ?? []).map((source) => [canonicalProfileUrl(source.linkedin_url), source.id]))
+    const existingUrls = new Set(existingSourceIds.keys())
     const candidates = [...grouped.values()]
       .filter((candidate) => !existingUrls.has(candidate.url))
       .sort((a, b) => b.brazilScore - a.brazilScore || b.comments - a.comments || b.reactions - a.reactions)
@@ -175,6 +186,7 @@ Deno.serve(async (request) => {
       }
     }
 
+    const acceptedSourceIds = new Map(existingSourceIds)
     for (const candidate of batchCandidates) {
       const brazilian = profileCache.get(candidate.url)
       if (brazilian === undefined) { unverified += 1; continue }
@@ -182,8 +194,33 @@ Deno.serve(async (request) => {
       const name = usablePersonName(candidate.name)
       if (!name) { unverified += 1; continue }
       const ratio = candidate.reactions > 0 ? candidate.comments / candidate.reactions : candidate.comments > 0 ? candidate.comments : 0
-      const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio, pre_visualizacao_post: candidate.previewText }), status: "candidata", descoberta_em: candidate.discoveredBy })
-      if (!error) inserted += 1
+      const { data: source, error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio, pre_visualizacao_post: candidate.previewText }), status: "candidata", descoberta_em: candidate.discoveredBy }).select("id").maybeSingle()
+      if (!error && source) {
+        inserted += 1
+        acceptedSourceIds.set(candidate.url, source.id)
+      }
+    }
+    let discoveryPostsStored = 0
+    for (const candidate of discoveredPostCandidates) {
+      const sourceId = acceptedSourceIds.get(candidate.authorUrl)
+      if (!sourceId) continue
+      const postUrl = candidate.raw.linkedinUrl?.includes("linkedin.com") ? candidate.raw.linkedinUrl : null
+      const { error } = await admin.from("posts_descobertos").upsert({
+        projeto_id: projectId,
+        execucao_id: execution.id,
+        fonte_id: sourceId,
+        post_urn: candidate.raw.id!,
+        linkedin_url: postUrl,
+        autor_nome: candidate.authorName,
+        autor_url: candidate.authorUrl,
+        texto: candidate.text,
+        publicado_em: dateValue(candidate.raw.postedAt) ?? candidate.raw.createdAt ?? null,
+        total_reacoes: metric(candidate.raw.engagement?.reactions, candidate.raw.reactionsCount),
+        total_comentarios: metric(candidate.raw.engagement?.comments, candidate.raw.commentsCount),
+        total_shares: candidate.raw.engagement?.shares ?? candidate.raw.sharesCount ?? null,
+        relevancia: candidate.relevance,
+      }, { onConflict: "projeto_id,post_urn" })
+      if (!error) discoveryPostsStored += 1
     }
     await persistExecutionProgress(admin, execution.id, { stage: "organizando_fontes", progress: 88, message: "Organizando os perfis encontrados para revisão." })
     
@@ -224,6 +261,7 @@ Deno.serve(async (request) => {
       candidatesInserted: inserted,
       candidatesRejected: rejected,
       candidatesUnverified: unverified,
+      discoveryPostsStored,
       costUsd,
       warnings,
       outcome,

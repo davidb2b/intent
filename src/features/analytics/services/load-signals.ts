@@ -36,7 +36,7 @@ export type SignalExecution = {
 
 export type SignalPost = {
   id: string
-  linkedinUrl: string
+  linkedinUrl: string | null
   authorName: string | null
   authorUrl: string | null
   text: string | null
@@ -46,6 +46,7 @@ export type SignalPost = {
   shares: number | null
   curationStatus: string
   analysis: { topic: string | null; problem: string | null; reason: string | null; collection: string | null }
+  origin: "monitoring" | "discovery"
 }
 
 export type SignalComment = {
@@ -213,6 +214,32 @@ export async function loadSignalPosts(projectId: string): Promise<SignalPost[]> 
     shares: post.total_shares,
     curationStatus: post.status_curadoria,
     analysis: { topic: post.analise_topico, problem: post.analise_problema, reason: post.analise_motivo, collection: post.analise_coleta },
+    origin: "monitoring",
+  }))
+}
+
+export async function loadDiscoveredPosts(projectId: string): Promise<SignalPost[]> {
+  const { data, error } = await supabase
+    .from("posts_descobertos")
+    .select("id, linkedin_url, autor_nome, autor_url, texto, publicado_em, total_reacoes, total_comentarios, total_shares, status_curadoria")
+    .eq("projeto_id", projectId)
+    .order("descoberto_em", { ascending: false })
+    .limit(50)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((post) => ({
+    id: post.id,
+    linkedinUrl: post.linkedin_url,
+    authorName: post.autor_nome,
+    authorUrl: post.autor_url,
+    text: post.texto,
+    publishedAt: post.publicado_em,
+    reactions: post.total_reacoes,
+    comments: post.total_comentarios,
+    shares: post.total_shares,
+    curationStatus: post.status_curadoria,
+    analysis: { topic: null, problem: null, reason: null, collection: null },
+    origin: "discovery",
   }))
 }
 

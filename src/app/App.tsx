@@ -27,8 +27,9 @@ import { classifyComments } from "@/features/classification/services/classify-co
 import { commentToneLabel, matchesCommentFilter } from "@/features/classification/lib/comment-tone"
 import { analyzePosts } from "@/features/classification/services/analyze-posts"
 import { updatePostCuration, type CurationStatus } from "@/features/posts/services/update-post-curation"
+import { updateDiscoveredPostCuration } from "@/features/posts/services/update-discovered-post-curation"
 import { reviewPerson, seniorityOptions, type PersonSeniority } from "@/features/people/services/review-person"
-import { loadSignalComments, loadSignalCompanies, loadSignalPeople, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalCompany, type SignalPerson, type SignalPost, type SignalSource, type SignalSummary } from "@/features/analytics/services/load-signals"
+import { loadDiscoveredPosts, loadSignalComments, loadSignalCompanies, loadSignalPeople, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalCompany, type SignalPerson, type SignalPost, type SignalSource, type SignalSummary } from "@/features/analytics/services/load-signals"
 import { getOverviewMetrics, getTopCompanies, getUsefulComments } from "@/features/analytics/lib/overview"
 import { authService } from "@/features/auth/services/auth-service"
 import { saveResearch } from "@/features/research/services/save-research"
@@ -155,6 +156,7 @@ function App() {
   const [authError, setAuthError] = useState("")
   const [signalSummary, setSignalSummary] = useState<SignalSummary | null>(null)
   const [signalPosts, setSignalPosts] = useState<SignalPost[]>([])
+  const [discoveredPosts, setDiscoveredPosts] = useState<SignalPost[]>([])
   const [signalSources, setSignalSources] = useState<SignalSource[]>([])
   const [signalCompanies, setSignalCompanies] = useState<SignalCompany[]>([])
   const [signalPeople, setSignalPeople] = useState<SignalPerson[]>([])
@@ -207,6 +209,7 @@ function App() {
     if (!session) {
       setSignalSummary(null)
       setSignalPosts([])
+      setDiscoveredPosts([])
       setSignalSources([])
       setSignalCompanies([])
       setSignalPeople([])
@@ -236,8 +239,8 @@ function App() {
         setPositiveContext(summary.positiveContext ?? "")
         setNegativeContext(summary.negativeContext ?? "")
         if (summary.projectId) {
-          const [posts, comments, sources, companies, people] = await Promise.all([loadSignalPosts(summary.projectId), loadSignalComments(summary.projectId), loadSignalSources(summary.projectId), loadSignalCompanies(summary.projectId), loadSignalPeople(summary.projectId)])
-          if (active) { setSignalPosts(posts); setSignalComments(comments); setSignalSources(sources); setSignalCompanies(companies); setSignalPeople(people) }
+          const [posts, discoveryPosts, comments, sources, companies, people] = await Promise.all([loadSignalPosts(summary.projectId), loadDiscoveredPosts(summary.projectId), loadSignalComments(summary.projectId), loadSignalSources(summary.projectId), loadSignalCompanies(summary.projectId), loadSignalPeople(summary.projectId)])
+          if (active) { setSignalPosts(posts); setDiscoveredPosts(discoveryPosts); setSignalComments(comments); setSignalSources(sources); setSignalCompanies(companies); setSignalPeople(people) }
         }
       })
       .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
@@ -245,13 +248,15 @@ function App() {
     return () => { active = false }
   }, [session])
 
+  const reviewPosts = discoveredPosts.length > 0 ? discoveredPosts : signalPosts
+
   useEffect(() => {
-    if (signalPosts.length === 0) {
+    if (reviewPosts.length === 0) {
       setSelectedPostId(null)
       return
     }
-    setSelectedPostId((current) => current && signalPosts.some((post) => post.id === current) ? current : signalPosts[0].id)
-  }, [signalPosts])
+    setSelectedPostId((current) => current && reviewPosts.some((post) => post.id === current) ? current : reviewPosts[0].id)
+  }, [signalPosts, discoveredPosts])
 
   function navigate(view: View) {
     setActiveView(view)
@@ -260,9 +265,10 @@ function App() {
 
   async function refreshSignalData(projectId: string) {
     if (!session) return
-    const [refreshedSummary, posts, comments, sources, companies, people] = await Promise.all([
+    const [refreshedSummary, posts, discoveryPosts, comments, sources, companies, people] = await Promise.all([
       loadSignalSummary(session.userId),
       loadSignalPosts(projectId),
+      loadDiscoveredPosts(projectId),
       loadSignalComments(projectId),
       loadSignalSources(projectId),
       loadSignalCompanies(projectId),
@@ -270,6 +276,7 @@ function App() {
     ])
     setSignalSummary(refreshedSummary)
     setSignalPosts(posts)
+    setDiscoveredPosts(discoveryPosts)
     setSignalComments(comments)
     setSignalSources(sources)
     setSignalCompanies(companies)
@@ -449,7 +456,7 @@ function App() {
     return signalPeople.filter((person) => peopleFilter === "all" || (peopleFilter === "icp" ? person.icp === true : person.icp !== true))
   }
 
-  const selectedPost = signalPosts.find((post) => post.id === selectedPostId) ?? signalPosts[0]
+  const selectedPost = reviewPosts.find((post) => post.id === selectedPostId) ?? reviewPosts[0]
   const selectedCompany = signalCompanies.find((company) => company.id === selectedCompanyId) ?? signalCompanies[0]
   const selectedCompanyTones = selectedCompany
     ? [...new Set(signalComments.filter((comment) => comment.companyName === selectedCompany.name).map((comment) => commentToneLabel(comment.tone)).filter((tone) => tone !== "Pendente"))]
@@ -499,8 +506,14 @@ function App() {
 
   async function handleCuration(postId: string, status: CurationStatus) {
     try {
-      await updatePostCuration(postId, status)
-      setSignalPosts((posts) => posts.map((post) => post.id === postId ? { ...post, curationStatus: status } : post))
+      const post = reviewPosts.find((item) => item.id === postId)
+      if (post?.origin === "discovery") {
+        await updateDiscoveredPostCuration(postId, status)
+        setDiscoveredPosts((posts) => posts.map((item) => item.id === postId ? { ...item, curationStatus: status } : item))
+      } else {
+        await updatePostCuration(postId, status)
+        setSignalPosts((posts) => posts.map((item) => item.id === postId ? { ...item, curationStatus: status } : item))
+      }
       setCollectionState("success")
       setCollectionMessage(status === "aprovado" ? "Post aprovado para monitoramento." : "Post descartado da curadoria.")
     } catch (error) {
@@ -670,9 +683,9 @@ function App() {
             <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
             {postsMode === "search" ? <div className="post-review-layout">
               <section className="signal-panel post-results-panel">
-                <div className="panel-heading"><div><h2>Resultados da busca</h2><p>Clique em um post para revisar.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalPosts.filter((post) => post.curationStatus === "aprovado").length} válidos</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || signalPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
+                <div className="panel-heading"><div><h2>Resultados da busca</h2><p>{discoveredPosts.length > 0 ? "Posts reais encontrados na descoberta; aprove ou descarte antes de monitorar." : "Clique em um post para revisar."}</p></div><div className="panel-heading-actions"><span className="signal-tag">{reviewPosts.filter((post) => post.curationStatus === "aprovado").length} válidos</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || signalPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
                 <div className="post-results-list" aria-label="Lista de posts encontrados">
-                  {signalPosts.map((post) => {
+                  {reviewPosts.map((post) => {
                     const source = signalSources.find((candidate) => candidate.linkedinUrl === post.authorUrl || candidate.name === post.authorName)
                     return <article
                       className={`post-card ${selectedPost?.id === post.id ? "is-selected" : ""}`}
@@ -698,7 +711,7 @@ function App() {
                   <div className="author-box"><div><strong>{selectedPost.authorName ?? "Autor não identificado"}</strong><span>{selectedPost.authorUrl ? displayLinkedInUrl(selectedPost.authorUrl) : "Perfil público"}</span></div><div className="author-box-actions">{source?.status === "monitorada" ? <span className="signal-tag">Perfil monitorado</span> : source?.status === "candidata" ? <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [source.id])}>Monitorar perfil</Button> : null}{selectedPost.authorUrl && <a href={selectedPost.authorUrl} target="_blank" rel="noreferrer">Ver perfil</a>}</div></div>
                   <div className="post-detail-metrics"><span>{selectedPost.reactions ?? 0} reações</span><span>{selectedPost.comments ?? 0} comentários</span><span>{selectedPost.shares ?? 0} compartilhamentos</span></div>
                   {selectedPost.analysis.topic ? <div className="post-analysis post-analysis-detail"><div><strong>Tópico identificado</strong><span>{selectedPost.analysis.topic}</span></div><div><strong>Problema discutido</strong><span>{selectedPost.analysis.problem}</span></div><div><strong>Por que o post faz sentido</strong><span>{selectedPost.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{selectedPost.analysis.collection}</span></div></div> : <div className="post-detail-empty">Este post ainda não foi analisado. Use “Analisar pendente” para gerar a classificação.</div>}
-                  <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar post</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar post</Button><a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
+                  <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar post</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar post</Button>{selectedPost.linkedinUrl && <a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a>}</div>
                 </article>
               })()}
             </div> : <section className="signal-panel sources-panel"><div className="panel-heading source-panel-heading"><div><p className="eyebrow">Perfis monitorados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} fontes ativas · {signalSources.filter((source) => source.status === "candidata").length} sugeridas</h2><p>Posts reais encontrados por perfil. Selecione quem vale acompanhar ou use a recomendação baseada na conversa pública.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalSources.length} fontes</span>{signalSources.some((source) => source.status === "candidata") && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [])}>{collectionAction === "monitor" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Coletando…</> : `Monitorar ${selectedSourceIds.size > 0 ? `seleção (${selectedSourceIds.size})` : `recomendados (${recommendedSources().length})`}`}</Button>}</div></div>{signalSources.length > 0 ? <div className="source-list">{signalSources.map((source) => <article className={`source-row ${selectedSourceIds.has(source.id) ? "is-selected" : ""}`} key={source.id}><div className="source-selection">{source.status === "candidata" && <input aria-label={`Selecionar ${source.name ?? "perfil"}`} checked={selectedSourceIds.has(source.id)} type="checkbox" onChange={() => toggleSourceSelection(source.id)} />}<div><strong>{source.name}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span>{source.previewPost && <p>“{shorten(source.previewPost, 170)}”</p>}</div></div><div className="source-metrics"><span>{source.posts} posts na janela</span><span>{source.comments} comentários</span><span>{source.ratio.toFixed(2)} aproveitamento</span></div><span className={`curation-status source-${source.status}`}>{source.status === "candidata" ? "sugerido" : source.status}</span><div className="source-actions">{source.status === "candidata" && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [source.id])}>Monitorar perfil</Button>}{source.status !== "descartada" && source.status !== "monitorada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Descartar</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhum perfil monitorado</strong><span>Use “Descobrir fontes” para buscar posts e perfis brasileiros para este tema.</span></div>}</section>}
