@@ -577,19 +577,19 @@ function App() {
           {activeView === "overview" && session && signalSummary?.projectId && <>
             <section className="overview-workspace" aria-label="Visão geral dos sinais reais coletados">
               <div className="overview-stats">
-                <div className="overview-stat"><span>Resultados iniciais</span><strong>{overviewMetrics.initialResults}</strong></div>
-                <div className="overview-stat"><span>Posts aprovados</span><strong>{overviewMetrics.approvedPosts}</strong></div>
-                <div className="overview-stat"><span>Autores monitorados</span><strong>{overviewMetrics.monitoredAuthors}</strong></div>
-                <div className="overview-stat is-current"><span>Comentários analisados</span><strong>{overviewMetrics.analyzedComments}</strong></div>
+                <div className="overview-stat"><span>Fontes brasileiras</span><strong>{overviewMetrics.discoveredSources}</strong></div>
+                <div className="overview-stat"><span>Posts coletados</span><strong>{overviewMetrics.collectedPosts}</strong></div>
+                <div className="overview-stat"><span>Pessoas com sinal</span><strong>{overviewMetrics.observedPeople}</strong></div>
+                <div className="overview-stat is-current"><span>Comentários coletados</span><strong>{overviewMetrics.collectedComments}</strong></div>
                 <div className="overview-stat"><span>Empresas identificadas</span><strong>{overviewMetrics.identifiedCompanies}</strong></div>
               </div>
               <div className="overview-grid">
                 <section className="signal-panel overview-panel">
-                  <div className="panel-heading"><div><h2>O que as pessoas estão dizendo</h2><p>Comentários com maior utilidade para investigação.</p></div><Button type="button" size="sm" variant="outline" onClick={() => navigate("comments")}>Ver todos</Button></div>
+                  <div className="panel-heading"><div><h2>O que as pessoas estão dizendo</h2><p>Comentários reais coletados; a classificação aparece quando concluída.</p></div><Button type="button" size="sm" variant="outline" onClick={() => navigate("comments")}>Ver todos</Button></div>
                   {usefulComments.length > 0 ? <div className="overview-comment-list">{usefulComments.map((comment) => <article className="overview-comment-card" key={comment.id}>
                     <div className="comment-avatar">{comment.personName.slice(0, 1).toUpperCase()}</div>
                     <div className="overview-comment-content"><strong>{comment.personName}</strong><span>{comment.personHeadline ?? "Perfil público"} · {comment.companyName ?? "Empresa não identificada"}</span><p>“{shorten(comment.text, 220)}”</p><div className="overview-comment-tags"><span className="signal-tag">{commentToneLabel(comment.tone)}</span><span>{formatDate(comment.publishedAt)}</span></div></div>
-                  </article>)}</div> : <div className="overview-empty">Ainda não há comentários classificados como sinal de interesse.</div>}
+                  </article>)}</div> : <div className="overview-empty">Ainda não há comentários coletados para esta pesquisa.</div>}
                 </section>
                 <section className="signal-panel overview-panel">
                   <div className="panel-heading"><div><h2>Empresas mais presentes</h2><p>Consolidação dos comentaristas por conta.</p></div><Button type="button" size="sm" variant="outline" onClick={() => navigate("companies")}>Explorar</Button></div>
