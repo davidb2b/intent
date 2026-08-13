@@ -158,6 +158,7 @@ function App() {
   const [peopleFilter, setPeopleFilter] = useState<PeopleFilter>("all")
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null)
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set())
   const [postsMode, setPostsMode] = useState<PostsMode>("search")
   const [signalComments, setSignalComments] = useState<SignalComment[]>([])
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("all")
@@ -207,6 +208,7 @@ function App() {
       setSignalCompanies([])
       setSignalPeople([])
       setSelectedPostId(null)
+      setSelectedSourceIds(new Set())
       setSignalComments([])
       setSummaryError("")
       setSummaryLoading(false)
@@ -275,18 +277,52 @@ function App() {
       if (!session) { setAuthOpen(true); setCollectionMessage("Faça login para iniciar uma coleta real.") }
       return
     }
-    setCollectionState("running")
-    setCollectionAction("monitor")
-    setCollectionMessage("Coletando posts e comentários reais no Apify. Seus dados atuais continuam visíveis enquanto a busca é concluída.")
     try {
       if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de iniciar uma coleta.")
-      const result = await runMonitoring(signalSummary.projectId)
-      setCollectionState("success")
-      setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários monitorados.`)
-      await refreshSignalData(signalSummary.projectId)
+      await monitorSources(signalSummary.projectId, [])
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar a coleta.")
+    }
+  }
+
+  function recommendedSources() {
+    return signalSources
+      .filter((source) => source.status === "candidata")
+      .sort((first, second) => second.ratio - first.ratio || second.comments - first.comments || second.posts - first.posts)
+      .slice(0, 3)
+  }
+
+  function toggleSourceSelection(sourceId: string) {
+    setSelectedSourceIds((current) => {
+      const next = new Set(current)
+      if (next.has(sourceId)) next.delete(sourceId)
+      else next.add(sourceId)
+      return next
+    })
+  }
+
+  async function monitorSources(projectId: string, sourceIds: string[]) {
+    if (collectionState === "running") return
+    const idsToMonitor = sourceIds.length > 0 ? sourceIds : selectedSourceIds.size > 0 ? [...selectedSourceIds] : recommendedSources().map((source) => source.id)
+    setCollectionState("running")
+    setCollectionAction("monitor")
+    try {
+      if (idsToMonitor.length > 0) {
+        setCollectionMessage(`Preparando ${idsToMonitor.length} perfil${idsToMonitor.length === 1 ? "" : "is"} para monitoramento…`)
+        await Promise.all(idsToMonitor.map((sourceId) => updateSourceStatus(sourceId, "monitorada")))
+        setSignalSources((sources) => sources.map((source) => idsToMonitor.includes(source.id) ? { ...source, status: "monitorada" } : source))
+        setSelectedSourceIds(new Set())
+      }
+      setCollectionMessage("Coletando posts e comentários reais. Os resultados encontrados continuam visíveis enquanto a pesquisa é concluída.")
+      const result = await runMonitoring(projectId)
+      await refreshSignalData(projectId)
+      setCollectionState("success")
+      setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários foram coletados. Pessoas e empresas já foram atualizadas.`)
+      navigate("comments")
+    } catch (error) {
+      setCollectionState("error")
+      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar o monitoramento.")
     } finally {
       setCollectionAction(null)
     }
@@ -307,6 +343,7 @@ function App() {
       setCollectionState("success")
       setCollectionMessage(result.message ?? discoveryFeedback(result, keyword))
       if (result.candidatesInserted > 0) {
+        setSelectedSourceIds(new Set())
         setPostsMode("sources")
         navigate("posts")
       }
@@ -351,6 +388,7 @@ function App() {
       setCollectionState("success")
       setCollectionMessage(discovery.message ?? discoveryFeedback(discovery, saved.keyword))
       if (discovery.candidatesInserted > 0) {
+        setSelectedSourceIds(new Set())
         setPostsMode("sources")
         navigate("posts")
       }
@@ -599,7 +637,7 @@ function App() {
             </section>
           </>}
           {activeView === "posts" && session && signalSummary?.projectId ? <div className="posts-workspace">
-            <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
+            <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Posts monitorados</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Resultados encontrados</Button></div>
             {postsMode === "search" ? <div className="post-review-layout">
               <section className="signal-panel post-results-panel">
                 <div className="panel-heading"><div><h2>Resultados da busca</h2><p>Clique em um post para revisar.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalPosts.filter((post) => post.curationStatus === "aprovado").length} válidos</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || signalPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
@@ -633,7 +671,7 @@ function App() {
                   <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar post</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar post</Button><a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
                 </article>
               })()}
-            </div> : <section className="signal-panel sources-panel"><div className="panel-heading"><div><p className="eyebrow">Perfis monitorados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} fontes ativas</h2><p>As coletas semanais leem somente fontes aprovadas.</p></div><span className="signal-tag">{signalSources.length} fontes</span></div>{signalSources.length > 0 ? <div className="source-list">{signalSources.map((source) => <article className="source-row" key={source.id}><div><strong>{source.name}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span></div><div className="source-metrics"><span>{source.posts} posts</span><span>{source.comments} comentários</span><span>{source.ratio.toFixed(2)} razão</span></div><span className={`curation-status source-${source.status}`}>{source.status}</span><div className="source-actions">{source.status !== "monitorada" && <Button type="button" size="sm" onClick={() => void handleSourceStatus(source.id, "monitorada")}>Monitorar</Button>}{source.status !== "descartada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Descartar</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma fonte descoberta</strong><span>Use “Descobrir fontes” para encontrar perfis brasileiros candidatos.</span></div>}</section>}
+            </div> : <section className="signal-panel sources-panel"><div className="panel-heading source-panel-heading"><div><p className="eyebrow">Resultados encontrados</p><h2>{signalSources.filter((source) => source.status === "candidata").length} perfis prontos para acompanhar</h2><p>Prévia de posts reais encontrados. Escolha os perfis ou use a seleção recomendada.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalSources.length} perfis</span>{signalSources.some((source) => source.status === "candidata") && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [])}>{collectionAction === "monitor" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Coletando…</> : `Monitorar ${selectedSourceIds.size > 0 ? `seleção (${selectedSourceIds.size})` : `recomendados (${recommendedSources().length})`}`}</Button>}</div></div>{signalSources.length > 0 ? <div className="source-list">{signalSources.map((source) => <article className={`source-row ${selectedSourceIds.has(source.id) ? "is-selected" : ""}`} key={source.id}><div className="source-selection">{source.status === "candidata" && <input aria-label={`Selecionar ${source.name ?? "perfil"}`} checked={selectedSourceIds.has(source.id)} type="checkbox" onChange={() => toggleSourceSelection(source.id)} />}<div><strong>{source.name}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span>{source.previewPost && <p>“{shorten(source.previewPost, 170)}”</p>}</div></div><div className="source-metrics"><span>{source.posts} posts reais</span><span>{source.comments} comentários</span><span>{source.ratio.toFixed(2)} razão</span></div><span className={`curation-status source-${source.status}`}>{source.status === "candidata" ? "pronto" : source.status}</span><div className="source-actions">{source.status === "candidata" && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [source.id])}>Monitorar e coletar</Button>}{source.status !== "descartada" && source.status !== "monitorada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Descartar</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhum resultado encontrado</strong><span>Use “Descobrir fontes” para buscar posts e perfis brasileiros para este tema.</span></div>}</section>}
           </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">
             <div className="comment-toolbar">
               <div className="comment-filters" role="group" aria-label="Filtrar comentários">

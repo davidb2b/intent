@@ -111,7 +111,7 @@ Deno.serve(async (request) => {
     registerActualCost(budget, result.costUsd)
     await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-search", itens: result.items.length, custo_usd: costUsd })
 
-    const grouped = new Map<string, { url: string; name: string | null; posts: number; comments: number; reactions: number; brazilScore: number; discoveredBy: string }>()
+    const grouped = new Map<string, { url: string; name: string | null; posts: number; comments: number; reactions: number; brazilScore: number; discoveredBy: string; previewText: string | null }>()
     for (const item of result.items as ActorPost[]) {
       const postText = item.content ?? item.text ?? item.commentary ?? null
       if (!matchesTopic({ text: postText, keyword: terms[0] })) continue
@@ -120,7 +120,7 @@ Deno.serve(async (request) => {
       const author = item.author ?? item.actor
       const comments = metric(item.engagement?.comments, item.commentsCount)
       const reactions = metric(item.engagement?.reactions, item.reactionsCount)
-      const current = grouped.get(url) ?? { url, name: author?.name ?? null, posts: 0, comments: 0, reactions: 0, brazilScore: 0, discoveredBy: terms[0] }
+      const current = grouped.get(url) ?? { url, name: author?.name ?? null, posts: 0, comments: 0, reactions: 0, brazilScore: 0, discoveredBy: terms[0], previewText: postText }
       current.posts += 1
       current.comments += comments
       current.reactions += reactions
@@ -178,7 +178,7 @@ Deno.serve(async (request) => {
       const name = usablePersonName(candidate.name)
       if (!name) { unverified += 1; continue }
       const ratio = candidate.reactions > 0 ? candidate.comments / candidate.reactions : candidate.comments > 0 ? candidate.comments : 0
-      const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio }), status: "candidata", descoberta_em: candidate.discoveredBy })
+      const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio, pre_visualizacao_post: candidate.previewText }), status: "candidata", descoberta_em: candidate.discoveredBy })
       if (!error) inserted += 1
     }
     

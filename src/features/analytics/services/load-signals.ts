@@ -70,6 +70,7 @@ export type SignalSource = {
   comments: number
   reactions: number
   ratio: number
+  previewPost: string | null
 }
 
 export type SignalCompany = {
@@ -226,7 +227,7 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
 
   if (error) throw new Error(error.message)
   return (data ?? []).filter((source) => Boolean(source.nome?.trim())).map((source) => {
-    let meta: { posts?: number; comentarios?: number; reacoes?: number; razao_comentarios_reacoes?: number } = {}
+    let meta: { posts?: number; comentarios?: number; reacoes?: number; razao_comentarios_reacoes?: number; pre_visualizacao_post?: string } = {}
     try { meta = source.meta ? JSON.parse(source.meta) as typeof meta : {} } catch { meta = {} }
     return {
       id: source.id,
@@ -237,6 +238,7 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
       comments: meta.comentarios ?? 0,
       reactions: meta.reacoes ?? 0,
       ratio: meta.razao_comentarios_reacoes ?? 0,
+      previewPost: meta.pre_visualizacao_post?.trim() || null,
     }
   })
 }
