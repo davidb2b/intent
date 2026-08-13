@@ -49,6 +49,7 @@ type ActorComment = {
 }
 
 const MAX_POSTS_WITH_COMMENTS_PER_RUN = 3
+const PERSISTENCE_BATCH_SIZE = 100
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } })
@@ -81,6 +82,12 @@ function sourceUrl(value: string) {
   return /(^|\.)linkedin\.com\/in\//i.test(value)
     ? canonicalProfileUrl(value)
     : value.replace(/[?#].*$/, "").replace(/\/$/, "")
+}
+
+function batches<T>(items: T[], size = PERSISTENCE_BATCH_SIZE) {
+  const output: T[][] = []
+  for (let index = 0; index < items.length; index += size) output.push(items.slice(index, index + size))
+  return output
 }
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
@@ -212,68 +219,100 @@ Deno.serve(async (request) => {
     }
 
     // Do not expose partial collections. All calls to external Actors are
-    // complete at this point; only now does persistence begin.
+    // complete at this point; only now does persistence begin. These writes
+    // are batched: serial upserts made ordinary runs appear frozen after the
+    // Actors had already finished.
     await persistExecutionProgress(admin, execution.id, { stage: "organizando_sinais", progress: 84, message: "Organizando posts, pessoas e empresas identificadas." })
     const persistedPosts = new Map<string, string>()
-    for (const postRow of postRows) {
-      const { raw } = postRow
-      const { data: post, error } = await admin.from("posts").upsert({
+    for (const postBatch of batches(postRows)) {
+      const { data: posts, error } = await admin.from("posts").upsert(postBatch.map((postRow) => ({
         projeto_id: projectId,
         fonte_id: postRow.sourceId,
         linkedin_url: postRow.linkedinUrl,
-        post_urn: raw.id!,
+        post_urn: postRow.raw.id!,
         autor_nome: postRow.authorName,
         autor_url: postRow.authorUrl,
         texto: postRow.text,
-        publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null,
-        total_reacoes: countValue(raw.engagement?.reactions, raw.reactionsCount),
-        total_comentarios: countValue(raw.engagement?.comments, raw.commentsCount),
-        total_shares: countValue(raw.engagement?.shares, raw.sharesCount),
-      }, { onConflict: "projeto_id,post_urn" }).select("id").single()
-      if (error || !post) throw new Error(`Não foi possível persistir o post ${raw.id}: ${error?.message ?? "registro ausente"}`)
-      persistedPosts.set(raw.id!, post.id)
-      postsRead += 1
+        publicado_em: dateValue(postRow.raw.postedAt) ?? postRow.raw.createdAt ?? null,
+        total_reacoes: countValue(postRow.raw.engagement?.reactions, postRow.raw.reactionsCount),
+        total_comentarios: countValue(postRow.raw.engagement?.comments, postRow.raw.commentsCount),
+        total_shares: countValue(postRow.raw.engagement?.shares, postRow.raw.sharesCount),
+      })), { onConflict: "projeto_id,post_urn" }).select("id, post_urn")
+      if (error || !posts) throw new Error(`Não foi possível persistir os posts: ${error?.message ?? "registros ausentes"}`)
+      for (const post of posts) persistedPosts.set(post.post_urn, post.id)
+    }
+    postsRead = persistedPosts.size
+    await persistExecutionProgress(admin, execution.id, { stage: "organizando_sinais", progress: 88, message: `Posts organizados. Consolidando empresas de ${collectedComments.length} comentários.` })
+
+    type ValidComment = { comment: ActorComment; postUrn: string; actorUrl: string; slug: string; personName: string; companyName: string | null; companyKey: string | null }
+    const validComments: ValidComment[] = []
+    for (const { comment, postUrn } of collectedComments) {
+      const actor = comment.actor!
+      const actorUrl = sourceUrl(actor.linkedinUrl!)
+      if (!profileCache.get(actorUrl)) continue
+      const personName = usablePersonName(actor.name)
+      if (!personName) { incompletePeople += 1; continue }
+      const companyName = actor.experience?.[0]?.companyName?.trim() || null
+      validComments.push({ comment, postUrn, actorUrl, slug: normalizeProfileSlug(actorUrl), personName, companyName, companyKey: companyName ? normalizeCompanyKey(companyName) || null : null })
     }
 
-    for (const { comment, postUrn } of collectedComments) {
-        const actor = comment.actor!
-        const actorUrl = sourceUrl(actor.linkedinUrl!)
-        if (!profileCache.get(actorUrl)) continue
-        const personName = usablePersonName(actor.name)
-        if (!personName) { incompletePeople += 1; continue }
-        const slug = normalizeProfileSlug(actorUrl)
-        const companyName = actor.experience?.[0]?.companyName?.trim() || null
-        let companyId: string | null = null
-        if (companyName) {
-          const companyKey = normalizeCompanyKey(companyName)
-          if (companyKey) {
-            const { data: company, error: companyError } = await admin.from("empresas").upsert({ projeto_id: projectId, nome: companyName, nome_chave: companyKey }, { onConflict: "projeto_id,nome_chave" }).select("id").single()
-            if (companyError || !company) throw new Error(`Não foi possível persistir a empresa ${companyName}: ${companyError?.message ?? "registro ausente"}`)
-            companyId = company.id
-          }
-        }
-        const { data: existingPerson } = await admin.from("pessoas").select("id, revisado_por_humano").eq("projeto_id", projectId).eq("slug", slug).maybeSingle()
-        const personPayload = personPersistencePayload({
-          linkedinUrl: actorUrl,
-          slug,
-          name: personName,
-          headline: actor.headline ?? actor.position ?? null,
-          cargo: actor.experience?.[0]?.position ?? null,
-          companyId,
-          companyName,
-          reviewedByHuman: existingPerson?.revisado_por_humano === true,
-        })
-        const { data: person, error: personError } = existingPerson
-          ? await admin.from("pessoas").update(personPayload).eq("id", existingPerson.id).select("id").single()
-          : await admin.from("pessoas").insert({ projeto_id: projectId, ...personPayload }).select("id").single()
-        if (personError) throw new Error(`Não foi possível persistir a pessoa ${slug}: ${personError.message}`)
-        if (!person) continue
-        if (!existingPerson) peopleNew += 1
-        const postId = persistedPosts.get(postUrn)
-        if (!postId) continue
-        const { error } = await admin.from("comentarios").upsert({ projeto_id: projectId, post_id: postId, pessoa_id: person.id, comentario_urn: comment.id!, texto: comment.commentary!, publicado_em: comment.createdAt ?? null }, { onConflict: "projeto_id,comentario_urn" })
-        if (!error) commentsRead += 1
+    const companiesByKey = new Map<string, { name: string; key: string }>()
+    for (const item of validComments) if (item.companyName && item.companyKey) companiesByKey.set(item.companyKey, { name: item.companyName, key: item.companyKey })
+    const companyIds = new Map<string, string>()
+    for (const companyBatch of batches([...companiesByKey.values()])) {
+      const { data: companies, error } = await admin.from("empresas").upsert(companyBatch.map((company) => ({ projeto_id: projectId, nome: company.name, nome_chave: company.key })), { onConflict: "projeto_id,nome_chave" }).select("id, nome_chave")
+      if (error || !companies) throw new Error(`Não foi possível persistir as empresas: ${error?.message ?? "registros ausentes"}`)
+      for (const company of companies) companyIds.set(company.nome_chave, company.id)
     }
+    await persistExecutionProgress(admin, execution.id, { stage: "organizando_sinais", progress: 92, message: `Empresas organizadas. Atualizando ${new Set(validComments.map((item) => item.slug)).size} pessoas com perfis validados.` })
+
+    const peopleBySlug = new Map<string, ValidComment>()
+    for (const item of validComments) peopleBySlug.set(item.slug, item)
+    const existingPeople = new Map<string, { id: string; revisado_por_humano: boolean }>()
+    for (const slugBatch of batches([...peopleBySlug.keys()])) {
+      const { data, error } = await admin.from("pessoas").select("id, slug, revisado_por_humano").eq("projeto_id", projectId).in("slug", slugBatch)
+      if (error) throw new Error(`Não foi possível consultar pessoas existentes: ${error.message}`)
+      for (const person of data ?? []) existingPeople.set(person.slug, person)
+    }
+    const personIds = new Map<string, string>()
+    for (const peopleBatch of batches([...peopleBySlug.values()])) {
+      const { data: people, error } = await admin.from("pessoas").upsert(peopleBatch.map((item) => {
+        const actor = item.comment.actor!
+        const existing = existingPeople.get(item.slug)
+        return {
+          projeto_id: projectId,
+          ...personPersistencePayload({
+            linkedinUrl: item.actorUrl,
+            slug: item.slug,
+            name: item.personName,
+            headline: actor.headline ?? actor.position ?? null,
+            cargo: actor.experience?.[0]?.position ?? null,
+            companyId: item.companyKey ? companyIds.get(item.companyKey) ?? null : null,
+            companyName: item.companyName,
+            reviewedByHuman: existing?.revisado_por_humano === true,
+          }),
+        }
+      }), { onConflict: "projeto_id,slug" }).select("id, slug")
+      if (error || !people) throw new Error(`Não foi possível persistir as pessoas: ${error?.message ?? "registros ausentes"}`)
+      for (const person of people) personIds.set(person.slug, person.id)
+    }
+    peopleNew = [...peopleBySlug.keys()].filter((slug) => !existingPeople.has(slug)).length
+    await persistExecutionProgress(admin, execution.id, { stage: "organizando_sinais", progress: 96, message: "Pessoas atualizadas. Associando os comentários aos posts coletados." })
+
+    const commentsByUrn = new Map<string, ValidComment>()
+    for (const item of validComments) if (persistedPosts.has(item.postUrn) && personIds.has(item.slug)) commentsByUrn.set(item.comment.id!, item)
+    for (const commentBatch of batches([...commentsByUrn.values()])) {
+      const { error } = await admin.from("comentarios").upsert(commentBatch.map((item) => ({
+        projeto_id: projectId,
+        post_id: persistedPosts.get(item.postUrn)!,
+        pessoa_id: personIds.get(item.slug)!,
+        comentario_urn: item.comment.id!,
+        texto: item.comment.commentary!,
+        publicado_em: item.comment.createdAt ?? null,
+      })), { onConflict: "projeto_id,comentario_urn" })
+      if (error) throw new Error(`Não foi possível persistir os comentários: ${error.message}`)
+    }
+    commentsRead = commentsByUrn.size
     if (incompletePeople > 0) warnings.push(`${incompletePeople} comentários foram ignorados porque o perfil não tinha nome público.`)
     if (outOfTopicPosts > 0) warnings.push(`${outOfTopicPosts} posts foram ignorados porque não mencionavam o tema monitorado.`)
     await admin.from("execucoes").update({ status: "concluida", etapa_atual: "concluida", progresso: 100, mensagem_progresso: `${postsRead} posts e ${commentsRead} comentários organizados.`, posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, parametros: { janela, origem: origin, fontes: monitoredSources.length, avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
