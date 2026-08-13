@@ -4,14 +4,18 @@ O monitoramento semanal usa a mesma Edge Function da execução manual. A
 diferença é a autenticação: a execução agendada não usa sessão de usuário; ela
 usa o secret de servidor `SCHEDULER_SECRET` no header `x-scheduler-secret`.
 
-## Configuração necessária
+## Configuração aplicada
 
-1. Criar um secret forte no Supabase com o nome `SCHEDULER_SECRET`.
-2. Configurar o cron do Supabase para segunda-feira às 06:00 no fuso de São
-   Paulo (`09:00 UTC`), chamando `POST /functions/v1/run-monitoring`.
-3. Enviar no body o `projectId` do projeto e `janela: "month"`.
-4. Enviar os headers `Content-Type: application/json` e
-   `x-scheduler-secret` com o valor armazenado no secret.
+O agendamento está ativo no projeto Supabase:
+
+1. As extensões `pg_cron` e `pg_net` estão habilitadas.
+2. O secret de servidor `SCHEDULER_SECRET` está cadastrado nas Edge Functions.
+3. Os valores de URL do projeto, chave pública e secret do agendador estão no
+   Supabase Vault; não existem credenciais no repositório nem no job cron.
+4. O job `signal-lab-weekly-monitoring` está ativo com a expressão
+   `0 9 * * 1`, que equivale a segunda-feira, 06:00 BRT (`09:00 UTC`).
+5. A chamada usa `POST /functions/v1/run-monitoring`, com `janela: "month"`
+   e o projeto Signal Lab cadastrado.
 
 Exemplo de body:
 
@@ -28,6 +32,8 @@ custo. Sem o secret correto, a chamada não é aceita.
 
 ## Estado atual
 
-O contrato seguro da função está implementado. A criação do secret e do job
-cron ainda é uma configuração de infraestrutura e deve ser feita no projeto
-Supabase antes de considerar o agendamento ativo.
+O contrato seguro e a infraestrutura do agendamento estão ativos. A chamada
+foi validada com o secret correto e um projeto inexistente: a função respondeu
+`404 Projeto agendado não encontrado`, confirmando que o gateway e a
+autenticação do agendador foram atravessados sem iniciar uma coleta ou gerar
+custo. A primeira execução real ocorrerá no próximo horário programado.

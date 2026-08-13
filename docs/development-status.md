@@ -85,9 +85,13 @@
 - O contrato e os passos para configurar o cron de segunda-feira às 06:00 BRT
   estão em `docs/scheduling.md`.
 - `SCHEDULER_SECRET` já foi cadastrado no projeto Supabase sem expor o valor.
-- Pendente: ativar o job cron no projeto Supabase; a tela de Edge Functions
-  disponível para esta conta está em modo somente leitura e não exibe o
-  gerenciamento de schedules.
+- As extensões `pg_cron` e `pg_net` foram habilitadas; URL, chave pública e
+  secret do agendador foram armazenados no Supabase Vault.
+- O job `signal-lab-weekly-monitoring` está ativo com `0 9 * * 1` (segunda,
+  06:00 BRT) e usa o único projeto Signal Lab hoje cadastrado.
+- A rota foi validada com o secret do agendador e respondeu `404` para um
+  projeto inexistente, confirmando que a autenticação do cron está protegida;
+  a primeira execução real será registrada no próximo horário programado.
 
 ## Concluído nesta etapa
 
