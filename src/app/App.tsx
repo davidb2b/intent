@@ -155,6 +155,7 @@ function App() {
   const [postAnalysisBusy, setPostAnalysisBusy] = useState(false)
 
   const content = viewCopy[activeView]
+  const recentExecutions = signalSummary?.executionHistory.slice(0, 5) ?? []
 
   useEffect(() => {
     const updateSession = (nextSession: { user?: { id: string; email?: string } } | null) => {
@@ -500,7 +501,21 @@ function App() {
             <div><span>Pessoas</span><strong>{signalSummary.people}</strong></div>
             <div><span>Empresas</span><strong>{signalSummary.companies}</strong></div>
           </div>}
-          {activeView === "overview" && session && signalSummary?.projectId && <section className="signal-panel execution-history-panel"><div className="panel-heading"><div><p className="eyebrow">Histórico</p><h2>Execuções recentes</h2><p>Descobertas e monitoramentos com origem e custo reais.</p></div><span className="signal-tag">{signalSummary.executionHistory.length} registros</span></div>{signalSummary.executionHistory.length > 0 ? <div className="execution-list">{signalSummary.executionHistory.map((execution) => <article className="execution-row" key={execution.id}><div><strong>{execution.type === "descoberta" ? "Descoberta de fontes" : "Monitoramento"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Agendada" : execution.origin === "manual" ? "Manual" : "Origem não informada"}</span></div><div><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.error && <small className="execution-error">{execution.error}</small>}{execution.warnings.length > 0 && <small className="execution-warning">⚠ {execution.warnings.length} aviso(s) de truncamento</small>}</div><strong>{formatCurrency(execution.costUsd)}</strong></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma execução registrada</strong><span>As próximas descobertas e monitoramentos aparecerão aqui.</span></div>}</section>}
+          {activeView === "overview" && session && signalSummary?.projectId && <section className="signal-panel execution-history-panel">
+            <div className="panel-heading">
+              <div><p className="eyebrow">Histórico</p><h2>Últimas execuções</h2><p>Acompanhe o resultado e o custo das coletas reais.</p></div>
+              <span className="signal-tag">{signalSummary.executionHistory.length} registros</span>
+            </div>
+            {recentExecutions.length > 0 ? <>
+              <div className="execution-list">{recentExecutions.map((execution) => <article className="execution-row" key={execution.id}>
+                <div className="execution-identity"><strong>{execution.type === "descoberta" ? "Descoberta de fontes" : "Monitoramento"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Agendada" : execution.origin === "manual" ? "Manual" : "Origem não informada"}</span></div>
+                <div className="execution-outcome"><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.warnings.length > 0 && <small className="execution-warning">⚠ {execution.warnings.length} aviso(s) de truncamento</small>}</div>
+                <strong className="execution-cost">{formatCurrency(execution.costUsd)}</strong>
+                {execution.error && <p className="execution-error">{execution.error}</p>}
+              </article>)}</div>
+              {signalSummary.executionHistory.length > recentExecutions.length && <p className="execution-more">Mostrando as últimas {recentExecutions.length} execuções.</p>}
+            </> : <div className="filtered-empty"><strong>Nenhuma execução registrada</strong><span>As próximas descobertas e monitoramentos aparecerão aqui.</span></div>}
+          </section>}
           {activeView === "posts" && session && signalSummary?.projectId ? <div className="signal-panel-grid">
             <section className="signal-panel">
               <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
@@ -548,7 +563,7 @@ function App() {
             <div className="comment-toolbar"><div className="comment-filters" role="group" aria-label="Filtrar pessoas"><Button type="button" size="sm" variant={peopleFilter === "all" ? "default" : "outline"} onClick={() => setPeopleFilter("all")}>Todas</Button><Button type="button" size="sm" variant={peopleFilter === "icp" ? "default" : "outline"} onClick={() => setPeopleFilter("icp")}>Dentro do ICP</Button><Button type="button" size="sm" variant={peopleFilter === "without-icp" ? "default" : "outline"} onClick={() => setPeopleFilter("without-icp")}>Fora ou pendentes</Button></div></div>
             <div className="panel-heading"><div><p className="eyebrow">Pessoas</p><h2>{visiblePeople().length} pessoas observadas</h2><p>Pessoas que demonstraram um sinal público em comentários coletados.</p></div><span className="signal-tag">Dados reais</span></div>
             <div className="people-list">{visiblePeople().map((person) => <article className="person-row" key={person.id}><div className="comment-avatar">{person.name.slice(0, 1).toUpperCase()}</div><div className="person-info"><strong>{person.name}</strong><span>{person.headline ?? person.role ?? "Perfil público"}</span><small>{person.companyName ?? "Empresa não identificada"}</small><a href={person.linkedinUrl} target="_blank" rel="noreferrer">Ver perfil</a></div><div className="person-signal"><span className={`signal-tag ${person.icp === true ? "" : "signal-tag-muted"}`}>{person.icp === true ? "Dentro do ICP" : person.icp === false ? "Fora do ICP" : "ICP pendente"}</span><strong>{person.comments}</strong><span>comentários</span></div></article>)}</div>
-          </section> : summaryLoading ? <div className="empty-state" aria-busy="true">
+          </section> : activeView === "overview" && session && signalSummary?.projectId ? null : summaryLoading ? <div className="empty-state" aria-busy="true">
             <div className="empty-icon"><Clock3 size={24} /></div>
             <h2>Carregando dados reais</h2>
             <p>Buscando a pesquisa, o histórico e os sinais já persistidos.</p>

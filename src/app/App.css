@@ -77,16 +77,17 @@
 .signal-metrics strong { font-size: 24px; letter-spacing: -.04em; }
 .execution-history-panel { margin-bottom: 16px; }
 .execution-warning { color: #a16207; }
-.execution-error { max-width: 360px; color: #b42318 !important; line-height: 1.35; }
 .execution-list { display: grid; }
-.execution-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; padding: 15px 24px; border-bottom: 1px solid var(--signal-border); }
+.execution-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px 18px; padding: 15px 24px; border-bottom: 1px solid var(--signal-border); }
 .execution-row:last-child { border-bottom: 0; }
-.execution-row > div:first-child strong, .execution-row > div:first-child span, .execution-row > div:nth-child(2) span, .execution-row > div:nth-child(2) small { display: block; }
-.execution-row > div:first-child strong { font-size: 12px; }
-.execution-row > div:first-child span, .execution-row > div:nth-child(2) small { margin-top: 4px; color: var(--signal-muted); font-size: 10px; }
-.execution-row > div:nth-child(2) { text-align: right; }
-.execution-row > div:nth-child(2) span { color: var(--signal-brand-dark); font-size: 11px; font-weight: 600; }
-.execution-row > strong { min-width: 70px; color: #17221c; font-size: 12px; text-align: right; }
+.execution-identity strong, .execution-identity span, .execution-outcome span, .execution-outcome small { display: block; }
+.execution-identity strong { font-size: 12px; }
+.execution-identity span, .execution-outcome small { margin-top: 4px; color: var(--signal-muted); font-size: 10px; }
+.execution-outcome { text-align: right; }
+.execution-outcome > span { color: var(--signal-brand-dark); font-size: 11px; font-weight: 600; }
+.execution-cost { min-width: 70px; color: #17221c; font-size: 12px; text-align: right; }
+.execution-error { grid-column: 1 / -1; margin: 0; border-radius: 7px; background: #fff5f4; color: #a6382f; padding: 7px 9px; font-size: 10px; line-height: 1.4; }
+.execution-more { margin: 0; border-top: 1px solid var(--signal-border); color: var(--signal-muted); padding: 12px 24px; font-size: 11px; }
 .signal-panel-grid { display: grid; grid-template-columns: minmax(0, 1fr); }
 .signal-panel { border: 1px solid var(--signal-border); border-radius: 14px; background: var(--signal-surface); overflow: hidden; }
 .mode-switch { display: inline-flex; gap: 4px; margin: 16px 24px 0; padding: 3px; border: 1px solid var(--signal-border); border-radius: 999px; background: var(--signal-bg); }
