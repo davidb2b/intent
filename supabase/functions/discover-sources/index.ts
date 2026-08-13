@@ -5,6 +5,7 @@ import { brazilRelevanceScore, buildBrazilFirstQueries, isLinkedInPersonProfileU
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 import { isStaleExecution } from "../_shared/execution-lock.ts"
+import { usablePersonName } from "../_shared/person-enrichment.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -131,13 +132,16 @@ Deno.serve(async (request) => {
     const candidates = [...grouped.values()]
       .filter((candidate) => !existingUrls.has(candidate.url))
       .sort((a, b) => b.brazilScore - a.brazilScore || b.comments - a.comments || b.reactions - a.reactions)
-    const batchCandidates = candidates.slice(0, MAX_PROFILES_PER_DISCOVERY)
+    const namedCandidates = candidates.filter((candidate) => Boolean(usablePersonName(candidate.name)))
+    const unnamedCandidates = candidates.length - namedCandidates.length
+    const batchCandidates = namedCandidates.slice(0, MAX_PROFILES_PER_DISCOVERY)
     const deferredCandidates = candidates.length - batchCandidates.length
     const profileCache = new Map<string, boolean>()
     let inserted = 0
     let rejected = 0
-    let unverified = 0
+    let unverified = unnamedCandidates
     const discoveryWarnings: string[] = []
+    if (unnamedCandidates > 0) discoveryWarnings.push(`${unnamedCandidates} autores sem nome foram ignorados para impedir perfis incompletos.`)
     if (batchCandidates.length > 0) {
       const profileInput = buildBrazilProfileBatchInput(batchCandidates.map((candidate) => candidate.url))
       try {
@@ -166,8 +170,10 @@ Deno.serve(async (request) => {
       const brazilian = profileCache.get(candidate.url)
       if (brazilian === undefined) { unverified += 1; continue }
       if (!brazilian) { rejected += 1; continue }
+      const name = usablePersonName(candidate.name)
+      if (!name) { unverified += 1; continue }
       const ratio = candidate.reactions > 0 ? candidate.comments / candidate.reactions : candidate.comments > 0 ? candidate.comments : 0
-      const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: candidate.name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio }), status: "candidata", descoberta_em: candidate.discoveredBy })
+      const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio }), status: "candidata", descoberta_em: candidate.discoveredBy })
       if (!error) inserted += 1
     }
     

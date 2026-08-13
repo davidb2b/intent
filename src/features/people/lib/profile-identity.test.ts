@@ -3,6 +3,7 @@ import { buildBrazilProfileBatchInput, isBrazilianProfile, requestedProfileSlugs
 import { brazilRelevanceScore, buildBrazilFirstQueries, buildBrazilProfileSearchInput, isLinkedInPersonProfileUrl } from "../../../../supabase/functions/_shared/brazil-first-discovery"
 import { canonicalProfileUrl, normalizeProfileSlug } from "../../../../supabase/functions/_shared/profile-identity"
 import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "../../../../supabase/functions/_shared/monitoring-posts"
+import { usablePersonName } from "../../../../supabase/functions/_shared/person-enrichment"
 
 describe("profile identity", () => {
   it("canonicalizes LinkedIn profile URLs into one slug", () => {
@@ -71,5 +72,10 @@ describe("profile identity", () => {
     expect(isLinkedInPersonProfileUrl("https://www.linkedin.com/company/empresa-brasileira")).toBe(false)
     expect(brazilRelevanceScore("Compras estratégicas no Brasil e em São Paulo")).toBeGreaterThan(0)
     expect(brazilRelevanceScore("Procurement strategy in Europe")).toBe(0)
+  })
+
+  it("does not accept anonymous provider profiles", () => {
+    expect(usablePersonName(null, "Perfil sem nome")).toBeNull()
+    expect(usablePersonName("  Ana   Silva ")).toBe("Ana Silva")
   })
 })

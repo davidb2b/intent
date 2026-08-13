@@ -14,6 +14,20 @@ function normalize(value: string | null | undefined) {
   return (value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
 }
 
+/**
+ * An identity without a display name is not useful for human review and must
+ * never become a visible source, person or comment author.
+ */
+export function usablePersonName(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const name = value?.replace(/\s+/g, " ").trim()
+    if (!name || name.length < 2) continue
+    if (["perfil sem nome", "unknown", "n/a"].includes(normalize(name))) continue
+    return name
+  }
+  return null
+}
+
 function containsAny(value: string, terms: string[]) {
   return terms.some((term) => value.includes(normalize(term)))
 }

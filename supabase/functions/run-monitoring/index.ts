@@ -5,13 +5,14 @@ import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "
 import { normalizeCompanyKey, personPersistencePayload } from "../_shared/person-enrichment.ts"
 import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 import { isStaleExecution } from "../_shared/execution-lock.ts"
+import { usablePersonName } from "../_shared/person-enrichment.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
-type MonitoredSource = { id: string; linkedin_url: string }
+type MonitoredSource = { id: string; linkedin_url: string; nome: string }
 type ActorPost = {
   id?: string
   linkedinUrl?: string
@@ -126,7 +127,7 @@ Deno.serve(async (request) => {
   const { data: activeExecution } = await admin.from("execucoes").select("id, iniciada_em").eq("projeto_id", projectId).eq("status", "rodando").limit(1).maybeSingle()
   if (activeExecution && !isStaleExecution(activeExecution.iniciada_em)) return json({ error: "Já existe uma execução em andamento para este projeto." }, 409)
   if (activeExecution) await admin.from("execucoes").update({ status: "falhou", erro: "O monitoramento anterior foi interrompido antes de concluir.", concluida_em: new Date().toISOString() }).eq("id", activeExecution.id)
-  const { data: sources } = await admin.from("fontes").select("id, linkedin_url").eq("projeto_id", projectId).eq("status", "monitorada").order("criado_em", { ascending: true })
+  const { data: sources } = await admin.from("fontes").select("id, linkedin_url, nome").eq("projeto_id", projectId).eq("status", "monitorada").order("criado_em", { ascending: true })
   const monitoredSources = (sources ?? []) as MonitoredSource[]
   if (monitoredSources.length === 0) return json({ error: "Nenhuma fonte monitorada. Aprove uma fonte candidata antes de iniciar." }, 400)
   const origin = isScheduled ? "agendada" : body.origem ?? "manual"
@@ -135,8 +136,9 @@ Deno.serve(async (request) => {
 
   let costUsd = 0
   let postsRead = 0
-  let commentsRead = 0
-  let peopleNew = 0
+    let commentsRead = 0
+    let peopleNew = 0
+    let incompletePeople = 0
   const warnings: string[] = []
   try {
     const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
@@ -156,7 +158,10 @@ Deno.serve(async (request) => {
       const linkedinUrl = sourceUrl(raw.linkedinUrl ?? raw.url ?? "")
       const sourceId = sourceByUrl.get(sourceUrl(author?.linkedinUrl ?? "")) ?? sourceByUrl.get(linkedinUrl)
       if (!sourceId) continue
-      const { data: post, error } = await admin.from("posts").upsert({ projeto_id: projectId, fonte_id: sourceId, linkedin_url: linkedinUrl || `https://www.linkedin.com/feed/update/${raw.id}`, post_urn: raw.id, autor_nome: author?.name ?? null, autor_url: author?.linkedinUrl ?? null, texto: raw.text ?? raw.content ?? raw.commentary ?? null, publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null, total_reacoes: countValue(raw.engagement?.reactions, raw.reactionsCount), total_comentarios: countValue(raw.engagement?.comments, raw.commentsCount), total_shares: countValue(raw.engagement?.shares, raw.sharesCount) }, { onConflict: "projeto_id,post_urn" }).select("id, linkedin_url").single()
+      const source = monitoredSources.find((item) => item.id === sourceId)
+      const authorName = usablePersonName(author?.name, source?.nome)
+      if (!authorName) continue
+      const { data: post, error } = await admin.from("posts").upsert({ projeto_id: projectId, fonte_id: sourceId, linkedin_url: linkedinUrl || `https://www.linkedin.com/feed/update/${raw.id}`, post_urn: raw.id, autor_nome: authorName, autor_url: author?.linkedinUrl ?? source?.linkedin_url ?? null, texto: raw.text ?? raw.content ?? raw.commentary ?? null, publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null, total_reacoes: countValue(raw.engagement?.reactions, raw.reactionsCount), total_comentarios: countValue(raw.engagement?.comments, raw.commentsCount), total_shares: countValue(raw.engagement?.shares, raw.sharesCount) }, { onConflict: "projeto_id,post_urn" }).select("id, linkedin_url").single()
       if (error || !post) throw new Error(`Não foi possível persistir o post ${raw.id}: ${error?.message ?? "registro ausente"}`)
       postsRead += 1
       postRows.push({ raw, postId: post.id, linkedinUrl: post.linkedinUrl ?? post.linkedin_url })
@@ -188,6 +193,8 @@ Deno.serve(async (request) => {
           profileCache.set(actorUrl, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
         }
         if (!profileCache.get(actorUrl)) continue
+        const personName = usablePersonName(actor.name)
+        if (!personName) { incompletePeople += 1; continue }
         const slug = normalizeProfileSlug(actorUrl)
         const companyName = actor.experience?.[0]?.companyName?.trim() || null
         let companyId: string | null = null
@@ -203,7 +210,7 @@ Deno.serve(async (request) => {
         const personPayload = personPersistencePayload({
           linkedinUrl: actorUrl,
           slug,
-          name: actor.name ?? "Perfil sem nome",
+          name: personName,
           headline: actor.headline ?? actor.position ?? null,
           cargo: actor.experience?.[0]?.position ?? null,
           companyId,
@@ -220,6 +227,7 @@ Deno.serve(async (request) => {
         if (!error) commentsRead += 1
       }
     }
+    if (incompletePeople > 0) warnings.push(`${incompletePeople} comentários foram ignorados porque o perfil não tinha nome público.`)
     await admin.from("execucoes").update({ status: "concluida", posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, parametros: { janela, origem: origin, fontes: monitoredSources.length, avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
     return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, peopleNew, costUsd, warnings })
   } catch (error) {

@@ -225,7 +225,7 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
     .order("criado_em", { ascending: false })
 
   if (error) throw new Error(error.message)
-  return (data ?? []).map((source) => {
+  return (data ?? []).filter((source) => Boolean(source.nome?.trim())).map((source) => {
     let meta: { posts?: number; comentarios?: number; reacoes?: number; razao_comentarios_reacoes?: number } = {}
     try { meta = source.meta ? JSON.parse(source.meta) as typeof meta : {} } catch { meta = {} }
     return {
@@ -268,7 +268,7 @@ export async function loadSignalPeople(projectId: string): Promise<SignalPerson[
   if (peopleError || commentsError) throw new Error(peopleError?.message ?? commentsError?.message ?? "Não foi possível carregar pessoas.")
   const commentsByPerson = new Map<string, number>()
   for (const comment of comments ?? []) commentsByPerson.set(comment.pessoa_id, (commentsByPerson.get(comment.pessoa_id) ?? 0) + 1)
-  return (people ?? []).map((person) => {
+  return (people ?? []).filter((person) => person.nome.trim().toLocaleLowerCase("pt-BR") !== "perfil sem nome").map((person) => {
     const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
     return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, comments: commentsByPerson.get(person.id) ?? 0 }
   })
