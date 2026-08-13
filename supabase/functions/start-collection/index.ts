@@ -147,8 +147,17 @@ Deno.serve(async (request) => {
   const keyword = body.keyword?.trim()
   if (!keyword) return json({ error: "A palavra-chave é obrigatória." }, 400)
 
-  const { data: project, error: projectError } = await admin.from("projetos").upsert({ owner_id: user.id, nome: "Signal Lab", categoria: keyword }, { onConflict: "owner_id" }).select("id").single()
-  if (projectError || !project) return json({ error: `Não foi possível preparar a pesquisa: ${projectError?.message ?? "projeto ausente"}` }, 500)
+  const { data: activeProject, error: activeProjectError } = await admin.from("projetos").select("id, categoria").eq("owner_id", user.id).eq("ativo", true).maybeSingle()
+  if (activeProjectError) return json({ error: `Não foi possível preparar a pesquisa: ${activeProjectError.message}` }, 500)
+  if (activeProject && activeProject.categoria !== keyword) {
+    const { error } = await admin.from("projetos").update({ ativo: false }).eq("id", activeProject.id)
+    if (error) return json({ error: `Não foi possível trocar a pesquisa ativa: ${error.message}` }, 500)
+  }
+  const projectResult = !activeProject || activeProject.categoria !== keyword
+    ? await admin.from("projetos").insert({ owner_id: user.id, nome: "Signal Lab", categoria: keyword, ativo: true }).select("id").single()
+    : { data: activeProject, error: null }
+  const project = projectResult.data
+  if (projectResult.error || !project) return json({ error: `Não foi possível preparar a pesquisa: ${projectResult.error?.message ?? "projeto ausente"}` }, 500)
   const { data: term, error: termError } = await admin.from("termos").upsert({ projeto_id: project.id, termo: keyword, contexto_positivo: body.positiveContext ?? null, contexto_negativo: body.negativeContext ?? null }, { onConflict: "projeto_id,termo" }).select("id").single()
   if (termError || !term) return json({ error: `Não foi possível salvar o termo: ${termError?.message ?? "termo ausente"}` }, 500)
   const { data: execution, error: executionError } = await admin.from("execucoes").insert({ projeto_id: project.id, tipo: "descoberta", status: "rodando", parametros: body }).select("id").single()

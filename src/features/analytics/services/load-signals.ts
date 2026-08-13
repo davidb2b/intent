@@ -115,6 +115,7 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
     .from("projetos")
     .select("id")
     .eq("owner_id", userId)
+    .eq("ativo", true)
     .maybeSingle()
 
   if (projectError) throw new Error(projectError.message)
