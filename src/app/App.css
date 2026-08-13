@@ -180,6 +180,9 @@
 .company-layout { display: grid; grid-template-columns: minmax(250px, .78fr) minmax(0, 1.22fr); align-items: start; gap: 16px; }
 .company-results-panel { overflow: visible; }
 .company-results-panel .panel-heading { border-bottom: 0; padding-bottom: 14px; }
+.company-toolbar { display: flex; gap: 8px; padding: 0 18px 14px; }
+.company-toolbar input { flex: 1 1 220px; min-width: 0; }
+.company-toolbar select { min-width: 150px; border: 1px solid var(--signal-border); border-radius: 8px; background: var(--signal-surface); color: var(--signal-ink); font-size: 12px; padding: 0 10px; }
 .company-list, .people-list { display: grid; }
 .company-list { gap: 8px; padding: 0 18px 18px; }
 .company-card { display: grid; width: 100%; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid var(--signal-border); border-radius: 11px; background: var(--signal-surface); cursor: pointer; padding: 12px; text-align: left; }
@@ -310,6 +313,8 @@
   .source-row { grid-template-columns: 1fr; gap: 10px; padding-left: 18px; padding-right: 18px; }
   .company-layout { grid-template-columns: 1fr; }
   .company-detail-panel { padding: 18px; }
+  .company-toolbar { align-items: stretch; flex-direction: column; }
+  .company-toolbar select { min-height: 38px; width: 100%; }
   .summary-strip { grid-template-columns: 1fr; }
   .company-row, .person-row { grid-template-columns: 34px minmax(0, 1fr); padding-left: 18px; padding-right: 18px; }
   .company-metric, .person-signal { grid-column: 2; justify-self: start; text-align: left; }
