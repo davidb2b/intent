@@ -183,15 +183,17 @@
 .icon-button:hover { background: var(--signal-bg); }
 .settings-modal label { display: flex; justify-content: space-between; margin: 15px 0 7px; font-size: 12px; font-weight: 600; }
 .settings-modal label span { color: var(--signal-muted); font-weight: 400; }
-.settings-modal input, .settings-modal textarea { width: 100%; border: 1px solid var(--signal-border); border-radius: 8px; outline: none; background: white; color: #17221c; padding: 10px 11px; font-size: 13px; }
+.settings-modal input, .settings-modal textarea, .settings-modal select { width: 100%; border: 1px solid var(--signal-border); border-radius: 8px; outline: none; background: white; color: #17221c; padding: 10px 11px; font-size: 13px; }
 .password-field { position: relative; }
 .password-field input { padding-right: 76px; }
 .password-toggle { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); border: 0; background: transparent; color: var(--signal-brand); cursor: pointer; font-size: 11px; }
-.settings-modal input:focus, .settings-modal textarea:focus { border-color: var(--signal-brand); box-shadow: 0 0 0 3px rgba(20,107,73,.12); }
+.settings-modal input:focus, .settings-modal textarea:focus, .settings-modal select:focus { border-color: var(--signal-brand); box-shadow: 0 0 0 3px rgba(20,107,73,.12); }
 .settings-modal textarea { min-height: 64px; resize: vertical; }
 .auth-error { margin: 12px 0 0; border-radius: 7px; background: #fff0f0; color: #8d3d3d; padding: 9px 10px; font-size: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
 .modal-actions button:last-child { background: var(--signal-brand); color: white; }
+.review-checkbox { align-items: center; border: 1px solid var(--signal-border); border-radius: 8px; padding: 10px 11px; }
+.review-checkbox input { width: auto; accent-color: var(--signal-brand); }
 
 @media (max-width: 860px) {
   .signal-sidebar { top: 0; width: 72px; height: 100vh; max-height: none; flex-basis: 72px; margin: 0; padding: 20px 10px; }

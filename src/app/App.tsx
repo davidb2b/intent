@@ -22,6 +22,7 @@ import { updateSourceStatus } from "@/features/collection/services/update-source
 import { classifyComments } from "@/features/classification/services/classify-comments"
 import { analyzePosts } from "@/features/classification/services/analyze-posts"
 import { updatePostCuration, type CurationStatus } from "@/features/posts/services/update-post-curation"
+import { reviewPerson, seniorityOptions, type PersonSeniority } from "@/features/people/services/review-person"
 import { loadSignalComments, loadSignalCompanies, loadSignalPeople, loadSignalPosts, loadSignalSources, loadSignalSummary, type SignalComment, type SignalCompany, type SignalPerson, type SignalPost, type SignalSource, type SignalSummary } from "@/features/analytics/services/load-signals"
 import { authService } from "@/features/auth/services/auth-service"
 import { saveResearch } from "@/features/research/services/save-research"
@@ -153,6 +154,11 @@ function App() {
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [classificationBusy, setClassificationBusy] = useState(false)
   const [postAnalysisBusy, setPostAnalysisBusy] = useState(false)
+  const [personUnderReview, setPersonUnderReview] = useState<SignalPerson | null>(null)
+  const [reviewRole, setReviewRole] = useState("")
+  const [reviewSeniority, setReviewSeniority] = useState<PersonSeniority>("fora")
+  const [reviewIcp, setReviewIcp] = useState(false)
+  const [reviewBusy, setReviewBusy] = useState(false)
 
   const content = viewCopy[activeView]
   const recentExecutions = signalSummary?.executionHistory.slice(0, 5) ?? []
@@ -413,6 +419,30 @@ function App() {
     }
   }
 
+  function openPersonReview(person: SignalPerson) {
+    setPersonUnderReview(person)
+    setReviewRole(person.role ?? "")
+    setReviewSeniority((person.seniority ?? "fora") as PersonSeniority)
+    setReviewIcp(person.icp === true)
+  }
+
+  async function handlePersonReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!personUnderReview || reviewBusy || !signalSummary?.projectId) return
+    setReviewBusy(true)
+    try {
+      await reviewPerson({ personId: personUnderReview.id, role: reviewRole, seniority: reviewSeniority, icp: reviewIcp })
+      const people = await loadSignalPeople(signalSummary.projectId)
+      setSignalPeople(people)
+      setPersonUnderReview(null)
+      setCollectionMessage("Revisão humana salva. A classificação automática não substituirá esses campos.")
+    } catch (error) {
+      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível salvar a revisão da pessoa.")
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+
   return (
     <div className="signal-shell">
       <aside className="signal-sidebar">
@@ -562,7 +592,7 @@ function App() {
           </section> : activeView === "people" && session && signalSummary?.projectId && signalPeople.length > 0 ? <section className="signal-panel analysis-panel">
             <div className="comment-toolbar"><div className="comment-filters" role="group" aria-label="Filtrar pessoas"><Button type="button" size="sm" variant={peopleFilter === "all" ? "default" : "outline"} onClick={() => setPeopleFilter("all")}>Todas</Button><Button type="button" size="sm" variant={peopleFilter === "icp" ? "default" : "outline"} onClick={() => setPeopleFilter("icp")}>Dentro do ICP</Button><Button type="button" size="sm" variant={peopleFilter === "without-icp" ? "default" : "outline"} onClick={() => setPeopleFilter("without-icp")}>Fora ou pendentes</Button></div></div>
             <div className="panel-heading"><div><p className="eyebrow">Pessoas</p><h2>{visiblePeople().length} pessoas observadas</h2><p>Pessoas que demonstraram um sinal público em comentários coletados.</p></div><span className="signal-tag">Dados reais</span></div>
-            <div className="people-list">{visiblePeople().map((person) => <article className="person-row" key={person.id}><div className="comment-avatar">{person.name.slice(0, 1).toUpperCase()}</div><div className="person-info"><strong>{person.name}</strong><span>{person.headline ?? person.role ?? "Perfil público"}</span><small>{person.companyName ?? "Empresa não identificada"}</small><a href={person.linkedinUrl} target="_blank" rel="noreferrer">Ver perfil</a></div><div className="person-signal"><span className={`signal-tag ${person.icp === true ? "" : "signal-tag-muted"}`}>{person.icp === true ? "Dentro do ICP" : person.icp === false ? "Fora do ICP" : "ICP pendente"}</span><strong>{person.comments}</strong><span>comentários</span></div></article>)}</div>
+            <div className="people-list">{visiblePeople().map((person) => <article className="person-row" key={person.id}><div className="comment-avatar">{person.name.slice(0, 1).toUpperCase()}</div><div className="person-info"><strong>{person.name}</strong><span>{person.headline ?? person.role ?? "Perfil público"}</span><small>{person.companyName ?? "Empresa não identificada"}</small><a href={person.linkedinUrl} target="_blank" rel="noreferrer">Ver perfil</a></div><div className="person-signal"><span className={`signal-tag ${person.icp === true ? "" : "signal-tag-muted"}`}>{person.icp === true ? "Dentro do ICP" : person.icp === false ? "Fora do ICP" : "ICP pendente"}</span><strong>{person.comments}</strong><span>comentários</span><Button type="button" size="xs" variant="outline" onClick={() => openPersonReview(person)}>Revisar</Button></div></article>)}</div>
           </section> : activeView === "overview" && session && signalSummary?.projectId ? null : summaryLoading ? <div className="empty-state" aria-busy="true">
             <div className="empty-icon"><Clock3 size={24} /></div>
             <h2>Carregando dados reais</h2>
@@ -617,6 +647,23 @@ function App() {
               {authMode !== "recovery" && <><label htmlFor="auth-password">{authMode === "update-password" ? "Nova senha" : "Senha"}</label><div className="password-field"><input autoComplete={authMode === "signin" ? "current-password" : "new-password"} id="auth-password" minLength={6} onChange={(event) => setAuthPassword(event.target.value)} required type={authPasswordVisible ? "text" : "password"} value={authPassword} /><button aria-label={authPasswordVisible ? "Ocultar senha" : "Mostrar senha"} className="password-toggle" onClick={() => setAuthPasswordVisible((visible) => !visible)} type="button">{authPasswordVisible ? "Ocultar" : "Mostrar"}</button></div></>}
               {authError && <p className="auth-error" role="alert">{authError}</p>}
               <div className="modal-actions">{authMode !== "update-password" && <Button onClick={() => { setAuthMode(authMode === "signin" ? "signup" : "signin"); setAuthError("") }} type="button" variant="ghost">{authMode === "signin" ? "Criar conta" : "Já tenho conta"}</Button>}{authMode === "signin" && <Button onClick={() => { setAuthMode("recovery"); setAuthError("") }} type="button" variant="ghost">Esqueci a senha</Button>}<Button disabled={authBusy} type="submit">{authBusy ? "Aguarde…" : authMode === "signin" ? "Entrar" : authMode === "signup" ? "Criar conta" : authMode === "recovery" ? "Enviar link" : "Atualizar senha"}</Button></div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {personUnderReview && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPersonUnderReview(null)}>
+          <section aria-labelledby="person-review-title" aria-modal="true" className="settings-modal person-review-modal" role="dialog">
+            <div className="modal-header"><div><p className="eyebrow">Revisão humana</p><h2 id="person-review-title">{personUnderReview.name}</h2></div><button aria-label="Fechar revisão" className="icon-button" onClick={() => setPersonUnderReview(null)} type="button"><X size={18} /></button></div>
+            <p className="modal-description">Esses campos passam a ser protegidos contra a classificação automática.</p>
+            <form onSubmit={handlePersonReview}>
+              <label htmlFor="person-role">Cargo</label>
+              <input id="person-role" value={reviewRole} onChange={(event) => setReviewRole(event.target.value)} placeholder="Ex.: Gerente de Compras" />
+              <label htmlFor="person-seniority">Senioridade</label>
+              <select id="person-seniority" value={reviewSeniority} onChange={(event) => setReviewSeniority(event.target.value as PersonSeniority)}>{seniorityOptions.map((option) => <option key={option} value={option}>{option === "diretoria" ? "Diretoria" : option === "gerencia" ? "Gerência" : option === "analista" ? "Analista" : "Fora do ICP"}</option>)}</select>
+              <label className="review-checkbox" htmlFor="person-icp"><span>Dentro do ICP</span><input id="person-icp" checked={reviewIcp} onChange={(event) => setReviewIcp(event.target.checked)} type="checkbox" /></label>
+              <div className="modal-actions"><Button onClick={() => setPersonUnderReview(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={reviewBusy} type="submit">{reviewBusy ? "Salvando…" : "Salvar revisão"}</Button></div>
             </form>
           </section>
         </div>
