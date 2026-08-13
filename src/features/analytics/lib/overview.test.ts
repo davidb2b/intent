@@ -29,4 +29,13 @@ describe("overview derivation", () => {
     expect(getUsefulComments(comments).map((comment) => comment.id)).toEqual(["comment-1"])
     expect(getTopCompanies(companies).map((company) => company.id)).toEqual(["company-2", "company-1"])
   })
+
+  it("shows discovered sources as initial results before monitoring has collected posts", () => {
+    const sources = [
+      { id: "source-1", linkedinUrl: "https://linkedin.com/in/ana", name: "Ana", status: "candidata" },
+      { id: "source-2", linkedinUrl: "https://linkedin.com/in/bruno", name: "Bruno", status: "candidata" },
+    ] as never
+
+    expect(getOverviewMetrics([], sources, [], []).initialResults).toBe(2)
+  })
 })

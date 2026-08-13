@@ -39,7 +39,10 @@ export function getOverviewMetrics(
   )
 
   return {
-    initialResults: posts.length,
+    // During discovery, profiles are the first real result. Posts only exist
+    // after an approved source is monitored, so do not present a false zero
+    // while Brazilian candidates are already available for review.
+    initialResults: posts.length > 0 ? posts.length : sources.length,
     approvedPosts: approvedPosts.length,
     monitoredAuthors: monitoredAuthors.size,
     analyzedComments: comments.filter((comment) => Boolean(comment.tone)).length,
