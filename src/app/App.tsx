@@ -95,29 +95,34 @@ const navigation: Array<{ id: View; label: string; icon: typeof LayoutDashboard 
   { id: "people", label: "Pessoas", icon: Users },
 ]
 
-const viewCopy: Record<View, { eyebrow: string; title: string; description: string }> = {
+const viewCopy: Record<View, { eyebrow: string; subtitle: string; title: string; description: string }> = {
   overview: {
     eyebrow: "Visão geral",
+    subtitle: "Da palavra-chave às empresas e pessoas que participam da conversa.",
     title: "Nenhum sinal coletado ainda",
     description: "Configure uma pesquisa para começar a encontrar conversas públicas sobre um tema.",
   },
   posts: {
     eyebrow: "Posts",
+    subtitle: "Posts públicos encontrados para o tema monitorado.",
     title: "Nenhum post disponível",
     description: "Os posts encontrados pela coleta aparecerão aqui, sem dados fictícios.",
   },
   comments: {
     eyebrow: "Comentários",
+    subtitle: "Comentários públicos que sinalizam interesse no tema.",
     title: "Nenhum comentário disponível",
     description: "Os comentários coletados e classificados aparecerão aqui.",
   },
   companies: {
     eyebrow: "Empresas",
+    subtitle: "Contas identificadas a partir da participação nas conversas.",
     title: "Nenhuma empresa identificada",
     description: "As empresas observadas nas conversas aparecerão aqui quando houver uma coleta.",
   },
   people: {
     eyebrow: "Pessoas",
+    subtitle: "Pessoas que demonstraram interesse nos conteúdos monitorados.",
     title: "Nenhuma pessoa identificada",
     description: "As pessoas que demonstram interesse no tema aparecerão aqui.",
   },
@@ -487,6 +492,7 @@ function App() {
           <div>
             <p className="breadcrumb">Signal Lab <span>/</span> {content.eyebrow}</p>
             <h1>{content.eyebrow}</h1>
+            <p className="page-subtitle">{content.subtitle}</p>
           </div>
           <div className="topbar-actions">
             <Button className="settings-button" onClick={() => setSettingsOpen(true)} variant="outline"><Settings2 size={16} /> Configurar pesquisa</Button>
@@ -546,34 +552,42 @@ function App() {
               {signalSummary.executionHistory.length > recentExecutions.length && <p className="execution-more">Mostrando as últimas {recentExecutions.length} execuções.</p>}
             </> : <div className="filtered-empty"><strong>Nenhuma execução registrada</strong><span>As próximas descobertas e monitoramentos aparecerão aqui.</span></div>}
           </section>}
-          {activeView === "posts" && session && signalSummary?.projectId ? <div className="signal-panel-grid">
-            <section className="signal-panel">
-              <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
-              {postsMode === "search" ? <><div className="panel-heading"><div><p className="eyebrow">Resultados da busca</p><h2>{signalPosts.length} posts encontrados</h2><p>Clique em um post para revisar.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || signalPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
-              <div className="post-review-layout">
+          {activeView === "posts" && session && signalSummary?.projectId ? <div className="posts-workspace">
+            <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
+            {postsMode === "search" ? <div className="post-review-layout">
+              <section className="signal-panel post-results-panel">
+                <div className="panel-heading"><div><h2>Resultados da busca</h2><p>Clique em um post para revisar.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalPosts.filter((post) => post.curationStatus === "aprovado").length} válidos</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || signalPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
                 <div className="post-results-list" aria-label="Lista de posts encontrados">
-                  {signalPosts.map((post) => <article
-                    className={`post-card ${selectedPost?.id === post.id ? "is-selected" : ""}`}
-                    key={post.id}
-                    aria-selected={selectedPost?.id === post.id}
-                    tabIndex={0}
-                    onClick={() => setSelectedPostId(post.id)}
-                    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedPostId(post.id) } }}
-                  >
-                    <div className="post-card-meta"><span>{post.authorName ?? "Autor não identificado"}</span><span>{formatDate(post.publishedAt)}</span></div>
-                    <p>{shorten(post.text, 180)}</p>
-                    <div className="post-card-footer"><span>{post.reactions ?? 0} reações</span><span>{post.comments ?? 0} comentários</span><span className={`curation-status curation-${post.curationStatus}`}>{post.curationStatus}</span></div>
-                  </article>)}
+                  {signalPosts.map((post) => {
+                    const source = signalSources.find((candidate) => candidate.linkedinUrl === post.authorUrl || candidate.name === post.authorName)
+                    return <article
+                      className={`post-card ${selectedPost?.id === post.id ? "is-selected" : ""}`}
+                      key={post.id}
+                      aria-selected={selectedPost?.id === post.id}
+                      tabIndex={0}
+                      onClick={() => setSelectedPostId(post.id)}
+                      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedPostId(post.id) } }}
+                    >
+                      <div className="post-card-tags"><span className={`curation-status curation-${post.curationStatus}`}>{post.curationStatus}</span><span className="signal-tag signal-tag-muted">{source?.status === "monitorada" ? "Perfil monitorado" : "Resultado da busca"}</span></div>
+                      <h3>{shorten(post.text, 140)}</h3>
+                      <div className="post-card-footer"><span>{post.authorName ?? "Autor não identificado"}</span><span>{post.comments ?? 0} comentários</span><span>{post.reactions ?? 0} reações</span></div>
+                    </article>
+                  })}
                 </div>
-                {selectedPost && <article className="post-detail-panel">
-                  <div className="post-detail-header"><div><p className="eyebrow">Post selecionado</p><h3>{selectedPost.authorName ?? "Autor não identificado"}</h3><span>{formatDate(selectedPost.publishedAt)}</span></div><span className={`curation-status curation-${selectedPost.curationStatus}`}>{selectedPost.curationStatus}</span></div>
-                  <p className="post-detail-text">{selectedPost.text}</p>
+              </section>
+              {selectedPost && (() => {
+                const source = signalSources.find((candidate) => candidate.linkedinUrl === selectedPost.authorUrl || candidate.name === selectedPost.authorName)
+                return <article className="signal-panel post-detail-panel">
+                  <div className="post-detail-meta"><span className={`curation-status curation-${selectedPost.curationStatus}`}>{selectedPost.curationStatus}</span><span className="signal-tag signal-tag-muted">{source?.status === "monitorada" ? "Perfil monitorado" : "Resultado da busca"}</span><span>{formatDate(selectedPost.publishedAt)}</span></div>
+                  <h2 className="post-detail-title">{shorten(selectedPost.text, 180)}</h2>
+                  <p className="post-detail-text">{selectedPost.text || "Sem texto disponível."}</p>
+                  <div className="author-box"><div><strong>{selectedPost.authorName ?? "Autor não identificado"}</strong><span>{selectedPost.authorUrl ? displayLinkedInUrl(selectedPost.authorUrl) : "Perfil público"}</span></div>{selectedPost.authorUrl && <a href={selectedPost.authorUrl} target="_blank" rel="noreferrer">Ver perfil</a>}</div>
                   <div className="post-detail-metrics"><span>{selectedPost.reactions ?? 0} reações</span><span>{selectedPost.comments ?? 0} comentários</span><span>{selectedPost.shares ?? 0} compartilhamentos</span></div>
-                  {selectedPost.analysis.topic ? <div className="post-analysis post-analysis-detail"><div><strong>Tópico</strong><span>{selectedPost.analysis.topic}</span></div><div><strong>Problema</strong><span>{selectedPost.analysis.problem}</span></div><div><strong>Por que o post faz sentido</strong><span>{selectedPost.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{selectedPost.analysis.collection}</span></div></div> : <div className="post-detail-empty">Este post ainda não foi analisado. Use “Analisar pendente” para gerar a classificação.</div>}
-                  <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar</Button><a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
-                </article>}
-              </div></> : <section className="sources-panel"><div className="panel-heading"><div><p className="eyebrow">Perfis monitorados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} fontes ativas</h2><p>As coletas semanais leem somente fontes aprovadas.</p></div><span className="signal-tag">{signalSources.length} fontes</span></div>{signalSources.length > 0 ? <div className="source-list">{signalSources.map((source) => <article className="source-row" key={source.id}><div><strong>{source.name ?? "Perfil sem nome"}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span></div><div className="source-metrics"><span>{source.posts} posts</span><span>{source.comments} comentários</span><span>{source.ratio.toFixed(2)} razão</span></div><span className={`curation-status source-${source.status}`}>{source.status}</span><div className="source-actions">{source.status !== "monitorada" && <Button type="button" size="sm" onClick={() => void handleSourceStatus(source.id, "monitorada")}>Monitorar</Button>}{source.status !== "descartada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Descartar</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma fonte descoberta</strong><span>Use “Descobrir fontes” para encontrar perfis brasileiros candidatos.</span></div>}</section>}
-            </section>
+                  {selectedPost.analysis.topic ? <div className="post-analysis post-analysis-detail"><div><strong>Tópico identificado</strong><span>{selectedPost.analysis.topic}</span></div><div><strong>Problema discutido</strong><span>{selectedPost.analysis.problem}</span></div><div><strong>Por que o post faz sentido</strong><span>{selectedPost.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{selectedPost.analysis.collection}</span></div></div> : <div className="post-detail-empty">Este post ainda não foi analisado. Use “Analisar pendente” para gerar a classificação.</div>}
+                  <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar post</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar post</Button><a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
+                </article>
+              })()}
+            </div> : <section className="signal-panel sources-panel"><div className="panel-heading"><div><p className="eyebrow">Perfis monitorados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} fontes ativas</h2><p>As coletas semanais leem somente fontes aprovadas.</p></div><span className="signal-tag">{signalSources.length} fontes</span></div>{signalSources.length > 0 ? <div className="source-list">{signalSources.map((source) => <article className="source-row" key={source.id}><div><strong>{source.name ?? "Perfil sem nome"}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span></div><div className="source-metrics"><span>{source.posts} posts</span><span>{source.comments} comentários</span><span>{source.ratio.toFixed(2)} razão</span></div><span className={`curation-status source-${source.status}`}>{source.status}</span><div className="source-actions">{source.status !== "monitorada" && <Button type="button" size="sm" onClick={() => void handleSourceStatus(source.id, "monitorada")}>Monitorar</Button>}{source.status !== "descartada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Descartar</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma fonte descoberta</strong><span>Use “Descobrir fontes” para encontrar perfis brasileiros candidatos.</span></div>}</section>}
           </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">
             <div className="comment-toolbar">
               <div className="comment-filters" role="group" aria-label="Filtrar comentários">

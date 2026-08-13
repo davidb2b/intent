@@ -21,6 +21,7 @@ describe("Signal Lab foundation", () => {
     fireEvent.click(screen.getByRole("button", { name: /02Posts/ }))
 
     expect(screen.getByText("Nenhum post disponível")).toBeInTheDocument()
+    expect(screen.getByText("Posts públicos encontrados para o tema monitorado.")).toBeInTheDocument()
   })
 
   it("uses real application routes for the product areas", () => {
