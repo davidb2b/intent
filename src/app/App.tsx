@@ -625,6 +625,7 @@ function App() {
         <nav className="main-nav" aria-label="Navegação principal">
           {navigation.map(({ id, label, icon: Icon }, index) => (
             <button
+              aria-label={label}
               className={`nav-item ${activeView === id ? "is-active" : ""}`}
               key={id}
               onClick={() => navigate(id)}

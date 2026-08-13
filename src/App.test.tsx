@@ -19,7 +19,7 @@ describe("Signal Lab foundation", () => {
     render(<App />)
     await screen.findByText("Nenhum sinal coletado ainda")
 
-    fireEvent.click(screen.getByRole("button", { name: /02Posts/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Posts" }))
 
     expect(screen.getByText("Nenhum post disponível")).toBeInTheDocument()
     expect(screen.getByText("Posts públicos encontrados para o tema monitorado.")).toBeInTheDocument()
@@ -29,7 +29,7 @@ describe("Signal Lab foundation", () => {
     window.history.replaceState({}, "", "/overview")
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: /02Posts/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Posts" }))
 
     expect(window.location.pathname).toBe("/posts")
   })
