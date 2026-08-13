@@ -18,7 +18,7 @@ describe("profile identity", () => {
       "https://www.linkedin.com/in/marcos-ribeiro-123",
     ], "month")).toEqual({
       targetUrls: ["https://www.linkedin.com/in/marcos-ribeiro-123"],
-      maxPosts: 200,
+      maxPosts: 30,
       postedLimit: "month",
       scrapeComments: false,
       scrapeReactions: false,

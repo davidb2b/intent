@@ -11,7 +11,7 @@ export function buildMonitoredProfilePostsInput(linkedinUrls: string[], janela: 
   const targetUrls = [...new Set(linkedinUrls.map(canonicalProfileUrl).filter(Boolean))]
   return {
     targetUrls,
-    maxPosts: 200,
+    maxPosts: 30,
     postedLimit: janela,
     scrapeComments: false,
     scrapeReactions: false,

@@ -58,7 +58,7 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(input),
-    signal: AbortSignal.timeout(45_000),
+    signal: AbortSignal.timeout(75_000),
   })
   if (!start.ok) throw new Error(`Apify não iniciou o Actor (${start.status}).`)
   const run = await start.json()
@@ -141,8 +141,8 @@ Deno.serve(async (request) => {
     registerActualCost(budget, postResult.costUsd)
     await admin.from("custos").insert({ execucao_id: execution.id, actor: MONITORED_PROFILE_POSTS_ACTOR, itens: postResult.items.length, custo_usd: postResult.costUsd })
     const sourceByUrl = new Map(monitoredSources.map((source) => [sourceUrl(source.linkedin_url), source.id]))
-    const postRows: Array<{ raw: ActorPost; postId: string; linkedinUrl: string }> = []
-    const collectedComments: Array<{ comment: ActorComment; postId: string }> = []
+    const postRows: Array<{ raw: ActorPost; sourceId: string; linkedinUrl: string; authorName: string; authorUrl: string | null; text: string | null }> = []
+    const collectedComments: Array<{ comment: ActorComment; postUrn: string }> = []
     for (const raw of postResult.items as ActorPost[]) {
       if (!raw.id) continue
       const author = raw.author ?? raw.actor
@@ -154,27 +154,24 @@ Deno.serve(async (request) => {
       const source = monitoredSources.find((item) => item.id === sourceId)
       const authorName = usablePersonName(author?.name, source?.nome)
       if (!authorName) continue
-      const { data: post, error } = await admin.from("posts").upsert({ projeto_id: projectId, fonte_id: sourceId, linkedin_url: linkedinUrl || `https://www.linkedin.com/feed/update/${raw.id}`, post_urn: raw.id, autor_nome: authorName, autor_url: author?.linkedinUrl ?? source?.linkedin_url ?? null, texto: postText, publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null, total_reacoes: countValue(raw.engagement?.reactions, raw.reactionsCount), total_comentarios: countValue(raw.engagement?.comments, raw.commentsCount), total_shares: countValue(raw.engagement?.shares, raw.sharesCount) }, { onConflict: "projeto_id,post_urn" }).select("id, linkedin_url").single()
-      if (error || !post) throw new Error(`Não foi possível persistir o post ${raw.id}: ${error?.message ?? "registro ausente"}`)
-      postsRead += 1
-      postRows.push({ raw, postId: post.id, linkedinUrl: post.linkedinUrl ?? post.linkedin_url })
+      postRows.push({ raw, sourceId, linkedinUrl: linkedinUrl || `https://www.linkedin.com/feed/update/${raw.id}`, authorName, authorUrl: author?.linkedinUrl ?? source?.linkedin_url ?? null, text: postText })
     }
     const postsWithComments = postRows
       .filter(({ raw }) => (countValue(raw.engagement?.comments, raw.commentsCount) ?? 0) > 0)
       .sort((first, second) => (countValue(second.raw.engagement?.comments, second.raw.commentsCount) ?? 0) - (countValue(first.raw.engagement?.comments, first.raw.commentsCount) ?? 0))
     const commentTargets = postsWithComments.slice(0, MAX_POSTS_WITH_COMMENTS_PER_RUN)
     if (postsWithComments.length > commentTargets.length) warnings.push(`A coleta de comentários foi priorizada nos ${commentTargets.length} posts com maior conversa; os demais serão processados na próxima execução.`)
-    const commentInputs = commentTargets.map(({ linkedinUrl }) => ({ posts: [linkedinUrl], maxItems: 200, postedLimit: janela, scrapeReplies: false, profileScraperMode: "main" }))
+    const commentInputs = commentTargets.map(({ linkedinUrl }) => ({ posts: [linkedinUrl], maxItems: 50, postedLimit: janela, scrapeReplies: false, profileScraperMode: "main" }))
     for (const commentInput of commentInputs) assertCallWithinBudget(budget, "harvestapi/linkedin-post-comments", commentInput)
     const commentResults = await Promise.all(commentTargets.map(async (target, index) => ({ target, result: await apifyRun("harvestapi/linkedin-post-comments", commentInputs[index], apifyToken) })))
     for (const { target, result: commentsResult } of commentResults) {
       costUsd += commentsResult.costUsd
       registerActualCost(budget, commentsResult.costUsd)
       await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-comments", itens: commentsResult.items.length, custo_usd: commentsResult.costUsd })
-      if (commentsResult.items.length >= 200) warnings.push(`O post ${target.postId} atingiu o limite de 200 comentários; a coleta pode estar truncada.`)
+      if (commentsResult.items.length >= 50) warnings.push(`O post ${target.raw.id} atingiu o limite de 50 comentários; a coleta pode estar truncada.`)
       for (const comment of commentsResult.items as ActorComment[]) {
         if (!comment.id || !comment.commentary || !comment.actor?.linkedinUrl) continue
-        collectedComments.push({ comment, postId: target.postId })
+        collectedComments.push({ comment, postUrn: target.raw.id! })
       }
     }
 
@@ -205,7 +202,30 @@ Deno.serve(async (request) => {
       }
     }
 
-    for (const { comment, postId } of collectedComments) {
+    // Do not expose partial collections. All calls to external Actors are
+    // complete at this point; only now does persistence begin.
+    const persistedPosts = new Map<string, string>()
+    for (const postRow of postRows) {
+      const { raw } = postRow
+      const { data: post, error } = await admin.from("posts").upsert({
+        projeto_id: projectId,
+        fonte_id: postRow.sourceId,
+        linkedin_url: postRow.linkedinUrl,
+        post_urn: raw.id!,
+        autor_nome: postRow.authorName,
+        autor_url: postRow.authorUrl,
+        texto: postRow.text,
+        publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null,
+        total_reacoes: countValue(raw.engagement?.reactions, raw.reactionsCount),
+        total_comentarios: countValue(raw.engagement?.comments, raw.commentsCount),
+        total_shares: countValue(raw.engagement?.shares, raw.sharesCount),
+      }, { onConflict: "projeto_id,post_urn" }).select("id").single()
+      if (error || !post) throw new Error(`Não foi possível persistir o post ${raw.id}: ${error?.message ?? "registro ausente"}`)
+      persistedPosts.set(raw.id!, post.id)
+      postsRead += 1
+    }
+
+    for (const { comment, postUrn } of collectedComments) {
         const actor = comment.actor!
         const actorUrl = sourceUrl(actor.linkedinUrl!)
         if (!profileCache.get(actorUrl)) continue
@@ -239,6 +259,8 @@ Deno.serve(async (request) => {
         if (personError) throw new Error(`Não foi possível persistir a pessoa ${slug}: ${personError.message}`)
         if (!person) continue
         if (!existingPerson) peopleNew += 1
+        const postId = persistedPosts.get(postUrn)
+        if (!postId) continue
         const { error } = await admin.from("comentarios").upsert({ projeto_id: projectId, post_id: postId, pessoa_id: person.id, comentario_urn: comment.id!, texto: comment.commentary!, publicado_em: comment.createdAt ?? null }, { onConflict: "projeto_id,comentario_urn" })
         if (!error) commentsRead += 1
     }
