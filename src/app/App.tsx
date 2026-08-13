@@ -502,12 +502,13 @@ function App() {
 
   async function handleAnalyzePosts() {
     if (!signalSummary?.projectId || postAnalysisBusy) return
+    const target = discoveredPosts.length > 0 ? "discovery" : "monitoring"
     setPostAnalysisBusy(true)
-    setCollectionMessage("Analisando posts reais…")
+    setCollectionMessage(target === "discovery" ? "Analisando um resultado real da busca…" : "Analisando posts reais monitorados…")
     try {
-      const result = await analyzePosts(signalSummary.projectId)
-      const posts = await loadSignalPosts(signalSummary.projectId)
-      setSignalPosts(posts)
+      const result = await analyzePosts(signalSummary.projectId, target)
+      if (target === "discovery") setDiscoveredPosts(await loadDiscoveredPosts(signalSummary.projectId))
+      else setSignalPosts(await loadSignalPosts(signalSummary.projectId))
       setCollectionMessage(result.analyzed ? "Análise do post concluída." : "Nenhum post pendente para analisar.")
     } catch (error) {
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível analisar os posts.")
@@ -693,7 +694,7 @@ function App() {
             <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
             {postsMode === "search" ? <div className="post-review-layout">
               <section className="signal-panel post-results-panel">
-                <div className="panel-heading"><div><h2>Resultados da busca</h2><p>{discoveredPosts.length > 0 ? "Posts reais encontrados na descoberta; aprove ou descarte antes de monitorar." : "Clique em um post para revisar."}</p></div><div className="panel-heading-actions"><span className="signal-tag">{reviewPosts.filter((post) => post.curationStatus === "aprovado").length} válidos</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || signalPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
+                <div className="panel-heading"><div><h2>Resultados da busca</h2><p>{discoveredPosts.length > 0 ? "Posts reais encontrados na descoberta; aprove ou descarte antes de monitorar." : "Clique em um post para revisar."}</p></div><div className="panel-heading-actions"><span className="signal-tag">{reviewPosts.filter((post) => post.curationStatus === "aprovado").length} válidos</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || reviewPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
                 <div className="post-results-list" aria-label="Lista de posts encontrados">
                   {reviewPosts.map((post) => {
                     const source = signalSources.find((candidate) => candidate.linkedinUrl === post.authorUrl || candidate.name === post.authorName)

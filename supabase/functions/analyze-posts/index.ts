@@ -46,13 +46,17 @@ Deno.serve(async (request) => {
   const userClient = createClient(supabaseUrl, serviceRoleKey, { global: { headers: { Authorization: authHeader } } })
   const { data: { user }, error: userError } = await userClient.auth.getUser()
   if (userError || !user) return json({ error: "Sessão inválida. Faça login novamente." }, 401)
-  let body: { projectId?: string }
+  let body: { projectId?: string; target?: "discovery" | "monitoring" }
   try { body = await request.json() } catch { return json({ error: "JSON inválido." }, 400) }
   if (!body.projectId) return json({ error: "projectId é obrigatório." }, 400)
   const { data: project } = await admin.from("projetos").select("id").eq("id", body.projectId).eq("owner_id", user.id).maybeSingle()
   if (!project) return json({ error: "Projeto não encontrado para este usuário." }, 404)
   const { data: term } = await admin.from("termos").select("termo, contexto_positivo, contexto_negativo").eq("projeto_id", project.id).eq("ativo", true).order("criado_em", { ascending: false }).limit(1).maybeSingle()
-  const { data: post } = await admin.from("posts").select("id, texto, autor_nome, autor_url, total_comentarios").eq("projeto_id", project.id).is("analise_topico", null).order("coletado_em", { ascending: true }).limit(1).maybeSingle()
+  const target = body.target === "discovery" ? "discovery" : "monitoring"
+  const table = target === "discovery" ? "posts_descobertos" : "posts"
+  const orderColumn = target === "discovery" ? "descoberto_em" : "coletado_em"
+  const { data: post, error: postError } = await admin.from(table).select("id, texto, autor_nome, autor_url, total_comentarios").eq("projeto_id", project.id).is("analise_topico", null).order(orderColumn, { ascending: true }).limit(1).maybeSingle()
+  if (postError) return json({ error: postError.message }, 500)
   if (!post) return json({ status: "concluida", analyzed: 0, remaining: 0 })
   const prompt = SYSTEM_PROMPT.replace("{palavra_chave}", term?.termo ?? "").replace("{contextos_positivos}", term?.contexto_positivo ?? "não informado").replace("{contextos_negativos}", term?.contexto_negativo ?? "não informado")
   const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-4o-mini", temperature: 0, response_format: { type: "json_object" }, messages: [{ role: "system", content: prompt }, { role: "user", content: JSON.stringify({ texto: post.texto, autor: post.autor_nome, perfil: post.autor_url, comentarios: post.total_comentarios }) }] }) })
@@ -60,8 +64,8 @@ Deno.serve(async (request) => {
   const completion = await aiResponse.json()
   let analysis: Analysis
   try { analysis = validAnalysis(JSON.parse(completion.choices?.[0]?.message?.content ?? "")) } catch (error) { return json({ error: error instanceof Error ? error.message : "JSON inválido retornado pela IA." }, 502) }
-  const { error: updateError } = await admin.from("posts").update({ analise_topico: analysis.topico, analise_problema: analysis.problema, analise_motivo: analysis.motivo, analise_coleta: analysis.coleta }).eq("id", post.id).eq("projeto_id", project.id)
+  const { error: updateError } = await admin.from(table).update({ analise_topico: analysis.topico, analise_problema: analysis.problema, analise_motivo: analysis.motivo, analise_coleta: analysis.coleta }).eq("id", post.id).eq("projeto_id", project.id)
   if (updateError) return json({ error: updateError.message }, 500)
-  const { count } = await admin.from("posts").select("id", { count: "exact", head: true }).eq("projeto_id", project.id).is("analise_topico", null)
+  const { count } = await admin.from(table).select("id", { count: "exact", head: true }).eq("projeto_id", project.id).is("analise_topico", null)
   return json({ status: "concluida", analyzed: 1, remaining: count ?? 0 })
 })

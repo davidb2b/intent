@@ -3,8 +3,8 @@ import { functionErrorMessage } from "@/lib/supabase-function-error"
 
 export type AnalyzePostsResult = { status: "concluida"; analyzed: number; remaining: number }
 
-export async function analyzePosts(projectId: string): Promise<AnalyzePostsResult> {
-  const { data, error } = await supabase.functions.invoke<AnalyzePostsResult>("analyze-posts", { body: { projectId } })
+export async function analyzePosts(projectId: string, target: "discovery" | "monitoring"): Promise<AnalyzePostsResult> {
+  const { data, error } = await supabase.functions.invoke<AnalyzePostsResult>("analyze-posts", { body: { projectId, target } })
   if (error) {
     throw new Error(await functionErrorMessage(error, "Não foi possível analisar os posts."))
   }
