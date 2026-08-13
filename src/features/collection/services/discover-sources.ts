@@ -13,6 +13,7 @@ export type DiscoverSourcesResult = {
   warnings: string[]
   outcome?: "sources_found" | "no_posts" | "no_brazilian_profiles"
   message?: string
+  fallbackUsed?: boolean
 }
 
 export async function discoverSources(projectId: string, terms: string[], janela = "3months") {

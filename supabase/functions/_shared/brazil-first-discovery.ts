@@ -1,4 +1,5 @@
 const MAX_LINKEDIN_QUERY_LENGTH = 85
+const MAX_PROFILE_FALLBACK_ITEMS = 25
 
 function normalized(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
@@ -19,6 +20,22 @@ export function buildBrazilFirstQueries(terms: string[]) {
     return [exact, brazil]
   })
   return [...new Set(queries.map((query) => query.trim()).filter(Boolean))]
+}
+
+/**
+ * A location-aware fallback for when post search finds the subject but no
+ * author whose location can be confirmed in Brazil. The returned profiles are
+ * still verified by Profile Details before becoming sources.
+ */
+export function buildBrazilProfileSearchInput(terms: string[]) {
+  const query = terms.map((term) => term.trim()).find(Boolean)
+  if (!query) return null
+  return {
+    searchQuery: query.slice(0, MAX_LINKEDIN_QUERY_LENGTH),
+    locations: ["Brazil"],
+    maxItems: MAX_PROFILE_FALLBACK_ITEMS,
+    autoQuerySegmentation: false,
+  }
 }
 
 /** Source discovery must never send company pages to the person-profile Actor. */

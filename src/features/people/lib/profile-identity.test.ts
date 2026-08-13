@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, requestedProfileSlugs } from "../../../../supabase/functions/_shared/brazil-profile-verification"
-import { brazilRelevanceScore, buildBrazilFirstQueries, isLinkedInPersonProfileUrl } from "../../../../supabase/functions/_shared/brazil-first-discovery"
+import { brazilRelevanceScore, buildBrazilFirstQueries, buildBrazilProfileSearchInput, isLinkedInPersonProfileUrl } from "../../../../supabase/functions/_shared/brazil-first-discovery"
 import { canonicalProfileUrl, normalizeProfileSlug } from "../../../../supabase/functions/_shared/profile-identity"
 import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "../../../../supabase/functions/_shared/monitoring-posts"
 
@@ -66,6 +66,7 @@ describe("profile identity", () => {
 
   it("prioritizes Brazil in discovery without accepting company pages as profiles", () => {
     expect(buildBrazilFirstQueries(["cost breakdown", "compras"])).toEqual(["cost breakdown", "cost breakdown Brasil", "compras", "compras Brasil"])
+    expect(buildBrazilProfileSearchInput(["cost breakdown"])).toMatchObject({ searchQuery: "cost breakdown", locations: ["Brazil"], maxItems: 25 })
     expect(isLinkedInPersonProfileUrl("https://www.linkedin.com/in/pessoa-brasileira")).toBe(true)
     expect(isLinkedInPersonProfileUrl("https://www.linkedin.com/company/empresa-brasileira")).toBe(false)
     expect(brazilRelevanceScore("Compras estratégicas no Brasil e em São Paulo")).toBeGreaterThan(0)

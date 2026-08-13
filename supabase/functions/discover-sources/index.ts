@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
-import { brazilRelevanceScore, buildBrazilFirstQueries, isLinkedInPersonProfileUrl } from "../_shared/brazil-first-discovery.ts"
+import { brazilRelevanceScore, buildBrazilFirstQueries, buildBrazilProfileSearchInput, isLinkedInPersonProfileUrl } from "../_shared/brazil-first-discovery.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 
@@ -27,6 +27,15 @@ type ProfileDetails = {
   country?: string
   countryCode?: string
   basic_info?: { location?: { country?: string; country_code?: string; full?: string } }
+}
+
+type ProfileSearchItem = {
+  linkedinUrl?: string
+  linkedin_url?: string
+  url?: string
+  profileUrl?: string
+  name?: string
+  fullName?: string
 }
 
 function json(body: unknown, status = 200) {
@@ -62,6 +71,11 @@ function profileUrl(post: ActorPost) {
 
 function metric(value: number | unknown[] | undefined, fallback?: number) {
   return Array.isArray(value) ? value.length : value ?? fallback ?? 0
+}
+
+function profileSearchUrl(profile: ProfileSearchItem) {
+  const value = profile.linkedinUrl ?? profile.linkedin_url ?? profile.profileUrl ?? profile.url ?? null
+  return isLinkedInPersonProfileUrl(value) ? canonicalProfileUrl(value!) : null
 }
 
 Deno.serve(async (request) => {
@@ -135,6 +149,7 @@ Deno.serve(async (request) => {
     let inserted = 0
     let rejected = 0
     let unverified = 0
+    let fallbackUsed = false
     if (batchCandidates.length > 0) {
       const profileInput = buildBrazilProfileBatchInput(batchCandidates.map((candidate) => candidate.url))
       try {
@@ -175,6 +190,40 @@ Deno.serve(async (request) => {
       const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: candidate.name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio }), status: "candidata", descoberta_em: candidate.discoveredBy })
       if (!error) inserted += 1
     }
+    
+    // Post search can correctly find an English topic while returning only
+    // foreign authors. In that case, ask a location-aware actor for Brazilian
+    // people related to the same term and validate every profile again.
+    if (inserted === 0) {
+      const fallbackInput = buildBrazilProfileSearchInput(terms)
+      if (fallbackInput) {
+        fallbackUsed = true
+        assertCallWithinBudget(budget, "harvestapi/linkedin-profile-search", fallbackInput)
+        const fallbackResult = await apifyRun("harvestapi/linkedin-profile-search", fallbackInput, apifyToken)
+        costUsd += fallbackResult.costUsd
+        registerActualCost(budget, fallbackResult.costUsd)
+        await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-search", itens: fallbackResult.items.length, custo_usd: fallbackResult.costUsd })
+
+        const fallbackProfiles = (fallbackResult.items as ProfileSearchItem[])
+          .map((profile) => ({ url: profileSearchUrl(profile), name: profile.name ?? profile.fullName ?? null }))
+          .filter((profile): profile is { url: string; name: string | null } => Boolean(profile.url))
+          .filter((profile, index, profiles) => profiles.findIndex((candidate) => candidate.url === profile.url) === index)
+          .filter((profile) => !existingUrls.has(profile.url))
+          .slice(0, MAX_PROFILES_PER_DISCOVERY)
+
+        for (const profile of fallbackProfiles) {
+          const detailInput = { username: profileUsername(profile.url), includeEmail: false }
+          assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", detailInput)
+          const details = await apifyRun("apimaestro/linkedin-profile-detail", detailInput, apifyToken)
+          costUsd += details.costUsd
+          registerActualCost(budget, details.costUsd)
+          await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: details.items.length, custo_usd: details.costUsd })
+          if (!isBrazilianProfile(details.items[0] as ProfileDetails | undefined)) { rejected += 1; continue }
+          const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: profile.url, nome: profile.name, meta: JSON.stringify({ posts: 0, comentarios: 0, reacoes: 0, razao_comentarios_reacoes: 0 }), status: "candidata", descoberta_em: terms[0] })
+          if (!error) inserted += 1
+        }
+      }
+    }
     const warnings = [
       ...(deferredCandidates > 0 ? [`${deferredCandidates} autores ficaram para a próxima descoberta por limite de verificação.`] : []),
       ...(unverified > 0 ? [`${unverified} perfis não foram retornados pelo Actor e permaneceram pendentes de verificação.`] : []),
@@ -184,8 +233,8 @@ Deno.serve(async (request) => {
     const message = outcome === "no_posts"
       ? `Nenhum post público foi encontrado para “${terms.join(", ")}” na janela selecionada.`
       : outcome === "no_brazilian_profiles"
-        ? `Foram analisados ${result.items.length} posts, mas nenhum autor foi confirmado como perfil brasileiro.`
-        : `${inserted} perfis brasileiros foram encontrados e aguardam ativação.`
+        ? `Foram analisados ${result.items.length} posts e a busca alternativa de perfis no Brasil, mas nenhum perfil brasileiro foi confirmado.`
+        : `${inserted} perfis brasileiros foram encontrados${fallbackUsed ? " pela busca alternativa" : ""} e aguardam ativação.`
     return json({
       executionId: execution.id,
       status: "concluida",
@@ -198,6 +247,7 @@ Deno.serve(async (request) => {
       warnings,
       outcome,
       message,
+      fallbackUsed,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido na descoberta."
