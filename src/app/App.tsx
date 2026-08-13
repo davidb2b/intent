@@ -230,6 +230,12 @@ function App() {
         setSignalSummary(summary)
         setCollectionState(stateFromLatestExecution(summary))
         const latestExecution = summary.executionHistory[0]
+        setCollectionProgress(latestExecution?.status === "rodando" ? {
+          executionId: latestExecution.id,
+          stage: latestExecution.stage,
+          progress: latestExecution.progress,
+          message: latestExecution.progressMessage ?? "Preparando a coleta real.",
+        } : null)
         setCollectionMessage(latestExecution?.status === "falhou" || latestExecution?.status === "abortada_por_custo"
           ? latestExecution.error ?? "A última coleta não foi concluída."
           : latestExecution?.outcome === "no_posts" || latestExecution?.outcome === "no_brazilian_profiles"

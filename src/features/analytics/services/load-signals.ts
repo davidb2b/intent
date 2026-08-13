@@ -30,6 +30,9 @@ export type SignalExecution = {
   warnings: string[]
   outcome: "sources_found" | "no_posts" | "no_brazilian_profiles" | null
   message: string | null
+  stage: string
+  progress: number
+  progressMessage: string | null
   startedAt: string
   completedAt: string | null
 }
@@ -131,7 +134,7 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
     supabase.from("comentarios").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("pessoas").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("empresas").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
-    supabase.from("execucoes").select("id, tipo, status, parametros, posts_lidos, comentarios_lidos, pessoas_novas, custo_usd, erro, iniciada_em, concluida_em").eq("projeto_id", projectId).order("iniciada_em", { ascending: false }).limit(20),
+    supabase.from("execucoes").select("id, tipo, status, parametros, posts_lidos, comentarios_lidos, pessoas_novas, custo_usd, erro, etapa_atual, progresso, mensagem_progresso, iniciada_em, concluida_em").eq("projeto_id", projectId).order("iniciada_em", { ascending: false }).limit(20),
     supabase.from("termos").select("termo, contexto_positivo, contexto_negativo").eq("projeto_id", projectId).eq("ativo", true).order("criado_em", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("fontes").select("id", { count: "exact", head: true }).eq("projeto_id", projectId).eq("status", "monitorada"),
   ])
@@ -161,6 +164,9 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
       warnings,
       outcome: outcome === "sources_found" || outcome === "no_posts" || outcome === "no_brazilian_profiles" ? outcome : null,
       message: typeof message === "string" ? message : null,
+      stage: execution.etapa_atual,
+      progress: execution.progresso,
+      progressMessage: execution.mensagem_progresso,
       startedAt: execution.iniciada_em,
       completedAt: execution.concluida_em,
     } satisfies SignalExecution
