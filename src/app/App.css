@@ -270,10 +270,13 @@
 .review-checkbox input { width: auto; accent-color: var(--signal-brand); }
 
 @media (max-width: 860px) {
-  .signal-sidebar { top: 0; width: 72px; height: 100vh; max-height: none; flex-basis: 72px; margin: 0; padding: 20px 10px; }
-  .brand-lockup { justify-content: center; padding: 0 0 22px; }
-  .brand-lockup > div:last-child, .workspace-selector, .nav-item span:not(.nav-index), .sidebar-footer { display: none; }
-  .nav-item { justify-content: center; padding: 11px 5px; }
+  .signal-shell { display: block; }
+  .signal-sidebar { position: static; width: 100%; height: auto; flex: none; overflow: hidden; border-right: 0; border-bottom: 1px solid var(--signal-border); padding: 10px 16px; }
+  .brand-lockup { display: none; }
+  .workspace-selector, .sidebar-footer { display: none; }
+  .main-nav { display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 1px; scrollbar-width: none; }
+  .main-nav::-webkit-scrollbar { display: none; }
+  .nav-item { flex: 0 0 auto; justify-content: center; gap: 7px; min-height: 38px; padding: 8px 11px; }
   .nav-index { display: none; }
   .topbar, .content-area { padding-left: 24px; padding-right: 24px; }
   .query-bar, .collection-bar { margin-left: 24px; margin-right: 24px; }
