@@ -61,6 +61,13 @@ function formatExecutionStatus(status: string) {
   return status === "concluida" ? "Concluída" : status === "rodando" ? "Em andamento" : status === "abortada_por_custo" ? "Abortada por custo" : "Falhou"
 }
 
+function stateFromLatestExecution(summary: SignalSummary): CollectionState {
+  const latest = summary.executionHistory[0]
+  if (latest?.status === "rodando") return "running"
+  if (latest?.status === "falhou" || latest?.status === "abortada_por_custo") return "error"
+  return "idle"
+}
+
 function shorten(value: string | null, length = 180) {
   if (!value) return "Sem texto disponível."
   return value.length > length ? `${value.slice(0, length).trim()}…` : value
@@ -187,6 +194,10 @@ function App() {
       .then(async (summary) => {
         if (!active) return
         setSignalSummary(summary)
+        setCollectionState(stateFromLatestExecution(summary))
+        setCollectionMessage(summary.executionHistory[0]?.status === "falhou" || summary.executionHistory[0]?.status === "abortada_por_custo"
+          ? summary.executionHistory[0].error ?? "A última coleta não foi concluída."
+          : "")
         setKeyword(summary.keyword ?? "")
         setPositiveContext(summary.positiveContext ?? "")
         setNegativeContext(summary.negativeContext ?? "")
@@ -346,16 +357,13 @@ function App() {
     if (!signalSummary?.projectId || classificationBusy) return
     setClassificationBusy(true)
     setCollectionMessage("Classificando comentários reais…")
-    setCollectionState("running")
     try {
       const result = await classifyComments(signalSummary.projectId)
       const [comments, summary] = await Promise.all([loadSignalComments(signalSummary.projectId), loadSignalSummary(session?.userId ?? "")])
       setSignalComments(comments)
       setSignalSummary(summary)
-      setCollectionState("success")
       setCollectionMessage(result.classified ? `${result.classified} comentários classificados. ${result.remaining} pendentes.` : "Nenhum comentário pendente para classificar.")
     } catch (error) {
-      setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível classificar os comentários.")
     } finally {
       setClassificationBusy(false)
@@ -365,16 +373,13 @@ function App() {
   async function handleAnalyzePosts() {
     if (!signalSummary?.projectId || postAnalysisBusy) return
     setPostAnalysisBusy(true)
-    setCollectionState("running")
     setCollectionMessage("Analisando posts reais…")
     try {
       const result = await analyzePosts(signalSummary.projectId)
       const posts = await loadSignalPosts(signalSummary.projectId)
       setSignalPosts(posts)
-      setCollectionState("success")
       setCollectionMessage(result.analyzed ? "Análise do post concluída." : "Nenhum post pendente para analisar.")
     } catch (error) {
-      setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível analisar os posts.")
     } finally { setPostAnalysisBusy(false) }
   }
@@ -491,7 +496,7 @@ function App() {
             <div><span>Pessoas</span><strong>{signalSummary.people}</strong></div>
             <div><span>Empresas</span><strong>{signalSummary.companies}</strong></div>
           </div>}
-          {activeView === "overview" && session && signalSummary?.projectId && <section className="signal-panel execution-history-panel"><div className="panel-heading"><div><p className="eyebrow">Histórico</p><h2>Execuções recentes</h2><p>Descobertas e monitoramentos com origem e custo reais.</p></div><span className="signal-tag">{signalSummary.executionHistory.length} registros</span></div>{signalSummary.executionHistory.length > 0 ? <div className="execution-list">{signalSummary.executionHistory.map((execution) => <article className="execution-row" key={execution.id}><div><strong>{execution.type === "descoberta" ? "Descoberta de fontes" : "Monitoramento"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Agendada" : execution.origin === "manual" ? "Manual" : "Origem não informada"}</span></div><div><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.warnings.length > 0 && <small className="execution-warning">⚠ {execution.warnings.length} aviso(s) de truncamento</small>}</div><strong>{formatCurrency(execution.costUsd)}</strong></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma execução registrada</strong><span>As próximas descobertas e monitoramentos aparecerão aqui.</span></div>}</section>}
+          {activeView === "overview" && session && signalSummary?.projectId && <section className="signal-panel execution-history-panel"><div className="panel-heading"><div><p className="eyebrow">Histórico</p><h2>Execuções recentes</h2><p>Descobertas e monitoramentos com origem e custo reais.</p></div><span className="signal-tag">{signalSummary.executionHistory.length} registros</span></div>{signalSummary.executionHistory.length > 0 ? <div className="execution-list">{signalSummary.executionHistory.map((execution) => <article className="execution-row" key={execution.id}><div><strong>{execution.type === "descoberta" ? "Descoberta de fontes" : "Monitoramento"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Agendada" : execution.origin === "manual" ? "Manual" : "Origem não informada"}</span></div><div><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.error && <small className="execution-error">{execution.error}</small>}{execution.warnings.length > 0 && <small className="execution-warning">⚠ {execution.warnings.length} aviso(s) de truncamento</small>}</div><strong>{formatCurrency(execution.costUsd)}</strong></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma execução registrada</strong><span>As próximas descobertas e monitoramentos aparecerão aqui.</span></div>}</section>}
           {activeView === "posts" && session && signalSummary?.projectId ? <div className="signal-panel-grid">
             <section className="signal-panel">
               <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
