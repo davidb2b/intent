@@ -4,6 +4,7 @@ import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActua
 import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "../_shared/monitoring-posts.ts"
 import { normalizeCompanyKey, personPersistencePayload } from "../_shared/person-enrichment.ts"
 import { hasApifyItemLimit } from "../_shared/apify-result.ts"
+import { isStaleExecution } from "../_shared/execution-lock.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -122,8 +123,9 @@ Deno.serve(async (request) => {
   const projectQuery = admin.from("projetos").select("id").eq("id", projectId)
   const { data: project } = isScheduled ? await projectQuery.maybeSingle() : await projectQuery.eq("owner_id", userId!).maybeSingle()
   if (!project) return json({ error: isScheduled ? "Projeto agendado não encontrado." : "Projeto não encontrado para o usuário autenticado." }, 404)
-  const { data: activeExecution } = await admin.from("execucoes").select("id").eq("projeto_id", projectId).eq("status", "rodando").limit(1).maybeSingle()
-  if (activeExecution) return json({ error: "Já existe uma execução em andamento para este projeto." }, 409)
+  const { data: activeExecution } = await admin.from("execucoes").select("id, iniciada_em").eq("projeto_id", projectId).eq("status", "rodando").limit(1).maybeSingle()
+  if (activeExecution && !isStaleExecution(activeExecution.iniciada_em)) return json({ error: "Já existe uma execução em andamento para este projeto." }, 409)
+  if (activeExecution) await admin.from("execucoes").update({ status: "falhou", erro: "O monitoramento anterior foi interrompido antes de concluir.", concluida_em: new Date().toISOString() }).eq("id", activeExecution.id)
   const { data: sources } = await admin.from("fontes").select("id, linkedin_url").eq("projeto_id", projectId).eq("status", "monitorada").order("criado_em", { ascending: true })
   const monitoredSources = (sources ?? []) as MonitoredSource[]
   if (monitoredSources.length === 0) return json({ error: "Nenhuma fonte monitorada. Aprove uma fonte candidata antes de iniciar." }, 400)

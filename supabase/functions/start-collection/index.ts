@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 import { hasApifyItemLimit } from "../_shared/apify-result.ts"
+import { isStaleExecution } from "../_shared/execution-lock.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -163,11 +164,12 @@ Deno.serve(async (request) => {
   const { data: execution, error: executionError } = await admin.from("execucoes").insert({ projeto_id: project.id, tipo: "descoberta", status: "rodando", parametros: body }).select("id").single()
   if (executionError || !execution) return json({ error: "Não foi possível registrar a execução." }, 500)
 
-  const { data: activeExecution } = await admin.from("execucoes").select("id").eq("projeto_id", project.id).eq("status", "rodando").neq("id", execution.id).limit(1).maybeSingle()
-  if (activeExecution) {
+  const { data: activeExecution } = await admin.from("execucoes").select("id, iniciada_em").eq("projeto_id", project.id).eq("status", "rodando").neq("id", execution.id).limit(1).maybeSingle()
+  if (activeExecution && !isStaleExecution(activeExecution.iniciada_em)) {
     await admin.from("execucoes").update({ status: "falhou", erro: "Já existe uma coleta em andamento para este projeto.", concluida_em: new Date().toISOString() }).eq("id", execution.id)
     return json({ error: "Já existe uma coleta em andamento para este projeto." }, 409)
   }
+  if (activeExecution) await admin.from("execucoes").update({ status: "falhou", erro: "A coleta anterior foi interrompida antes de concluir.", concluida_em: new Date().toISOString() }).eq("id", activeExecution.id)
 
   let costUsd = 0
   let postsRead = 0

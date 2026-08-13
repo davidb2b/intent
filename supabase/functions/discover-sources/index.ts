@@ -4,6 +4,7 @@ import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISC
 import { brazilRelevanceScore, buildBrazilFirstQueries, buildBrazilProfileSearchInput, isLinkedInPersonProfileUrl } from "../_shared/brazil-first-discovery.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 import { hasApifyItemLimit } from "../_shared/apify-result.ts"
+import { isStaleExecution } from "../_shared/execution-lock.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -103,8 +104,9 @@ Deno.serve(async (request) => {
 
   const { data: project } = await admin.from("projetos").select("id").eq("id", projectId).eq("owner_id", user.id).maybeSingle()
   if (!project) return json({ error: "Projeto não encontrado para o usuário autenticado." }, 404)
-  const { data: activeExecution } = await admin.from("execucoes").select("id").eq("projeto_id", projectId).eq("status", "rodando").limit(1).maybeSingle()
-  if (activeExecution) return json({ error: "Já existe uma execução em andamento para este projeto." }, 409)
+  const { data: activeExecution } = await admin.from("execucoes").select("id, iniciada_em").eq("projeto_id", projectId).eq("status", "rodando").limit(1).maybeSingle()
+  if (activeExecution && !isStaleExecution(activeExecution.iniciada_em)) return json({ error: "Já existe uma execução em andamento para este projeto." }, 409)
+  if (activeExecution) await admin.from("execucoes").update({ status: "falhou", erro: "A execução anterior foi interrompida antes de concluir. Nenhuma fonte foi criada.", concluida_em: new Date().toISOString() }).eq("id", activeExecution.id)
   const { data: execution, error: executionError } = await admin.from("execucoes").insert({ projeto_id: projectId, tipo: "descoberta", status: "rodando", parametros: { termos: terms, janela: body.janela ?? "3months", origem: "manual" } }).select("id").single()
   if (executionError || !execution) return json({ error: "Não foi possível registrar a descoberta." }, 500)
 
