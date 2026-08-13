@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { canonicalProfileUrl, normalizeProfileSlug } from "../_shared/profile-identity.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "../_shared/monitoring-posts.ts"
 import { normalizeCompanyKey, personPersistencePayload } from "../_shared/person-enrichment.ts"
@@ -7,6 +7,7 @@ import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 import { isStaleExecution } from "../_shared/execution-lock.ts"
 import { usablePersonName } from "../_shared/person-enrichment.ts"
 import { matchesTopic } from "../_shared/topic-relevance.ts"
+import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,25 +46,11 @@ type ActorComment = {
     experience?: Array<{ position?: string; companyName?: string }>
   }
 }
-type ProfileDetails = { location?: unknown; country?: string; countryCode?: string; basic_info?: { location?: { country?: string; country_code?: string; full?: string } } }
+
+const MAX_POSTS_WITH_COMMENTS_PER_RUN = 3
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } })
-}
-
-function normalized(value: unknown) {
-  return typeof value === "string" ? value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : ""
-}
-
-function isBrazilianProfile(profile: ProfileDetails | undefined) {
-  if (!profile) return false
-  const values = [profile.location, profile.country, profile.countryCode, profile.basic_info?.location].flatMap((value) => {
-    if (typeof value === "string") return [normalized(value)]
-    if (!value || typeof value !== "object") return []
-    const item = value as Record<string, unknown>
-    return [item.countryCode, item.country_code, item.country, item.full].map(normalized)
-  })
-  return values.some((value) => value === "br" || value === "brazil" || value === "brasil" || value.endsWith(", brazil") || value.endsWith(", brasil"))
 }
 
 async function apifyRun(actorId: string, input: Record<string, unknown>, token: string) {
@@ -155,7 +142,7 @@ Deno.serve(async (request) => {
     await admin.from("custos").insert({ execucao_id: execution.id, actor: MONITORED_PROFILE_POSTS_ACTOR, itens: postResult.items.length, custo_usd: postResult.costUsd })
     const sourceByUrl = new Map(monitoredSources.map((source) => [sourceUrl(source.linkedin_url), source.id]))
     const postRows: Array<{ raw: ActorPost; postId: string; linkedinUrl: string }> = []
-    const profileCache = new Map<string, boolean>()
+    const collectedComments: Array<{ comment: ActorComment; postId: string }> = []
     for (const raw of postResult.items as ActorPost[]) {
       if (!raw.id) continue
       const author = raw.author ?? raw.actor
@@ -172,32 +159,55 @@ Deno.serve(async (request) => {
       postsRead += 1
       postRows.push({ raw, postId: post.id, linkedinUrl: post.linkedinUrl ?? post.linkedin_url })
     }
-    for (const { raw, postId, linkedinUrl } of postRows) {
-      const commentCount = countValue(raw.engagement?.comments, raw.commentsCount) ?? 0
-      if (commentCount === 0) continue
-      const commentInput = { posts: [linkedinUrl], maxItems: 200, postedLimit: janela, scrapeReplies: false, profileScraperMode: "main" }
-      assertCallWithinBudget(budget, "harvestapi/linkedin-post-comments", commentInput)
-      const commentsResult = await apifyRun("harvestapi/linkedin-post-comments", commentInput, apifyToken)
+    const postsWithComments = postRows
+      .filter(({ raw }) => (countValue(raw.engagement?.comments, raw.commentsCount) ?? 0) > 0)
+      .sort((first, second) => (countValue(second.raw.engagement?.comments, second.raw.commentsCount) ?? 0) - (countValue(first.raw.engagement?.comments, first.raw.commentsCount) ?? 0))
+    const commentTargets = postsWithComments.slice(0, MAX_POSTS_WITH_COMMENTS_PER_RUN)
+    if (postsWithComments.length > commentTargets.length) warnings.push(`A coleta de comentários foi priorizada nos ${commentTargets.length} posts com maior conversa; os demais serão processados na próxima execução.`)
+    const commentInputs = commentTargets.map(({ linkedinUrl }) => ({ posts: [linkedinUrl], maxItems: 200, postedLimit: janela, scrapeReplies: false, profileScraperMode: "main" }))
+    for (const commentInput of commentInputs) assertCallWithinBudget(budget, "harvestapi/linkedin-post-comments", commentInput)
+    const commentResults = await Promise.all(commentTargets.map(async (target, index) => ({ target, result: await apifyRun("harvestapi/linkedin-post-comments", commentInputs[index], apifyToken) })))
+    for (const { target, result: commentsResult } of commentResults) {
       costUsd += commentsResult.costUsd
       registerActualCost(budget, commentsResult.costUsd)
       await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-comments", itens: commentsResult.items.length, custo_usd: commentsResult.costUsd })
-      if (commentsResult.items.length >= 200) {
-        warnings.push(`O post ${postId} atingiu o limite de 200 comentários; a coleta pode estar truncada.`)
-      }
+      if (commentsResult.items.length >= 200) warnings.push(`O post ${target.postId} atingiu o limite de 200 comentários; a coleta pode estar truncada.`)
       for (const comment of commentsResult.items as ActorComment[]) {
-        const actor = comment.actor
-        if (!comment.id || !comment.commentary || !actor?.linkedinUrl) continue
-        const actorUrl = sourceUrl(actor.linkedinUrl)
-        if (!profileCache.has(actorUrl)) {
-          const username = profileUsername(actorUrl)
-          const profileInput = { username, includeEmail: false }
-          assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", profileInput)
-          const profile = await apifyRun("apimaestro/linkedin-profile-detail", profileInput, apifyToken)
-          costUsd += profile.costUsd
-          registerActualCost(budget, profile.costUsd)
-          await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: 1, custo_usd: profile.costUsd })
-          profileCache.set(actorUrl, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
+        if (!comment.id || !comment.commentary || !comment.actor?.linkedinUrl) continue
+        collectedComments.push({ comment, postId: target.postId })
+      }
+    }
+
+    // Verify commenters in bounded batches. A serial profile request for each
+    // comment made a normal collection take several minutes and left runs
+    // looking stuck, even though posts were already persisted.
+    const commenterUrls = [...new Set(collectedComments.map(({ comment }) => sourceUrl(comment.actor!.linkedinUrl!)))]
+    const profileCache = new Map<string, boolean>()
+    for (let index = 0; index < commenterUrls.length; index += MAX_PROFILES_PER_DISCOVERY) {
+      const batchUrls = commenterUrls.slice(index, index + MAX_PROFILES_PER_DISCOVERY)
+      const profileInput = buildBrazilProfileBatchInput(batchUrls)
+      try {
+        assertCallWithinBudget(budget, "harvestapi/linkedin-profile-scraper", profileInput)
+        const profileResult = await apifyRun("harvestapi/linkedin-profile-scraper", profileInput, apifyToken)
+        costUsd += profileResult.costUsd
+        registerActualCost(budget, profileResult.costUsd)
+        await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-scraper", itens: profileResult.items.length, custo_usd: profileResult.costUsd })
+        const returnedSlugs = requestedProfileSlugs(batchUrls, profileResult.items as never[])
+        const brazilianSlugs = requestedProfileSlugs(batchUrls, (profileResult.items as never[]).filter(isBrazilianProfile))
+        for (const url of batchUrls) {
+          const slug = normalizeProfileSlug(url)
+          profileCache.set(url, returnedSlugs.has(slug) && brazilianSlugs.has(slug))
         }
+      } catch (error) {
+        if (error instanceof CostLimitError) throw error
+        warnings.push(`Não foi possível confirmar em lote ${batchUrls.length} comentaristas; eles foram ignorados para não aceitar perfis sem localização validada.`)
+        for (const url of batchUrls) profileCache.set(url, false)
+      }
+    }
+
+    for (const { comment, postId } of collectedComments) {
+        const actor = comment.actor!
+        const actorUrl = sourceUrl(actor.linkedinUrl!)
         if (!profileCache.get(actorUrl)) continue
         const personName = usablePersonName(actor.name)
         if (!personName) { incompletePeople += 1; continue }
@@ -229,9 +239,8 @@ Deno.serve(async (request) => {
         if (personError) throw new Error(`Não foi possível persistir a pessoa ${slug}: ${personError.message}`)
         if (!person) continue
         if (!existingPerson) peopleNew += 1
-        const { error } = await admin.from("comentarios").upsert({ projeto_id: projectId, post_id: postId, pessoa_id: person.id, comentario_urn: comment.id, texto: comment.commentary, publicado_em: comment.createdAt ?? null }, { onConflict: "projeto_id,comentario_urn" })
+        const { error } = await admin.from("comentarios").upsert({ projeto_id: projectId, post_id: postId, pessoa_id: person.id, comentario_urn: comment.id!, texto: comment.commentary!, publicado_em: comment.createdAt ?? null }, { onConflict: "projeto_id,comentario_urn" })
         if (!error) commentsRead += 1
-      }
     }
     if (incompletePeople > 0) warnings.push(`${incompletePeople} comentários foram ignorados porque o perfil não tinha nome público.`)
     if (outOfTopicPosts > 0) warnings.push(`${outOfTopicPosts} posts foram ignorados porque não mencionavam o tema monitorado.`)
