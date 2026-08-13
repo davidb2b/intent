@@ -95,7 +95,9 @@
   secret do agendador foram armazenados no Supabase Vault.
 - O job `signal-lab-weekly-monitoring` está ativo com `0 9 * * 1` (segunda,
   06:00 BRT) e usa o único projeto Signal Lab hoje cadastrado.
-- A rota foi validada com o secret do agendador e respondeu `404` para um
+- A migration `0007_fix_scheduled_monitoring_auth.sql` mantém o cron enviando
+  `apikey` e `Authorization: Bearer ...` a partir do Vault, além do secret do
+  agendador. A rota foi validada com esses headers e respondeu `404` para um
   projeto inexistente, confirmando que a autenticação do cron está protegida;
   a primeira execução real será registrada no próximo horário programado.
 
