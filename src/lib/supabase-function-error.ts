@@ -21,5 +21,9 @@ export async function functionErrorMessage(error: unknown, fallback: string) {
     }
   }
 
-  return typeof value?.message === "string" && value.message.trim() ? value.message : fallback
+  const message = typeof value?.message === "string" ? value.message.trim() : ""
+  // Supabase may hide the body when an Edge Function times out or returns a
+  // non-2xx response. Never show that transport jargon to a product user.
+  if (!message || /edge function returned a non-2xx|failed to send a request|fetch failed/i.test(message)) return fallback
+  return message
 }

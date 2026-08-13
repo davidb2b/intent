@@ -22,7 +22,7 @@ export async function discoverSources(projectId: string, terms: string[], janela
   if (validTerms.length === 0) throw new Error("Informe ao menos um termo para descobrir fontes.")
   const { data, error } = await supabase.functions.invoke<DiscoverSourcesResult>("discover-sources", { body: { projeto_id: projectId, termos: validTerms, janela } })
   if (error) {
-    throw new Error(await functionErrorMessage(error, "Não foi possível descobrir fontes."))
+    throw new Error(await functionErrorMessage(error, "A descoberta demorou mais que o esperado e não foi concluída. Nenhuma fonte foi criada; tente novamente."))
   }
   if (!data) throw new Error("O backend não retornou o resultado da descoberta.")
   return data

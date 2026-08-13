@@ -12,3 +12,9 @@ describe("functionErrorMessage", () => {
     await expect(functionErrorMessage({ message: "Erro genérico", context }, "Fallback")).resolves.toBe("Limite de custo atingido")
   })
 })
+
+describe("functionErrorMessage transport failures", () => {
+  it("replaces an Edge Function transport error with a product-safe fallback", async () => {
+    await expect(functionErrorMessage({ message: "Edge Function returned a non-2xx status code" }, "A descoberta não foi concluída.")).resolves.toBe("A descoberta não foi concluída.")
+  })
+})

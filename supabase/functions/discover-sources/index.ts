@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { canonicalProfileUrl, normalizeProfileSlug } from "../_shared/profile-identity.ts"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
 import { brazilRelevanceScore, buildBrazilFirstQueries, buildBrazilProfileSearchInput, isLinkedInPersonProfileUrl } from "../_shared/brazil-first-discovery.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
@@ -150,6 +150,7 @@ Deno.serve(async (request) => {
     let rejected = 0
     let unverified = 0
     let fallbackUsed = false
+    const discoveryWarnings: string[] = []
     if (batchCandidates.length > 0) {
       const profileInput = buildBrazilProfileBatchInput(batchCandidates.map((candidate) => candidate.url))
       try {
@@ -167,18 +168,10 @@ Deno.serve(async (request) => {
         }
       } catch (error) {
         if (error instanceof CostLimitError) throw error
-
-        // Profile Details is billed per profile and is a complete fallback:
-        // a quota on the bulk Actor cannot silently reject the rest of a batch.
-        for (const candidate of batchCandidates) {
-          const fallbackInput = { username: profileUsername(candidate.url), includeEmail: false }
-          assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", fallbackInput)
-          const profile = await apifyRun("apimaestro/linkedin-profile-detail", fallbackInput, apifyToken)
-          costUsd += profile.costUsd
-          registerActualCost(budget, profile.costUsd)
-          await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: profile.items.length, custo_usd: profile.costUsd })
-          profileCache.set(candidate.url, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
-        }
+        // Do not turn one provider failure into 25 sequential requests. The
+        // result remains explicit and can be retried from the UI.
+        unverified += batchCandidates.length
+        discoveryWarnings.push("Não foi possível validar em lote os perfis encontrados na busca de posts. Nenhuma fonte foi aceita sem confirmação de localização.")
       }
     }
 
@@ -211,20 +204,33 @@ Deno.serve(async (request) => {
           .filter((profile) => !existingUrls.has(profile.url))
           .slice(0, MAX_PROFILES_PER_DISCOVERY)
 
-        for (const profile of fallbackProfiles) {
-          const detailInput = { username: profileUsername(profile.url), includeEmail: false }
-          assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", detailInput)
-          const details = await apifyRun("apimaestro/linkedin-profile-detail", detailInput, apifyToken)
-          costUsd += details.costUsd
-          registerActualCost(budget, details.costUsd)
-          await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: details.items.length, custo_usd: details.costUsd })
-          if (!isBrazilianProfile(details.items[0] as ProfileDetails | undefined)) { rejected += 1; continue }
-          const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: profile.url, nome: profile.name, meta: JSON.stringify({ posts: 0, comentarios: 0, reacoes: 0, razao_comentarios_reacoes: 0 }), status: "candidata", descoberta_em: terms[0] })
-          if (!error) inserted += 1
+        if (fallbackProfiles.length > 0) {
+          const verificationInput = buildBrazilProfileBatchInput(fallbackProfiles.map((profile) => profile.url))
+          try {
+            assertCallWithinBudget(budget, "harvestapi/linkedin-profile-scraper", verificationInput)
+            const verifiedProfiles = await apifyRun("harvestapi/linkedin-profile-scraper", verificationInput, apifyToken)
+            costUsd += verifiedProfiles.costUsd
+            registerActualCost(budget, verifiedProfiles.costUsd)
+            await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-scraper", itens: verifiedProfiles.items.length, custo_usd: verifiedProfiles.costUsd })
+            const brazilianSlugs = requestedProfileSlugs(fallbackProfiles.map((profile) => profile.url), (verifiedProfiles.items as ProfileDetails[]).filter(isBrazilianProfile))
+            const returnedSlugs = requestedProfileSlugs(fallbackProfiles.map((profile) => profile.url), verifiedProfiles.items as ProfileDetails[])
+            for (const profile of fallbackProfiles) {
+              const slug = normalizeProfileSlug(profile.url)
+              if (!returnedSlugs.has(slug)) { unverified += 1; continue }
+              if (!brazilianSlugs.has(slug)) { rejected += 1; continue }
+              const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: profile.url, nome: profile.name, meta: JSON.stringify({ posts: 0, comentarios: 0, reacoes: 0, razao_comentarios_reacoes: 0 }), status: "candidata", descoberta_em: terms[0] })
+              if (!error) inserted += 1
+            }
+          } catch (error) {
+            if (error instanceof CostLimitError) throw error
+            unverified += fallbackProfiles.length
+            discoveryWarnings.push("A busca alternativa encontrou perfis, mas a validação de localização não respondeu a tempo. Nenhuma fonte foi aceita sem confirmação.")
+          }
         }
       }
     }
     const warnings = [
+      ...discoveryWarnings,
       ...(deferredCandidates > 0 ? [`${deferredCandidates} autores ficaram para a próxima descoberta por limite de verificação.`] : []),
       ...(unverified > 0 ? [`${unverified} perfis não foram retornados pelo Actor e permaneceram pendentes de verificação.`] : []),
     ]
