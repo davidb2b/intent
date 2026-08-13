@@ -150,6 +150,7 @@ function App() {
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("all")
   const [commentSearch, setCommentSearch] = useState("")
   const [summaryError, setSummaryError] = useState("")
+  const [summaryLoading, setSummaryLoading] = useState(false)
   const [classificationBusy, setClassificationBusy] = useState(false)
   const [postAnalysisBusy, setPostAnalysisBusy] = useState(false)
 
@@ -186,10 +187,12 @@ function App() {
       setSelectedPostId(null)
       setSignalComments([])
       setSummaryError("")
+      setSummaryLoading(false)
       return
     }
     let active = true
     setSummaryError("")
+    setSummaryLoading(true)
     void loadSignalSummary(session.userId)
       .then(async (summary) => {
         if (!active) return
@@ -207,6 +210,7 @@ function App() {
         }
       })
       .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
+      .finally(() => { if (active) setSummaryLoading(false) })
     return () => { active = false }
   }, [session])
 
@@ -544,7 +548,11 @@ function App() {
             <div className="comment-toolbar"><div className="comment-filters" role="group" aria-label="Filtrar pessoas"><Button type="button" size="sm" variant={peopleFilter === "all" ? "default" : "outline"} onClick={() => setPeopleFilter("all")}>Todas</Button><Button type="button" size="sm" variant={peopleFilter === "icp" ? "default" : "outline"} onClick={() => setPeopleFilter("icp")}>Dentro do ICP</Button><Button type="button" size="sm" variant={peopleFilter === "without-icp" ? "default" : "outline"} onClick={() => setPeopleFilter("without-icp")}>Fora ou pendentes</Button></div></div>
             <div className="panel-heading"><div><p className="eyebrow">Pessoas</p><h2>{visiblePeople().length} pessoas observadas</h2><p>Pessoas que demonstraram um sinal público em comentários coletados.</p></div><span className="signal-tag">Dados reais</span></div>
             <div className="people-list">{visiblePeople().map((person) => <article className="person-row" key={person.id}><div className="comment-avatar">{person.name.slice(0, 1).toUpperCase()}</div><div className="person-info"><strong>{person.name}</strong><span>{person.headline ?? person.role ?? "Perfil público"}</span><small>{person.companyName ?? "Empresa não identificada"}</small><a href={person.linkedinUrl} target="_blank" rel="noreferrer">Ver perfil</a></div><div className="person-signal"><span className={`signal-tag ${person.icp === true ? "" : "signal-tag-muted"}`}>{person.icp === true ? "Dentro do ICP" : person.icp === false ? "Fora do ICP" : "ICP pendente"}</span><strong>{person.comments}</strong><span>comentários</span></div></article>)}</div>
-          </section> : <div className="empty-state">
+          </section> : summaryLoading ? <div className="empty-state" aria-busy="true">
+            <div className="empty-icon"><Clock3 size={24} /></div>
+            <h2>Carregando dados reais</h2>
+            <p>Buscando a pesquisa, o histórico e os sinais já persistidos.</p>
+          </div> : <div className="empty-state">
             <div className="empty-icon"><BarChart3 size={24} /></div>
             <h2>{session && signalSummary?.posts ? "Sinais reais disponíveis" : content.title}</h2>
             <p>{session && signalSummary?.posts ? "Os resultados persistidos no Supabase aparecerão nas áreas de Posts, Comments, Companies e People." : content.description}</p>
