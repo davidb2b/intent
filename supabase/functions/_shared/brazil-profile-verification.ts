@@ -11,12 +11,12 @@ type ProfileResult = {
 export const MAX_PROFILES_PER_DISCOVERY = 25
 
 /**
- * HarvestAPI accepts profile URLs in bulk. One bounded batch prevents a
- * discovery run from waiting for one network request per post author.
+ * HarvestAPI receives profile URLs through `queries`. One bounded batch
+ * prevents a discovery run from waiting for one network request per author.
  */
 export function buildBrazilProfileBatchInput(profileUrls: string[]) {
   return {
-    urls: profileUrls.slice(0, MAX_PROFILES_PER_DISCOVERY),
+    queries: profileUrls.slice(0, MAX_PROFILES_PER_DISCOVERY),
     profileScraperMode: "Profile details no email ($4 per 1k)",
   }
 }
