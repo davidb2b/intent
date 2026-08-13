@@ -7,6 +7,7 @@ import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 import { isStaleExecution } from "../_shared/execution-lock.ts"
 import { usablePersonName } from "../_shared/person-enrichment.ts"
 import { matchesTopic } from "../_shared/topic-relevance.ts"
+import { persistExecutionProgress } from "../_shared/execution-progress.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -102,6 +103,7 @@ Deno.serve(async (request) => {
 
   let costUsd = 0
   try {
+    await persistExecutionProgress(admin, execution.id, { stage: "buscando_posts", progress: 12, message: "Buscando posts públicos sobre o tema." })
     const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
     const searchQueries = buildBrazilFirstQueries(terms)
     const searchInput = { searchQueries, maxPosts: 50, postedLimit: body.janela ?? "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }
@@ -110,6 +112,7 @@ Deno.serve(async (request) => {
     costUsd = result.costUsd
     registerActualCost(budget, result.costUsd)
     await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-search", itens: result.items.length, custo_usd: costUsd })
+    await persistExecutionProgress(admin, execution.id, { stage: "avaliando_posts", progress: 38, message: "Avaliando a relevância dos posts encontrados." })
 
     const grouped = new Map<string, { url: string; name: string | null; posts: number; comments: number; reactions: number; brazilScore: number; discoveredBy: string; previewText: string | null }>()
     for (const item of result.items as ActorPost[]) {
@@ -148,6 +151,7 @@ Deno.serve(async (request) => {
     const discoveryWarnings: string[] = []
     if (unnamedCandidates > 0) discoveryWarnings.push(`${unnamedCandidates} autores sem nome foram ignorados para impedir perfis incompletos.`)
     if (batchCandidates.length > 0) {
+      await persistExecutionProgress(admin, execution.id, { stage: "validando_perfis", progress: 58, message: `Validando ${batchCandidates.length} perfis brasileiros.` })
       const profileInput = buildBrazilProfileBatchInput(batchCandidates.map((candidate) => candidate.url))
       try {
         assertCallWithinBudget(budget, "harvestapi/linkedin-profile-scraper", profileInput)
@@ -181,6 +185,7 @@ Deno.serve(async (request) => {
       const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio, pre_visualizacao_post: candidate.previewText }), status: "candidata", descoberta_em: candidate.discoveredBy })
       if (!error) inserted += 1
     }
+    await persistExecutionProgress(admin, execution.id, { stage: "organizando_fontes", progress: 88, message: "Organizando os perfis encontrados para revisão." })
     
     const warnings = [
       ...discoveryWarnings,
@@ -206,6 +211,9 @@ Deno.serve(async (request) => {
         avisos: warnings,
         resultado: { outcome, message },
       },
+      etapa_atual: "concluida",
+      progresso: 100,
+      mensagem_progresso: `${inserted} perfis brasileiros disponíveis para acompanhamento.`,
       concluida_em: new Date().toISOString(),
     }).eq("id", execution.id)
     return json({
@@ -225,7 +233,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido na descoberta."
     const abortedByCost = error instanceof CostLimitError
-    await admin.from("execucoes").update({ status: abortedByCost ? "abortada_por_custo" : "falhou", custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    await admin.from("execucoes").update({ status: abortedByCost ? "abortada_por_custo" : "falhou", etapa_atual: "falhou", mensagem_progresso: message, custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
     return json({ error: message, executionId: execution.id }, abortedByCost ? 402 : 502)
   }
 })

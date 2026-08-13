@@ -56,7 +56,7 @@
 .query-value span { color: var(--signal-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
 .query-value strong { margin-top: 3px; font-size: 14px; }
 .query-context { margin-left: auto; max-width: 52%; color: var(--signal-muted); font-size: 11px; text-align: right; }
-.collection-bar { display: flex; align-items: center; gap: 20px; border-top: 0; border-radius: 0 0 12px 12px; padding: 11px 18px; font-size: 11px; }
+.collection-bar { position: relative; display: flex; align-items: center; gap: 20px; border-top: 0; border-radius: 0 0 12px 12px; padding: 11px 18px; font-size: 11px; }
 .collection-status { display: flex; align-items: center; gap: 7px; color: #54635b; font-weight: 600; }
 .collection-spinner, .button-spinner { animation: signal-spin .85s linear infinite; }
 @keyframes signal-spin { to { transform: rotate(360deg); } }
@@ -66,6 +66,8 @@
 .collection-meta { display: flex; align-items: center; gap: 6px; color: var(--signal-muted); }
 .cost-label { margin-right: 3px; }
 .collection-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.collection-progress { position: absolute; right: 18px; bottom: 0; left: 18px; height: 3px; overflow: hidden; border-radius: 999px; background: #e7eee9; }
+.collection-progress span { display: block; height: 100%; border-radius: inherit; background: var(--signal-brand); transition: width .35s ease; }
 .collect-button { background: var(--signal-brand); color: white; }
 .collect-button:hover { background: var(--signal-brand-dark); }
 .discover-button { border-color: var(--signal-border); color: var(--signal-brand-dark); }

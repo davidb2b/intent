@@ -8,6 +8,7 @@ import { isStaleExecution } from "../_shared/execution-lock.ts"
 import { usablePersonName } from "../_shared/person-enrichment.ts"
 import { matchesTopic } from "../_shared/topic-relevance.ts"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
+import { persistExecutionProgress } from "../_shared/execution-progress.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -132,6 +133,7 @@ Deno.serve(async (request) => {
     let outOfTopicPosts = 0
   const warnings: string[] = []
   try {
+    await persistExecutionProgress(admin, execution.id, { stage: "lendo_posts", progress: 12, message: "Lendo posts dos perfis monitorados." })
     const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
     const postInput = buildMonitoredProfilePostsInput(monitoredSources.map((source) => source.linkedin_url), janela)
     if (postInput.targetUrls.length === 0) throw new Error("Nenhuma fonte monitorada possui uma URL de perfil válida.")
@@ -140,6 +142,7 @@ Deno.serve(async (request) => {
     costUsd += postResult.costUsd
     registerActualCost(budget, postResult.costUsd)
     await admin.from("custos").insert({ execucao_id: execution.id, actor: MONITORED_PROFILE_POSTS_ACTOR, itens: postResult.items.length, custo_usd: postResult.costUsd })
+    await persistExecutionProgress(admin, execution.id, { stage: "selecionando_conversas", progress: 32, message: "Selecionando os posts com conversas mais relevantes." })
     const sourceByUrl = new Map(monitoredSources.map((source) => [sourceUrl(source.linkedin_url), source.id]))
     const postRows: Array<{ raw: ActorPost; sourceId: string; linkedinUrl: string; authorName: string; authorUrl: string | null; text: string | null }> = []
     const collectedComments: Array<{ comment: ActorComment; postUrn: string }> = []
@@ -163,6 +166,7 @@ Deno.serve(async (request) => {
     if (postsWithComments.length > commentTargets.length) warnings.push(`A coleta de comentários foi priorizada nos ${commentTargets.length} posts com maior conversa; os demais serão processados na próxima execução.`)
     const commentInputs = commentTargets.map(({ linkedinUrl }) => ({ posts: [linkedinUrl], maxItems: 50, postedLimit: janela, scrapeReplies: false, profileScraperMode: "main" }))
     for (const commentInput of commentInputs) assertCallWithinBudget(budget, "harvestapi/linkedin-post-comments", commentInput)
+    await persistExecutionProgress(admin, execution.id, { stage: "coletando_comentarios", progress: 46, message: `Coletando comentários de ${commentTargets.length} posts com maior conversa.` })
     const commentResults = await Promise.all(commentTargets.map(async (target, index) => ({ target, result: await apifyRun("harvestapi/linkedin-post-comments", commentInputs[index], apifyToken) })))
     for (const { target, result: commentsResult } of commentResults) {
       costUsd += commentsResult.costUsd
@@ -180,6 +184,7 @@ Deno.serve(async (request) => {
     // looking stuck, even though posts were already persisted.
     const commenterUrls = [...new Set(collectedComments.map(({ comment }) => sourceUrl(comment.actor!.linkedinUrl!)))]
     const profileCache = new Map<string, boolean>()
+    await persistExecutionProgress(admin, execution.id, { stage: "validando_pessoas", progress: 64, message: `Validando a localização de ${commenterUrls.length} pessoas que participaram da conversa.` })
     for (let index = 0; index < commenterUrls.length; index += MAX_PROFILES_PER_DISCOVERY) {
       const batchUrls = commenterUrls.slice(index, index + MAX_PROFILES_PER_DISCOVERY)
       const profileInput = buildBrazilProfileBatchInput(batchUrls)
@@ -200,10 +205,15 @@ Deno.serve(async (request) => {
         warnings.push(`Não foi possível confirmar em lote ${batchUrls.length} comentaristas; eles foram ignorados para não aceitar perfis sem localização validada.`)
         for (const url of batchUrls) profileCache.set(url, false)
       }
+      const completedBatches = Math.ceil((index + batchUrls.length) / MAX_PROFILES_PER_DISCOVERY)
+      const totalBatches = Math.max(1, Math.ceil(commenterUrls.length / MAX_PROFILES_PER_DISCOVERY))
+      const progress = 64 + Math.round((completedBatches / totalBatches) * 18)
+      await persistExecutionProgress(admin, execution.id, { stage: "validando_pessoas", progress, message: `Validando pessoas participantes (${Math.min(index + batchUrls.length, commenterUrls.length)}/${commenterUrls.length}).` })
     }
 
     // Do not expose partial collections. All calls to external Actors are
     // complete at this point; only now does persistence begin.
+    await persistExecutionProgress(admin, execution.id, { stage: "organizando_sinais", progress: 84, message: "Organizando posts, pessoas e empresas identificadas." })
     const persistedPosts = new Map<string, string>()
     for (const postRow of postRows) {
       const { raw } = postRow
@@ -266,12 +276,12 @@ Deno.serve(async (request) => {
     }
     if (incompletePeople > 0) warnings.push(`${incompletePeople} comentários foram ignorados porque o perfil não tinha nome público.`)
     if (outOfTopicPosts > 0) warnings.push(`${outOfTopicPosts} posts foram ignorados porque não mencionavam o tema monitorado.`)
-    await admin.from("execucoes").update({ status: "concluida", posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, parametros: { janela, origem: origin, fontes: monitoredSources.length, avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    await admin.from("execucoes").update({ status: "concluida", etapa_atual: "concluida", progresso: 100, mensagem_progresso: `${postsRead} posts e ${commentsRead} comentários organizados.`, posts_lidos: postsRead, comentarios_lidos: commentsRead, pessoas_novas: peopleNew, custo_usd: costUsd, parametros: { janela, origem: origin, fontes: monitoredSources.length, avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
     return json({ executionId: execution.id, status: "concluida", postsRead, commentsRead, peopleNew, costUsd, warnings })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido no monitoramento."
     const abortedByCost = error instanceof CostLimitError
-    await admin.from("execucoes").update({ status: abortedByCost ? "abortada_por_custo" : "falhou", posts_lidos: postsRead, comentarios_lidos: commentsRead, custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    await admin.from("execucoes").update({ status: abortedByCost ? "abortada_por_custo" : "falhou", etapa_atual: "falhou", mensagem_progresso: message, posts_lidos: postsRead, comentarios_lidos: commentsRead, custo_usd: costUsd, erro: message, concluida_em: new Date().toISOString() }).eq("id", execution.id)
     return json({ error: message, executionId: execution.id }, abortedByCost ? 402 : 502)
   }
 })

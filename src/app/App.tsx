@@ -21,6 +21,7 @@ import { discoverSources } from "@/features/collection/services/discover-sources
 import { discoveryFeedback } from "@/features/collection/lib/discovery-feedback"
 import { recommendedSourceIds } from "@/features/collection/lib/recommended-sources"
 import { runMonitoring } from "@/features/collection/services/run-monitoring"
+import { loadCollectionProgress, type CollectionProgress } from "@/features/collection/services/load-collection-progress"
 import { updateSourceStatus } from "@/features/collection/services/update-source-status"
 import { classifyComments } from "@/features/classification/services/classify-comments"
 import { commentToneLabel, matchesCommentFilter } from "@/features/classification/lib/comment-tone"
@@ -143,6 +144,7 @@ function App() {
   const [collectionState, setCollectionState] = useState<CollectionState>("idle")
   const [collectionAction, setCollectionAction] = useState<CollectionAction>(null)
   const [collectionMessage, setCollectionMessage] = useState("")
+  const [collectionProgress, setCollectionProgress] = useState<CollectionProgress | null>(null)
   const [session, setSession] = useState<AuthSession | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>("signin")
@@ -213,6 +215,7 @@ function App() {
       setSignalComments([])
       setSummaryError("")
       setSummaryLoading(false)
+      setCollectionProgress(null)
       return
     }
     let active = true
@@ -273,6 +276,22 @@ function App() {
     setSignalPeople(people)
   }
 
+  function watchCollectionProgress(projectId: string) {
+    let active = true
+    const refreshProgress = () => {
+      void loadCollectionProgress(projectId)
+        .then((progress) => { if (active && progress) setCollectionProgress(progress) })
+        .catch(() => undefined)
+    }
+    refreshProgress()
+    const interval = window.setInterval(refreshProgress, 1_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      setCollectionProgress(null)
+    }
+  }
+
   async function handleCollect() {
     if (!keyword.trim() || !session || collectionState === "running") {
       if (!session) { setAuthOpen(true); setCollectionMessage("Faça login para iniciar uma coleta real.") }
@@ -306,6 +325,7 @@ function App() {
     const idsToMonitor = sourceIds.length > 0 ? sourceIds : selectedSourceIds.size > 0 ? [...selectedSourceIds] : recommendedSources().map((source) => source.id)
     setCollectionState("running")
     setCollectionAction("monitor")
+    const stopWatching = watchCollectionProgress(projectId)
     try {
       if (idsToMonitor.length > 0) {
         setCollectionMessage(`Preparando ${idsToMonitor.length} perfil${idsToMonitor.length === 1 ? "" : "is"} para monitoramento…`)
@@ -323,6 +343,7 @@ function App() {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar o monitoramento.")
     } finally {
+      stopWatching()
       setCollectionAction(null)
     }
   }
@@ -335,8 +356,10 @@ function App() {
     setCollectionState("running")
     setCollectionAction("discover")
     setCollectionMessage("Buscando posts e validando a localização brasileira dos autores no Apify. Isso pode levar alguns instantes.")
+    let stopWatching: (() => void) | null = null
     try {
       if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de descobrir fontes.")
+      stopWatching = watchCollectionProgress(signalSummary.projectId)
       const result = await discoverSources(signalSummary.projectId, [keyword])
       await refreshSignalData(signalSummary.projectId)
       setCollectionState("success")
@@ -350,6 +373,7 @@ function App() {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível descobrir fontes.")
     } finally {
+      stopWatching?.()
       setCollectionAction(null)
     }
   }
@@ -377,10 +401,12 @@ function App() {
     setCollectionState("running")
     setCollectionAction("settings")
     setCollectionMessage("Salvando configuração da pesquisa…")
+    let stopWatching: (() => void) | null = null
     try {
       const saved = await saveResearch({ ownerId: session.userId, keyword, positiveContext, negativeContext })
       setSignalSummary((summary) => summary ? { ...summary, projectId: saved.projectId, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext } : { projectId: saved.projectId, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext, lastExecutionOrigin: null, monthlyCostUsd: 0, estimatedNextCostUsd: 0, monitoredSources: 0, executionHistory: [] })
       setCollectionMessage("Pesquisa salva. Buscando fontes brasileiras reais no Apify…")
+      stopWatching = watchCollectionProgress(saved.projectId)
       const discovery = await discoverSources(saved.projectId, [saved.keyword])
       await refreshSignalData(saved.projectId)
       setSettingsOpen(false)
@@ -395,6 +421,7 @@ function App() {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível salvar a configuração.")
     } finally {
+      stopWatching?.()
       setCollectionAction(null)
     }
   }
@@ -589,7 +616,7 @@ function App() {
           <div aria-live="polite" className={`collection-status collection-${collectionState}`}>
             {collectionState === "running" ? <LoaderCircle aria-hidden="true" className="collection-spinner" size={14} /> : <span className="status-dot" />}
             {collectionState === "running"
-              ? collectionAction === "discover" || collectionAction === "settings" ? "Buscando fontes brasileiras" : "Coletando posts e comentários"
+              ? collectionProgress?.message ?? (collectionAction === "discover" || collectionAction === "settings" ? "Buscando fontes brasileiras" : "Coletando posts e comentários")
               : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : signalSummary?.lastExecutionAt ? `Última coleta ${formatDate(signalSummary.lastExecutionAt)}` : "Coleta não iniciada"}
           </div>
           <div className="collection-meta"><Clock3 size={15} /> Próxima: segunda, 06h</div>
@@ -602,6 +629,7 @@ function App() {
               {collectionAction === "monitor" ? <LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> : <Play size={14} />} {collectionAction === "monitor" ? "Coletando…" : "Atualizar agora"}
             </Button>
           </div>
+          {collectionState === "running" && <div className="collection-progress" aria-label={`Progresso da coleta: ${collectionProgress?.progress ?? 0}%`}><span style={{ width: `${collectionProgress?.progress ?? 0}%` }} /></div>}
         </section>
 
         {collectionMessage && <p aria-live="polite" className={`collection-message collection-message-${collectionState}`}>{collectionMessage}</p>}
