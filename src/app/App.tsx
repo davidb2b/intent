@@ -240,7 +240,11 @@ function App() {
       const sources = await loadSignalSources(signalSummary.projectId)
       setSignalSources(sources)
       setCollectionState("success")
-      setCollectionMessage(`${result.candidatesInserted} fontes candidatas encontradas; ${result.candidatesRejected} perfis não brasileiros descartados.`)
+      if (result.postsFound === 0) {
+        setCollectionMessage("Nenhum post foi encontrado para esta pesquisa. Ajuste a palavra-chave ou os contextos e tente novamente.")
+      } else {
+        setCollectionMessage(`${result.candidatesInserted} fontes candidatas encontradas; ${result.candidatesRejected} perfis não brasileiros descartados; ${result.candidatesUnverified} perfis pendentes de verificação.`)
+      }
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível descobrir fontes.")

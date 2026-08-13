@@ -4,10 +4,13 @@ import { functionErrorMessage } from "@/lib/supabase-function-error"
 export type DiscoverSourcesResult = {
   executionId: string
   status: "concluida"
+  postsFound: number
   candidatesFound: number
   candidatesInserted: number
   candidatesRejected: number
+  candidatesUnverified: number
   costUsd: number
+  warnings: string[]
 }
 
 export async function discoverSources(projectId: string, terms: string[], janela = "3months") {

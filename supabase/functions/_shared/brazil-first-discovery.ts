@@ -5,15 +5,15 @@ function normalized(value: string) {
 }
 
 /**
- * Post Search does not expose a country filter. Adding Brazil to each search
- * query is only a relevance strategy; profile location remains the sole
- * acceptance criterion.
+ * Post Search does not expose a country filter. Keeping the user's original
+ * term avoids turning a useful broad search into a zero-result query. Brazil
+ * is prioritized only after posts are returned, and profile location remains
+ * the sole acceptance criterion.
  */
 export function buildBrazilFirstQueries(terms: string[]) {
   return terms.map((term) => {
     const base = term.trim()
-    const query = `${base} Brasil`.trim()
-    return query.length <= MAX_LINKEDIN_QUERY_LENGTH ? query : base.slice(0, MAX_LINKEDIN_QUERY_LENGTH)
+    return base.length <= MAX_LINKEDIN_QUERY_LENGTH ? base : base.slice(0, MAX_LINKEDIN_QUERY_LENGTH)
   }).filter(Boolean)
 }
 

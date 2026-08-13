@@ -178,7 +178,17 @@ Deno.serve(async (request) => {
       ...(unverified > 0 ? [`${unverified} perfis não foram retornados pelo Actor e permaneceram pendentes de verificação.`] : []),
     ]
     await admin.from("execucoes").update({ status: "concluida", posts_lidos: result.items.length, custo_usd: costUsd, parametros: { termos: terms, consultas: searchQueries, janela: body.janela ?? "3months", origem: "manual", avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
-    return json({ executionId: execution.id, status: "concluida", candidatesFound: grouped.size, candidatesInserted: inserted, candidatesRejected: rejected, costUsd, warnings })
+    return json({
+      executionId: execution.id,
+      status: "concluida",
+      postsFound: result.items.length,
+      candidatesFound: grouped.size,
+      candidatesInserted: inserted,
+      candidatesRejected: rejected,
+      candidatesUnverified: unverified,
+      costUsd,
+      warnings,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido na descoberta."
     const abortedByCost = error instanceof CostLimitError
