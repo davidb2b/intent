@@ -1,48 +1,57 @@
 # Conexão do backend
 
-## O que já está conectado
+## Arquitetura atual
 
-- O front-end usa o client oficial do Supabase com a URL e publishable key do
-  projeto `ppsusbybtkcjccwvysvk`.
-- A migration inicial foi aplicada no projeto e validada no SQL Editor.
-- O botão `Atualizar agora` chama a função `start-collection` sem expor
-  `APIFY_TOKEN` ao navegador.
-- A função executa, nesta primeira integração, o fluxo real:
-  `linkedin-post-search` -> `linkedin-post-comments` -> persistência idempotente.
-
-## O que falta para execução real em produção
-
-O projeto Supabase está acessível para SQL, mas o painel atual não habilita a
-área de deploy/secrets de Edge Functions. Sem publicar a função e sem cadastrar
-`APIFY_TOKEN` como secret do servidor, o navegador não deve executar o Actor
-diretamente.
-
-Secrets necessários na Edge Function:
+O browser usa somente o client do Supabase com URL e publishable key. Nenhum
+token de provedor externo é enviado ao Vite ou ao navegador.
 
 ```text
-APIFY_TOKEN=<token da organização Apify>
+UI -> service por feature -> Edge Function -> Apify/OpenAI -> Supabase
 ```
 
-`SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` são fornecidos
-automaticamente pelo ambiente das Edge Functions quando publicados pelo
-Supabase. A service role nunca deve ser colocada no `.env.local` do Vite.
+As funções ativas são:
 
-## Deploy previsto
+- `discover-sources`: encontra autores candidatos e aceita apenas perfis
+  brasileiros confirmados.
+- `run-monitoring`: lê posts e comentários das fontes aprovadas, com
+  deduplicação e custo por Actor.
+- `classify-comments`: classifica comentários em lote sem sobrescrever revisão
+  humana.
+- `analyze-posts`: registra sugestões de curadoria para posts.
 
-```bash
-supabase link --project-ref ppsusbybtkcjccwvysvk
-supabase secrets set APIFY_TOKEN="<token>"
-supabase functions deploy start-collection
+`start-collection` permanece como função legada e não é acionada pela UI atual.
+
+## Secrets de servidor
+
+Os valores ficam somente no painel de Edge Functions do Supabase:
+
+```text
+APIFY_TOKEN
+OPENAI_API_KEY
+SCHEDULER_SECRET
+SUPABASE_SERVICE_ROLE_KEY
 ```
 
-Depois do deploy, é necessário autenticar um usuário no Signal Lab. A função
-recusa chamadas sem sessão válida e grava `owner_id` para manter os dados
-separados por usuário.
+`SUPABASE_URL` e as chaves padrão do projeto são fornecidas pelo ambiente da
+Edge Function. A service role nunca deve aparecer no `.env.local`, no bundle
+do Vite, em fixtures ou em commits.
 
-## Validação sem mock
+## Contrato de segurança
 
-- `GET /rest/v1/projetos` respondeu `200` no projeto real, com lista vazia antes
-  da primeira coleta.
-- A migration respondeu `Success. No rows returned` no SQL Editor.
-- Os testes automatizados usam mocks apenas para isolar a UI; nenhuma amostra
-  fictícia é usada pelo produto.
+- `discover-sources`, `run-monitoring`, `classify-comments` e `analyze-posts`
+  validam a sessão do usuário antes de executar.
+- O caminho agendado de `run-monitoring` exige `SCHEDULER_SECRET` e não usa
+  usuário fictício.
+- Falhas do Apify, do OpenAI ou de limites de custo retornam erro explícito e
+  ficam registradas em `execucoes`; não são convertidas em dados vazios.
+
+## Checklist operacional
+
+Antes de publicar uma mudança de backend:
+
+1. Aplicar migration versionada, se houver alteração de schema/RLS.
+2. Publicar somente a Edge Function alterada.
+3. Confirmar que os secrets exigidos existem pelo nome, sem ler seus valores.
+4. Executar teste autenticado com teto de custo reduzido quando a mudança
+   atingir coleta.
+5. Conferir `execucoes` e `custos` no Supabase e a renderização na produção.

@@ -10,6 +10,7 @@ disparo ou integração com CRM.
 - Supabase client isolado em `src/infrastructure/supabase`
 - catálogo de Actors em `src/infrastructure/apify`
 - arquitetura e fluxo em `docs/architecture.md`
+- validação operacional em `docs/phase-0-validation.md`
 - migration inicial em `supabase/migrations/0001_signal_lab.sql`
 - amostras de Actor em `docs/actors/`
 
