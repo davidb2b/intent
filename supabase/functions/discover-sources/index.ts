@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
 import { brazilRelevanceScore, buildBrazilFirstQueries, isLinkedInPersonProfileUrl } from "../_shared/brazil-first-discovery.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
@@ -55,8 +55,8 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
 
 function profileUrl(post: ActorPost) {
   const author = post.author ?? post.actor
-  const url = author?.linkedinUrl?.replace(/\/$/, "") ?? null
-  return isLinkedInPersonProfileUrl(url) ? url : null
+  const url = author?.linkedinUrl ?? null
+  return isLinkedInPersonProfileUrl(url) ? canonicalProfileUrl(url) : null
 }
 
 function metric(value: number | unknown[] | undefined, fallback?: number) {
@@ -121,8 +121,10 @@ Deno.serve(async (request) => {
     }
 
     const urls = [...grouped.keys()]
-    const { data: existing } = urls.length ? await admin.from("fontes").select("linkedin_url").eq("projeto_id", projectId).in("linkedin_url", urls) : { data: [] }
-    const existingUrls = new Set((existing ?? []).map((source) => source.linkedin_url))
+    // Legacy rows may contain LinkedIn `?trk` parameters. Compare canonical
+    // URLs in application code so a new discovery cannot duplicate them.
+    const { data: existing } = urls.length ? await admin.from("fontes").select("linkedin_url").eq("projeto_id", projectId) : { data: [] }
+    const existingUrls = new Set((existing ?? []).map((source) => canonicalProfileUrl(source.linkedin_url)))
     const candidates = [...grouped.values()]
       .filter((candidate) => !existingUrls.has(candidate.url))
       .sort((a, b) => b.brazilScore - a.brazilScore || b.comments - a.comments || b.reactions - a.reactions)

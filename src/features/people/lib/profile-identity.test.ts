@@ -1,11 +1,27 @@
 import { describe, expect, it } from "vitest"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, requestedProfileSlugs } from "../../../../supabase/functions/_shared/brazil-profile-verification"
 import { brazilRelevanceScore, buildBrazilFirstQueries, isLinkedInPersonProfileUrl } from "../../../../supabase/functions/_shared/brazil-first-discovery"
-import { normalizeProfileSlug } from "../../../../supabase/functions/_shared/profile-identity"
+import { canonicalProfileUrl, normalizeProfileSlug } from "../../../../supabase/functions/_shared/profile-identity"
+import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "../../../../supabase/functions/_shared/monitoring-posts"
 
 describe("profile identity", () => {
   it("canonicalizes LinkedIn profile URLs into one slug", () => {
     expect(normalizeProfileSlug("https://www.linkedin.com/in/Marcos-Ribeiro-123/?trk=abc")).toBe("marcos-ribeiro-123")
+    expect(canonicalProfileUrl("https://www.linkedin.com/in/Marcos-Ribeiro-123/?trk=abc")).toBe("https://www.linkedin.com/in/marcos-ribeiro-123")
+  })
+
+  it("uses Profile Posts and targetUrls for approved monitoring sources", () => {
+    expect(MONITORED_PROFILE_POSTS_ACTOR).toBe("harvestapi/linkedin-profile-posts")
+    expect(buildMonitoredProfilePostsInput([
+      "https://www.linkedin.com/in/Marcos-Ribeiro-123/?trk=abc",
+      "https://www.linkedin.com/in/marcos-ribeiro-123",
+    ], "month")).toEqual({
+      targetUrls: ["https://www.linkedin.com/in/marcos-ribeiro-123"],
+      maxPosts: 200,
+      postedLimit: "month",
+      scrapeComments: false,
+      scrapeReactions: false,
+    })
   })
 
   it("keeps two different slugs as different people", () => {

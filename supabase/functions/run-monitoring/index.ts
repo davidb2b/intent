@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
+import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "../_shared/monitoring-posts.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -83,7 +84,11 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
 
 function dateValue(value: string | { date?: string } | undefined) { return typeof value === "string" ? value : value?.date ?? null }
 function countValue(value: number | unknown[] | undefined, fallback?: number) { return Array.isArray(value) ? value.length : value ?? fallback ?? null }
-function sourceUrl(value: string) { return value.replace(/\/$/, "") }
+function sourceUrl(value: string) {
+  return /(^|\.)linkedin\.com\/in\//i.test(value)
+    ? canonicalProfileUrl(value)
+    : value.replace(/[?#].*$/, "").replace(/\/$/, "")
+}
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405)
@@ -131,12 +136,13 @@ Deno.serve(async (request) => {
   const warnings: string[] = []
   try {
     const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
-    const postInput = { authorUrls: monitoredSources.map((source) => source.linkedin_url), maxPosts: 200, postedLimit: janela, scrapeComments: false, scrapeReactions: false }
-    assertCallWithinBudget(budget, "harvestapi/linkedin-post-search", postInput)
-    const postResult = await apifyRun("harvestapi/linkedin-post-search", postInput, apifyToken)
+    const postInput = buildMonitoredProfilePostsInput(monitoredSources.map((source) => source.linkedin_url), janela)
+    if (postInput.targetUrls.length === 0) throw new Error("Nenhuma fonte monitorada possui uma URL de perfil válida.")
+    assertCallWithinBudget(budget, MONITORED_PROFILE_POSTS_ACTOR, postInput)
+    const postResult = await apifyRun(MONITORED_PROFILE_POSTS_ACTOR, postInput, apifyToken)
     costUsd += postResult.costUsd
     registerActualCost(budget, postResult.costUsd)
-    await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-search", itens: postResult.items.length, custo_usd: postResult.costUsd })
+    await admin.from("custos").insert({ execucao_id: execution.id, actor: MONITORED_PROFILE_POSTS_ACTOR, itens: postResult.items.length, custo_usd: postResult.costUsd })
     const sourceByUrl = new Map(monitoredSources.map((source) => [sourceUrl(source.linkedin_url), source.id]))
     const postRows: Array<{ raw: ActorPost; postId: string; linkedinUrl: string }> = []
     const profileCache = new Map<string, boolean>()

@@ -66,6 +66,19 @@ function shorten(value: string | null, length = 180) {
   return value.length > length ? `${value.slice(0, length).trim()}…` : value
 }
 
+function displayLinkedInUrl(value: string) {
+  try {
+    const url = new URL(value)
+    if (/(^|\.)linkedin\.com$/i.test(url.hostname)) {
+      return `${url.hostname}${decodeURIComponent(url.pathname).replace(/\/$/, "")}`
+    }
+  } catch {
+    // Keep the source value visible when an external provider returns a URL
+    // outside the expected format.
+  }
+  return value
+}
+
 const navigation: Array<{ id: View; label: string; icon: typeof LayoutDashboard }> = [
   { id: "overview", label: "Visão geral", icon: LayoutDashboard },
   { id: "posts", label: "Posts", icon: FileText },
@@ -505,7 +518,7 @@ function App() {
                   {selectedPost.analysis.topic ? <div className="post-analysis post-analysis-detail"><div><strong>Tópico</strong><span>{selectedPost.analysis.topic}</span></div><div><strong>Problema</strong><span>{selectedPost.analysis.problem}</span></div><div><strong>Por que o post faz sentido</strong><span>{selectedPost.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{selectedPost.analysis.collection}</span></div></div> : <div className="post-detail-empty">Este post ainda não foi analisado. Use “Analisar pendente” para gerar a classificação.</div>}
                   <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar</Button><a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a></div>
                 </article>}
-              </div></> : <section className="sources-panel"><div className="panel-heading"><div><p className="eyebrow">Perfis monitorados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} fontes ativas</h2><p>As coletas semanais leem somente fontes aprovadas.</p></div><span className="signal-tag">{signalSources.length} fontes</span></div>{signalSources.length > 0 ? <div className="source-list">{signalSources.map((source) => <article className="source-row" key={source.id}><div><strong>{source.name ?? "Perfil sem nome"}</strong><span>{source.linkedinUrl}</span></div><div className="source-metrics"><span>{source.posts} posts</span><span>{source.comments} comentários</span><span>{source.ratio.toFixed(2)} razão</span></div><span className={`curation-status source-${source.status}`}>{source.status}</span><div className="source-actions">{source.status !== "monitorada" && <Button type="button" size="sm" onClick={() => void handleSourceStatus(source.id, "monitorada")}>Monitorar</Button>}{source.status !== "descartada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Descartar</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma fonte descoberta</strong><span>Use “Descobrir fontes” para encontrar perfis brasileiros candidatos.</span></div>}</section>}
+              </div></> : <section className="sources-panel"><div className="panel-heading"><div><p className="eyebrow">Perfis monitorados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} fontes ativas</h2><p>As coletas semanais leem somente fontes aprovadas.</p></div><span className="signal-tag">{signalSources.length} fontes</span></div>{signalSources.length > 0 ? <div className="source-list">{signalSources.map((source) => <article className="source-row" key={source.id}><div><strong>{source.name ?? "Perfil sem nome"}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span></div><div className="source-metrics"><span>{source.posts} posts</span><span>{source.comments} comentários</span><span>{source.ratio.toFixed(2)} razão</span></div><span className={`curation-status source-${source.status}`}>{source.status}</span><div className="source-actions">{source.status !== "monitorada" && <Button type="button" size="sm" onClick={() => void handleSourceStatus(source.id, "monitorada")}>Monitorar</Button>}{source.status !== "descartada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Descartar</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhuma fonte descoberta</strong><span>Use “Descobrir fontes” para encontrar perfis brasileiros candidatos.</span></div>}</section>}
             </section>
           </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">
             <div className="comment-toolbar">
