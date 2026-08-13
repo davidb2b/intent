@@ -197,6 +197,16 @@
 - Barra de coleta separada em `Descobrir fontes` e `Atualizar agora`; salvar a
   configuração agora persiste projeto e termo no Supabase antes de permitir
   as ações.
+- A ingestão de comentários agora cria/atualiza a empresa observada a partir
+  da experiência pública do comentarista, usando `nome_chave` normalizado.
+- A classificação automática de ICP e senioridade é aplicada somente a pessoas
+  sem revisão humana. Cargo, senioridade e ICP revisados manualmente ficam
+  preservados em coletas posteriores.
+- A ação de revisão humana foi publicada na tela Pessoas; ela persiste a
+  decisão com RLS e marca `revisado_por_humano = true`.
+- Validação autenticada em produção: análise por IA e curadoria de post
+  concluídas. O monitoramento continua bloqueado exclusivamente pelo limite
+  diário gratuito do Apify antes da etapa de comentários.
 
 ## PR4 — telas de análise
 
