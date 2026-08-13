@@ -209,6 +209,7 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
     .from("fontes")
     .select("id, linkedin_url, nome, status, meta")
     .eq("projeto_id", projectId)
+    .neq("status", "descartada")
     .order("status", { ascending: true })
     .order("criado_em", { ascending: false })
 
