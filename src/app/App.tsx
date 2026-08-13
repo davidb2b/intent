@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input"
 import { discoverSources } from "@/features/collection/services/discover-sources"
 import { discoveryFeedback } from "@/features/collection/lib/discovery-feedback"
 import { recommendedSourceIds } from "@/features/collection/lib/recommended-sources"
+import { isStaleExecution } from "@/features/collection/lib/execution-lock"
 import { runMonitoring } from "@/features/collection/services/run-monitoring"
 import { loadCollectionProgress, type CollectionProgress } from "@/features/collection/services/load-collection-progress"
 import { updateSourceStatus } from "@/features/collection/services/update-source-status"
@@ -72,7 +73,7 @@ function formatExecutionStatus(status: string) {
 
 function stateFromLatestExecution(summary: SignalSummary): CollectionState {
   const latest = summary.executionHistory[0]
-  if (latest?.status === "rodando") return "running"
+  if (latest?.status === "rodando") return isStaleExecution(latest.startedAt) ? "error" : "running"
   if (latest?.status === "falhou" || latest?.status === "abortada_por_custo") return "error"
   return "idle"
 }
@@ -230,13 +231,16 @@ function App() {
         setSignalSummary(summary)
         setCollectionState(stateFromLatestExecution(summary))
         const latestExecution = summary.executionHistory[0]
-        setCollectionProgress(latestExecution?.status === "rodando" ? {
+        const staleExecution = latestExecution?.status === "rodando" && isStaleExecution(latestExecution.startedAt)
+        setCollectionProgress(latestExecution?.status === "rodando" && !staleExecution ? {
           executionId: latestExecution.id,
           stage: latestExecution.stage,
           progress: latestExecution.progress,
           message: latestExecution.progressMessage ?? "Preparando a coleta real.",
         } : null)
-        setCollectionMessage(latestExecution?.status === "falhou" || latestExecution?.status === "abortada_por_custo"
+        setCollectionMessage(staleExecution
+          ? "A coleta anterior foi interrompida antes de concluir. Você já pode atualizar novamente; ela será encerrada e substituída por uma nova execução."
+          : latestExecution?.status === "falhou" || latestExecution?.status === "abortada_por_custo"
           ? latestExecution.error ?? "A última coleta não foi concluída."
           : latestExecution?.outcome === "no_posts" || latestExecution?.outcome === "no_brazilian_profiles"
             ? latestExecution.message ?? "A coleta foi concluída, mas não encontrou fontes brasileiras válidas para este tema."
