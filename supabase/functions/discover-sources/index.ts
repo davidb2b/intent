@@ -6,6 +6,7 @@ import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActua
 import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 import { isStaleExecution } from "../_shared/execution-lock.ts"
 import { usablePersonName } from "../_shared/person-enrichment.ts"
+import { matchesTopic } from "../_shared/topic-relevance.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,6 +22,8 @@ type ActorPost = {
   commentsCount?: number
   reactionsCount?: number
   content?: string
+  text?: string
+  commentary?: string
 }
 
 type ProfileDetails = {
@@ -110,6 +113,8 @@ Deno.serve(async (request) => {
 
     const grouped = new Map<string, { url: string; name: string | null; posts: number; comments: number; reactions: number; brazilScore: number; discoveredBy: string }>()
     for (const item of result.items as ActorPost[]) {
+      const postText = item.content ?? item.text ?? item.commentary ?? null
+      if (!matchesTopic({ text: postText, keyword: terms[0] })) continue
       const url = profileUrl(item)
       if (!url) continue
       const author = item.author ?? item.actor
@@ -119,7 +124,7 @@ Deno.serve(async (request) => {
       current.posts += 1
       current.comments += comments
       current.reactions += reactions
-      current.brazilScore += brazilRelevanceScore(item.content)
+      current.brazilScore += brazilRelevanceScore(postText)
       if (!current.name && author?.name) current.name = author.name
       grouped.set(url, current)
     }
@@ -182,15 +187,16 @@ Deno.serve(async (request) => {
       ...(deferredCandidates > 0 ? [`${deferredCandidates} autores ficaram para a próxima descoberta por limite de verificação.`] : []),
       ...(unverified > 0 ? [`${unverified} perfis não foram retornados pelo Actor e permaneceram pendentes de verificação.`] : []),
     ]
-    const outcome = result.items.length === 0 ? "no_posts" : inserted === 0 ? "no_brazilian_profiles" : "sources_found"
+    const topicalPosts = [...grouped.values()].reduce((total, candidate) => total + candidate.posts, 0)
+    const outcome = topicalPosts === 0 ? "no_posts" : inserted === 0 ? "no_brazilian_profiles" : "sources_found"
     const message = outcome === "no_posts"
-      ? `Nenhum post público foi encontrado para “${terms.join(", ")}” na janela selecionada.`
+      ? `Nenhum post público sobre “${terms.join(", ")}” foi encontrado na janela selecionada.`
       : outcome === "no_brazilian_profiles"
-        ? `Foram analisados ${result.items.length} posts, mas nenhum perfil brasileiro foi confirmado. Nenhuma fonte foi criada para evitar dados estrangeiros.`
+        ? `Foram analisados ${topicalPosts} posts sobre o tema, mas nenhum perfil brasileiro foi confirmado. Nenhuma fonte foi criada para evitar dados estrangeiros.`
         : `${inserted} perfis brasileiros foram encontrados e aguardam ativação.`
     await admin.from("execucoes").update({
       status: "concluida",
-      posts_lidos: result.items.length,
+      posts_lidos: topicalPosts,
       custo_usd: costUsd,
       parametros: {
         termos: terms,
@@ -205,7 +211,7 @@ Deno.serve(async (request) => {
     return json({
       executionId: execution.id,
       status: "concluida",
-      postsFound: result.items.length,
+      postsFound: topicalPosts,
       candidatesFound: grouped.size,
       candidatesInserted: inserted,
       candidatesRejected: rejected,

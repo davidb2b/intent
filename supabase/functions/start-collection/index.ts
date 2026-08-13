@@ -3,6 +3,7 @@ import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identi
 import { hasApifyItemLimit } from "../_shared/apify-result.ts"
 import { isStaleExecution } from "../_shared/execution-lock.ts"
 import { usablePersonName } from "../_shared/person-enrichment.ts"
+import { matchesTopic } from "../_shared/topic-relevance.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -203,7 +204,9 @@ Deno.serve(async (request) => {
     for (const [index, raw] of candidates.entries()) {
       if (!brazilianFlags[index]) continue
       const author = raw.author ?? raw.actor
-      const { data: post, error: postError } = await admin.from("posts").upsert({ projeto_id: project.id, linkedin_url: raw.linkedinUrl, post_urn: raw.id, autor_nome: author?.name ?? null, autor_url: author?.linkedinUrl ?? null, texto: raw.text ?? raw.content ?? raw.commentary ?? null, publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null, total_reacoes: countValue(raw.engagement?.reactions), total_comentarios: raw.engagement?.comments ?? null, total_shares: raw.engagement?.shares ?? null }, { onConflict: "projeto_id,post_urn" }).select("id").single()
+      const postText = raw.text ?? raw.content ?? raw.commentary ?? null
+      if (!matchesTopic({ text: postText, keyword, positiveContext: body.positiveContext, negativeContext: body.negativeContext })) continue
+      const { data: post, error: postError } = await admin.from("posts").upsert({ projeto_id: project.id, linkedin_url: raw.linkedinUrl, post_urn: raw.id, autor_nome: author?.name ?? null, autor_url: author?.linkedinUrl ?? null, texto: postText, publicado_em: dateValue(raw.postedAt) ?? raw.createdAt ?? null, total_reacoes: countValue(raw.engagement?.reactions), total_comentarios: raw.engagement?.comments ?? null, total_shares: raw.engagement?.shares ?? null }, { onConflict: "projeto_id,post_urn" }).select("id").single()
       if (postError || !post) throw new Error(`Não foi possível persistir o post ${raw.id}: ${postError?.message ?? "registro ausente"}`)
       postsRead += 1
       if (!raw.engagement?.comments) continue
