@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { discoverSources } from "@/features/collection/services/discover-sources"
+import { discoveryFeedback } from "@/features/collection/lib/discovery-feedback"
 import { runMonitoring } from "@/features/collection/services/run-monitoring"
 import { updateSourceStatus } from "@/features/collection/services/update-source-status"
 import { classifyComments } from "@/features/classification/services/classify-comments"
@@ -245,6 +246,24 @@ function App() {
     window.history.pushState({}, "", pathByView[view])
   }
 
+  async function refreshSignalData(projectId: string) {
+    if (!session) return
+    const [refreshedSummary, posts, comments, sources, companies, people] = await Promise.all([
+      loadSignalSummary(session.userId),
+      loadSignalPosts(projectId),
+      loadSignalComments(projectId),
+      loadSignalSources(projectId),
+      loadSignalCompanies(projectId),
+      loadSignalPeople(projectId),
+    ])
+    setSignalSummary(refreshedSummary)
+    setSignalPosts(posts)
+    setSignalComments(comments)
+    setSignalSources(sources)
+    setSignalCompanies(companies)
+    setSignalPeople(people)
+  }
+
   async function handleCollect() {
     if (!keyword.trim() || !session || collectionState === "running") {
       if (!session) { setAuthOpen(true); setCollectionMessage("Faça login para iniciar uma coleta real.") }
@@ -257,16 +276,7 @@ function App() {
       const result = await runMonitoring(signalSummary.projectId)
       setCollectionState("success")
       setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários monitorados.`)
-      const refreshedSummary = await loadSignalSummary(session.userId)
-      setSignalSummary(refreshedSummary)
-      if (refreshedSummary.projectId) {
-        const [posts, comments, sources, companies, people] = await Promise.all([loadSignalPosts(refreshedSummary.projectId), loadSignalComments(refreshedSummary.projectId), loadSignalSources(refreshedSummary.projectId), loadSignalCompanies(refreshedSummary.projectId), loadSignalPeople(refreshedSummary.projectId)])
-        setSignalPosts(posts)
-        setSignalComments(comments)
-        setSignalSources(sources)
-        setSignalCompanies(companies)
-        setSignalPeople(people)
-      }
+      await refreshSignalData(signalSummary.projectId)
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar a coleta.")
@@ -283,13 +293,12 @@ function App() {
     try {
       if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de descobrir fontes.")
       const result = await discoverSources(signalSummary.projectId, [keyword])
-      const sources = await loadSignalSources(signalSummary.projectId)
-      setSignalSources(sources)
+      await refreshSignalData(signalSummary.projectId)
       setCollectionState("success")
-      if (result.postsFound === 0) {
-        setCollectionMessage("Nenhum post foi encontrado para esta pesquisa. Ajuste a palavra-chave ou os contextos e tente novamente.")
-      } else {
-        setCollectionMessage(`${result.candidatesInserted} fontes candidatas encontradas; ${result.candidatesRejected} perfis não brasileiros descartados; ${result.candidatesUnverified} perfis pendentes de verificação.`)
+      setCollectionMessage(result.message ?? discoveryFeedback(result, keyword))
+      if (result.candidatesInserted > 0) {
+        setPostsMode("sources")
+        navigate("posts")
       }
     } catch (error) {
       setCollectionState("error")
@@ -322,9 +331,16 @@ function App() {
     try {
       const saved = await saveResearch({ ownerId: session.userId, keyword, positiveContext, negativeContext })
       setSignalSummary((summary) => summary ? { ...summary, projectId: saved.projectId, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext } : { projectId: saved.projectId, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext, lastExecutionOrigin: null, monthlyCostUsd: 0, estimatedNextCostUsd: 0, monitoredSources: 0, executionHistory: [] })
+      setCollectionMessage("Pesquisa salva. Buscando fontes brasileiras reais no Apify…")
+      const discovery = await discoverSources(saved.projectId, [saved.keyword])
+      await refreshSignalData(saved.projectId)
       setSettingsOpen(false)
       setCollectionState("success")
-      setCollectionMessage("Configuração salva. Escolha descobrir fontes ou atualizar o monitoramento.")
+      setCollectionMessage(discovery.message ?? discoveryFeedback(discovery, saved.keyword))
+      if (discovery.candidatesInserted > 0) {
+        setPostsMode("sources")
+        navigate("posts")
+      }
     } catch (error) {
       setCollectionState("error")
       setCollectionMessage(error instanceof Error ? error.message : "Não foi possível salvar a configuração.")

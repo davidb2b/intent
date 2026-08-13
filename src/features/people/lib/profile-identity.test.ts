@@ -65,7 +65,7 @@ describe("profile identity", () => {
   })
 
   it("prioritizes Brazil in discovery without accepting company pages as profiles", () => {
-    expect(buildBrazilFirstQueries(["cost breakdown", "compras"])).toEqual(["cost breakdown", "compras"])
+    expect(buildBrazilFirstQueries(["cost breakdown", "compras"])).toEqual(["cost breakdown", "cost breakdown Brasil", "compras", "compras Brasil"])
     expect(isLinkedInPersonProfileUrl("https://www.linkedin.com/in/pessoa-brasileira")).toBe(true)
     expect(isLinkedInPersonProfileUrl("https://www.linkedin.com/company/empresa-brasileira")).toBe(false)
     expect(brazilRelevanceScore("Compras estratégicas no Brasil e em São Paulo")).toBeGreaterThan(0)

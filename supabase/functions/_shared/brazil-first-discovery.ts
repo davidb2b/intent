@@ -5,16 +5,20 @@ function normalized(value: string) {
 }
 
 /**
- * Post Search does not expose a country filter. Keeping the user's original
- * term avoids turning a useful broad search into a zero-result query. Brazil
- * is prioritized only after posts are returned, and profile location remains
- * the sole acceptance criterion.
+ * Post Search does not expose a country filter. We preserve the exact term
+ * and add one Brazil-oriented variation, then accept a source only after its
+ * profile location is verified as Brazilian. This widens English B2B terms
+ * such as "cost breakdown" without ever accepting a foreign profile.
  */
 export function buildBrazilFirstQueries(terms: string[]) {
-  return terms.map((term) => {
+  const queries = terms.flatMap((term) => {
     const base = term.trim()
-    return base.length <= MAX_LINKEDIN_QUERY_LENGTH ? base : base.slice(0, MAX_LINKEDIN_QUERY_LENGTH)
-  }).filter(Boolean)
+    if (!base) return []
+    const exact = base.length <= MAX_LINKEDIN_QUERY_LENGTH ? base : base.slice(0, MAX_LINKEDIN_QUERY_LENGTH)
+    const brazil = `${exact} Brasil`.slice(0, MAX_LINKEDIN_QUERY_LENGTH)
+    return [exact, brazil]
+  })
+  return [...new Set(queries.map((query) => query.trim()).filter(Boolean))]
 }
 
 /** Source discovery must never send company pages to the person-profile Actor. */

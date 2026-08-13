@@ -19,5 +19,7 @@ export async function saveResearch(input: SaveResearchInput) {
   if (projectError || !project) throw new Error(projectError?.message ?? "Não foi possível salvar o projeto.")
   const { error: termError } = await supabase.from("termos").upsert({ projeto_id: project.id, termo: keyword, contexto_positivo: normalized.positiveContext || null, contexto_negativo: normalized.negativeContext || null, ativo: true }, { onConflict: "projeto_id,termo" })
   if (termError) throw new Error(termError.message)
+  const { error: inactiveTermsError } = await supabase.from("termos").update({ ativo: false }).eq("projeto_id", project.id).neq("termo", keyword).eq("ativo", true)
+  if (inactiveTermsError) throw new Error(inactiveTermsError.message)
   return { projectId: project.id, keyword, positiveContext: normalized.positiveContext || null, negativeContext: normalized.negativeContext || null }
 }

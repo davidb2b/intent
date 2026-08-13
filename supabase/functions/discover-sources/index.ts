@@ -180,6 +180,12 @@ Deno.serve(async (request) => {
       ...(unverified > 0 ? [`${unverified} perfis não foram retornados pelo Actor e permaneceram pendentes de verificação.`] : []),
     ]
     await admin.from("execucoes").update({ status: "concluida", posts_lidos: result.items.length, custo_usd: costUsd, parametros: { termos: terms, consultas: searchQueries, janela: body.janela ?? "3months", origem: "manual", avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    const outcome = result.items.length === 0 ? "no_posts" : inserted === 0 ? "no_brazilian_profiles" : "sources_found"
+    const message = outcome === "no_posts"
+      ? `Nenhum post público foi encontrado para “${terms.join(", ")}” na janela selecionada.`
+      : outcome === "no_brazilian_profiles"
+        ? `Foram analisados ${result.items.length} posts, mas nenhum autor foi confirmado como perfil brasileiro.`
+        : `${inserted} perfis brasileiros foram encontrados e aguardam ativação.`
     return json({
       executionId: execution.id,
       status: "concluida",
@@ -190,6 +196,8 @@ Deno.serve(async (request) => {
       candidatesUnverified: unverified,
       costUsd,
       warnings,
+      outcome,
+      message,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido na descoberta."

@@ -11,6 +11,8 @@ export type DiscoverSourcesResult = {
   candidatesUnverified: number
   costUsd: number
   warnings: string[]
+  outcome?: "sources_found" | "no_posts" | "no_brazilian_profiles"
+  message?: string
 }
 
 export async function discoverSources(projectId: string, terms: string[], janela = "3months") {
