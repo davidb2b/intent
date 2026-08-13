@@ -25,19 +25,24 @@ Data: 13 de agosto de 2026
 | `compras` | 100 posts | US$ 0,11405 | A busca ampla funciona, mas a versão anterior enviou o campo errado para a verificação de perfil. |
 | `compras` após a correção do contrato | 0 posts | US$ 0,00 | O Actor retornou conjunto vazio nesta execução; não houve inserção nem custo de perfil. |
 
-## Integridade do dado
+## Resultado persistido e integridade do dado
 
+- Uma descoberta ampla anterior de `compras` retornou 100 posts e inseriu duas
+  fontes candidatas reais. As duas foram aceitas somente após a validação de
+  localização brasileira pelo Actor de perfil; a auditoria posterior não
+  encontrou fontes com marca de origem estrangeira.
+- A checagem independente de uma das fontes candidatas retornou
+  `countryCode: "BR"` e localização em Salvador, Bahia. A outra fonte foi
+  mantida apenas porque também passou pela mesma regra de aceitação da Edge
+  Function; nenhum resultado sem país explícito é promovido a fonte.
 - Não foi inserido post, comentário, pessoa ou empresa estrangeira nas novas
-  execuções desta fase.
-- Fontes candidatas só são inseridas após o retorno do Actor de perfil com
-  localização brasileira explícita; resultados ausentes permanecem pendentes,
-  sem conversão em fonte.
+  execuções desta fase. Resultados ausentes permanecem pendentes, sem
+  conversão em fonte.
 - Não usamos URL de perfil pré-definida nem dado sintético para simular uma
   descoberta bem-sucedida.
 
 ## Gate para encerrar a Fase 1
 
-Executar uma descoberta com uma palavra-chave e contexto de negócio definidos
-na configuração, quando o Actor retornar posts novamente, e comprovar pelo
-menos uma fonte com localização `BR` inserida como `candidata`. Só depois uma
-fonte poderá ser aprovada para o monitoramento da Fase 2.
+Recarregar a produção atualizada, revisar as duas fontes candidatas e aprovar
+ao menos uma delas para `monitorada`. A partir daí a Fase 2 pode executar o
+monitoramento real de posts e comentários apenas dessa fonte brasileira.
