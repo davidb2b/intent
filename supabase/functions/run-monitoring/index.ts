@@ -50,6 +50,7 @@ type ActorComment = {
 
 const MAX_POSTS_WITH_COMMENTS_PER_RUN = 3
 const PERSISTENCE_BATCH_SIZE = 100
+const PROFILE_BATCH_CONCURRENCY = 3
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } })
@@ -192,30 +193,39 @@ Deno.serve(async (request) => {
     const commenterUrls = [...new Set(collectedComments.map(({ comment }) => sourceUrl(comment.actor!.linkedinUrl!)))]
     const profileCache = new Map<string, boolean>()
     await persistExecutionProgress(admin, execution.id, { stage: "validando_pessoas", progress: 64, message: `Validando a localização de ${commenterUrls.length} pessoas que participaram da conversa.` })
-    for (let index = 0; index < commenterUrls.length; index += MAX_PROFILES_PER_DISCOVERY) {
-      const batchUrls = commenterUrls.slice(index, index + MAX_PROFILES_PER_DISCOVERY)
-      const profileInput = buildBrazilProfileBatchInput(batchUrls)
-      try {
-        assertCallWithinBudget(budget, "harvestapi/linkedin-profile-scraper", profileInput)
-        const profileResult = await apifyRun("harvestapi/linkedin-profile-scraper", profileInput, apifyToken)
-        costUsd += profileResult.costUsd
-        registerActualCost(budget, profileResult.costUsd)
-        await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-scraper", itens: profileResult.items.length, custo_usd: profileResult.costUsd })
-        const returnedSlugs = requestedProfileSlugs(batchUrls, profileResult.items as never[])
-        const brazilianSlugs = requestedProfileSlugs(batchUrls, (profileResult.items as never[]).filter(isBrazilianProfile))
-        for (const url of batchUrls) {
-          const slug = normalizeProfileSlug(url)
-          profileCache.set(url, returnedSlugs.has(slug) && brazilianSlugs.has(slug))
+    const profileBatches = batches(commenterUrls, MAX_PROFILES_PER_DISCOVERY)
+    let completedProfiles = 0
+    for (const batchGroup of batches(profileBatches, PROFILE_BATCH_CONCURRENCY)) {
+      const results = await Promise.all(batchGroup.map(async (batchUrls) => {
+        const profileInput = buildBrazilProfileBatchInput(batchUrls)
+        try {
+          assertCallWithinBudget(budget, "harvestapi/linkedin-profile-scraper", profileInput)
+          const profileResult = await apifyRun("harvestapi/linkedin-profile-scraper", profileInput, apifyToken)
+          return { batchUrls, profileResult, error: null as Error | null }
+        } catch (error) {
+          return { batchUrls, profileResult: null, error: error instanceof Error ? error : new Error("Erro desconhecido ao validar perfis.") }
         }
-      } catch (error) {
-        if (error instanceof CostLimitError) throw error
-        warnings.push(`Não foi possível confirmar em lote ${batchUrls.length} comentaristas; eles foram ignorados para não aceitar perfis sem localização validada.`)
-        for (const url of batchUrls) profileCache.set(url, false)
+      }))
+      for (const result of results) {
+        if (result.error) {
+          if (result.error instanceof CostLimitError) throw result.error
+          warnings.push(`Não foi possível confirmar em lote ${result.batchUrls.length} comentaristas; eles foram ignorados para não aceitar perfis sem localização validada.`)
+          for (const url of result.batchUrls) profileCache.set(url, false)
+        } else if (result.profileResult) {
+          costUsd += result.profileResult.costUsd
+          registerActualCost(budget, result.profileResult.costUsd)
+          await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-scraper", itens: result.profileResult.items.length, custo_usd: result.profileResult.costUsd })
+          const returnedSlugs = requestedProfileSlugs(result.batchUrls, result.profileResult.items as never[])
+          const brazilianSlugs = requestedProfileSlugs(result.batchUrls, (result.profileResult.items as never[]).filter(isBrazilianProfile))
+          for (const url of result.batchUrls) {
+            const slug = normalizeProfileSlug(url)
+            profileCache.set(url, returnedSlugs.has(slug) && brazilianSlugs.has(slug))
+          }
+        }
+        completedProfiles += result.batchUrls.length
       }
-      const completedBatches = Math.ceil((index + batchUrls.length) / MAX_PROFILES_PER_DISCOVERY)
-      const totalBatches = Math.max(1, Math.ceil(commenterUrls.length / MAX_PROFILES_PER_DISCOVERY))
-      const progress = 64 + Math.round((completedBatches / totalBatches) * 18)
-      await persistExecutionProgress(admin, execution.id, { stage: "validando_pessoas", progress, message: `Validando pessoas participantes (${Math.min(index + batchUrls.length, commenterUrls.length)}/${commenterUrls.length}).` })
+      const progress = 64 + Math.round((completedProfiles / Math.max(commenterUrls.length, 1)) * 18)
+      await persistExecutionProgress(admin, execution.id, { stage: "validando_pessoas", progress, message: `Validando pessoas participantes (${Math.min(completedProfiles, commenterUrls.length)}/${commenterUrls.length}).` })
     }
 
     // Do not expose partial collections. All calls to external Actors are

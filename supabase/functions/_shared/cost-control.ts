@@ -28,6 +28,11 @@ export function estimateActorCost(actorId: string, input: Record<string, unknown
   if (actorId === "harvestapi/linkedin-post-comments") return numeric(input.maxItems) * UNIT_COST_USD * 2
   if (actorId === "harvestapi/linkedin-profile-search") return numeric(input.maxItems) * UNIT_COST_USD
   if (actorId === "harvestapi/linkedin-profile-posts") return numeric(input.maxPosts) * UNIT_COST_USD
+  if (actorId === "harvestapi/linkedin-profile-scraper") {
+    const profileCount = Array.isArray(input.queries) ? input.queries.length : 1
+    // The selected profile-details plan is priced at US$ 4 per 1k profiles.
+    return profileCount * 0.004
+  }
   if (actorId === "apimaestro/linkedin-profile-detail") return UNIT_COST_USD
   return 0
 }
