@@ -559,21 +559,6 @@ function App() {
                 </section>
               </div>
             </section>
-            <section className="signal-panel execution-history-panel">
-            <div className="panel-heading">
-              <div><p className="eyebrow">Histórico</p><h2>Últimas execuções</h2><p>Acompanhe o resultado e o custo das coletas reais.</p></div>
-              <span className="signal-tag">{signalSummary.executionHistory.length} registros</span>
-            </div>
-            {recentExecutions.length > 0 ? <>
-              <div className="execution-list">{recentExecutions.map((execution) => <article className="execution-row" key={execution.id}>
-                <div className="execution-identity"><strong>{execution.type === "descoberta" ? "Descoberta de fontes" : "Monitoramento"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Agendada" : execution.origin === "manual" ? "Manual" : "Origem não informada"}</span></div>
-                <div className="execution-outcome"><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.warnings.length > 0 && <small className="execution-warning">⚠ {execution.warnings.length} aviso(s) de truncamento</small>}</div>
-                <strong className="execution-cost">{formatCurrency(execution.costUsd)}</strong>
-                {execution.error && <p className="execution-error">{execution.error}</p>}
-              </article>)}</div>
-              {signalSummary.executionHistory.length > recentExecutions.length && <p className="execution-more">Mostrando as últimas {recentExecutions.length} execuções.</p>}
-            </> : <div className="filtered-empty"><strong>Nenhuma execução registrada</strong><span>As próximas descobertas e monitoramentos aparecerão aqui.</span></div>}
-            </section>
           </>}
           {activeView === "posts" && session && signalSummary?.projectId ? <div className="posts-workspace">
             <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
@@ -646,7 +631,7 @@ function App() {
 
       {settingsOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSettingsOpen(false)}>
-          <section aria-labelledby="settings-title" aria-modal="true" className="settings-modal" role="dialog">
+          <section aria-labelledby="settings-title" aria-modal="true" className="settings-modal configuration-modal" role="dialog">
             <div className="modal-header">
               <div>
                 <p className="eyebrow">Configuração</p>
@@ -667,6 +652,16 @@ function App() {
                 <Button disabled={!keyword.trim()} type="submit">Salvar configuração</Button>
               </div>
             </form>
+            {session && signalSummary?.projectId && <section className="settings-history" aria-labelledby="settings-history-title">
+              <div className="settings-history-heading"><div><p className="eyebrow">Histórico</p><h3 id="settings-history-title">Últimas execuções</h3><p>Acompanhe resultado, custo e alertas das coletas reais.</p></div><span className="signal-tag">{signalSummary.executionHistory.length} registros</span></div>
+              {recentExecutions.length > 0 ? <div className="execution-list">{recentExecutions.map((execution) => <article className="execution-row" key={execution.id}>
+                <div className="execution-identity"><strong>{execution.type === "descoberta" ? "Descoberta de fontes" : "Monitoramento"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Agendada" : execution.origin === "manual" ? "Manual" : "Origem não informada"}</span></div>
+                <div className="execution-outcome"><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.warnings.length > 0 && <small className="execution-warning">⚠ {execution.warnings.length} aviso(s) de truncamento</small>}</div>
+                <strong className="execution-cost">{formatCurrency(execution.costUsd)}</strong>
+                {execution.error && <p className="execution-error">{execution.error}</p>}
+              </article>)}</div> : <div className="settings-history-empty">Nenhuma execução registrada para esta pesquisa.</div>}
+              {signalSummary.executionHistory.length > recentExecutions.length && <p className="execution-more">Mostrando as últimas {recentExecutions.length} execuções.</p>}
+            </section>}
           </section>
         </div>
       )}

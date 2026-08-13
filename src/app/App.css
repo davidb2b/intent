@@ -95,7 +95,6 @@
 .overview-company-card { display: grid; width: 100%; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid var(--signal-border); background: transparent; cursor: pointer; padding: 16px 20px; text-align: left; }
 .overview-company-card:hover { background: #fbfdfc; }
 .overview-empty { color: var(--signal-muted); padding: 28px 20px; font-size: 12px; line-height: 1.5; }
-.execution-history-panel { margin-bottom: 16px; }
 .execution-warning { color: #a16207; }
 .execution-list { display: grid; }
 .execution-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px 18px; padding: 15px 24px; border-bottom: 1px solid var(--signal-border); }
@@ -226,6 +225,7 @@
 .empty-action { margin-top: 22px; background: var(--signal-brand); color: white; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgba(20, 39, 29, .24); }
 .settings-modal { width: min(100%, 500px); border: 1px solid var(--signal-border); border-radius: 16px; background: white; box-shadow: 0 22px 70px rgba(16, 49, 31, .2); padding: 26px; }
+.configuration-modal { width: min(100%, 680px); max-height: min(820px, calc(100vh - 40px)); overflow-y: auto; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .eyebrow { margin: 0 0 6px; color: var(--signal-brand); font-size: 10px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
 .modal-header h2 { margin: 0; font-size: 21px; letter-spacing: -.03em; }
@@ -243,6 +243,12 @@
 .auth-error { margin: 12px 0 0; border-radius: 7px; background: #fff0f0; color: #8d3d3d; padding: 9px 10px; font-size: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
 .modal-actions button:last-child { background: var(--signal-brand); color: white; }
+.settings-history { overflow: hidden; margin-top: 26px; border: 1px solid var(--signal-border); border-radius: 12px; }
+.settings-history-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 17px 18px; border-bottom: 1px solid var(--signal-border); background: var(--signal-surface-soft); }
+.settings-history-heading h3 { margin: 0; color: #17221c; font-size: 15px; letter-spacing: -.02em; }
+.settings-history-heading p:not(.eyebrow) { margin: 4px 0 0; color: var(--signal-muted); font-size: 11px; line-height: 1.45; }
+.settings-history .execution-row { padding: 13px 18px; }
+.settings-history-empty { color: var(--signal-muted); padding: 22px 18px; font-size: 12px; text-align: center; }
 .review-checkbox { align-items: center; border: 1px solid var(--signal-border); border-radius: 8px; padding: 10px 11px; }
 .review-checkbox input { width: auto; accent-color: var(--signal-brand); }
 
