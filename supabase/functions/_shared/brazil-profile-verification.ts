@@ -2,6 +2,10 @@ import { normalizeProfileSlug } from "./profile-identity.ts"
 
 type ProfileResult = {
   linkedinUrl?: unknown
+  location?: unknown
+  country?: unknown
+  countryCode?: unknown
+  basic_info?: { location?: unknown }
 }
 
 export const MAX_PROFILES_PER_DISCOVERY = 25
@@ -29,4 +33,35 @@ export function requestedProfileSlugs(profileUrls: string[], items: ProfileResul
     const slug = normalizeProfileSlug(item.linkedinUrl)
     return requested.has(slug) ? [slug] : []
   }))
+}
+
+function normalized(value: unknown) {
+  return typeof value === "string"
+    ? value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    : ""
+}
+
+/**
+ * Accepts only explicit Brazilian origin from the profile provider. Free-form
+ * profile text, language and company location are deliberately not used as
+ * substitutes for a country code.
+ */
+export function isBrazilianProfile(profile: ProfileResult | undefined) {
+  if (!profile) return false
+
+  const values = [profile.location, profile.country, profile.countryCode, profile.basic_info?.location]
+    .flatMap((value) => {
+      if (typeof value === "string") return [normalized(value)]
+      if (!value || typeof value !== "object") return []
+      const item = value as Record<string, unknown>
+      return [item.countryCode, item.country_code, item.country, item.full].map(normalized)
+    })
+
+  return values.some((value) =>
+    value === "br" ||
+    value === "brazil" ||
+    value === "brasil" ||
+    value.endsWith(", brazil") ||
+    value.endsWith(", brasil"),
+  )
 }

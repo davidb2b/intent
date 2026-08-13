@@ -15,7 +15,7 @@
 - PR1 fechado no front-end: sessão persistida, rotas reais, logout, recuperação
   de senha e atualização de senha via Supabase Auth.
 
-## Auditoria da Fase 0 — em andamento
+## Auditoria da Fase 0 — concluída
 
 - O stack foi alinhado à spec: React e React DOM fixados na versão 18.3.1,
   com tipos React 18.
@@ -34,6 +34,12 @@
   research, collection, classification, posts e analytics separados.
 - A UI não importa mais o client do Supabase diretamente; autenticação e
   persistência da pesquisa usam services próprios.
+- A validação controlada do Actor de perfil retornou um perfil com país `BR` e
+  outro com país `UA`; a regra de origem aceita o primeiro e rejeita o segundo,
+  com teste automatizado e amostra mínima versionada.
+- A rotação da chave OpenAI exposta foi adiada pelo responsável do projeto e
+  permanece como risco de segurança conhecido; o valor segue exclusivamente no
+  secret do Supabase e não está no repositório.
 
 ## Fase 1 — configuração da pesquisa
 

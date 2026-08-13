@@ -1,0 +1,27 @@
+{
+  "actor": "harvestapi/linkedin-profile-scraper",
+  "executed_at": "2026-08-13",
+  "input_count": 2,
+  "output_count": 2,
+  "cost_usd": 0.008,
+  "records": [
+    {
+      "case": "brazilian_profile_accepted",
+      "canonical_profile_url": "https://www.linkedin.com/in/tamires-santana-compras",
+      "location": {
+        "countryCode": "BR",
+        "parsed": { "country": "Brazil", "countryCode": "BR" }
+      },
+      "expected_result": "accepted"
+    },
+    {
+      "case": "foreign_profile_rejected",
+      "canonical_profile_url": "https://www.linkedin.com/in/abdelaziz-yagoub-4a350b56",
+      "location": {
+        "countryCode": "UA",
+        "parsed": { "country": "Ukraine", "countryCode": "UA" }
+      },
+      "expected_result": "rejected"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ ser aplicada depois desta validação de contrato.
 
 - [`linkedin-post-search.json`](../amostras/linkedin-post-search.json)
 - [`linkedin-post-comments.json`](../amostras/linkedin-post-comments.json)
+- [`linkedin-profile-location-validation.json`](../amostras/linkedin-profile-location-validation.json)
 - `linkedin-profile-detail.json` permanece opcional para uma etapa posterior de
   enriquecimento direcionado.
 
@@ -72,3 +73,11 @@ estrangeiro.
 
 Os arquivos contêm somente saída dos Actors; nunca devem conter credenciais,
 cookies ou tokens.
+
+## Validação de origem brasileira — 13 de agosto de 2026
+
+Uma execução controlada do Actor de perfil retornou dois registros e custo de
+US$ 0,008. O perfil brasileiro retornou `location.countryCode: "BR"` e foi
+aceito pela regra. O perfil estrangeiro retornou `location.countryCode: "UA"`
+e foi rejeitado. A amostra preserva apenas URL canônica e país, sem texto de
+perfil, imagem, e-mail ou histórico profissional.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildBrazilProfileBatchInput, requestedProfileSlugs } from "../../../../supabase/functions/_shared/brazil-profile-verification"
+import { buildBrazilProfileBatchInput, isBrazilianProfile, requestedProfileSlugs } from "../../../../supabase/functions/_shared/brazil-profile-verification"
 import { normalizeProfileSlug } from "../../../../supabase/functions/_shared/profile-identity"
 
 describe("profile identity", () => {
@@ -25,5 +25,25 @@ describe("profile identity", () => {
     expect(requestedProfileSlugs(["https://www.linkedin.com/in/ana-silva"], [
       { linkedinUrl: "https://www.linkedin.com/in/ana-silva-2" },
     ])).toEqual(new Set())
+  })
+
+  it("accepts explicit Brazilian provider locations and rejects foreign ones", () => {
+    expect(isBrazilianProfile({
+      linkedinUrl: "https://www.linkedin.com/in/perfil-brasileiro",
+      location: {
+        linkedinText: "São Paulo, São Paulo, Brazil",
+        countryCode: "BR",
+        parsed: { countryCode: "BR", country: "Brazil" },
+      },
+    })).toBe(true)
+
+    expect(isBrazilianProfile({
+      linkedinUrl: "https://www.linkedin.com/in/perfil-estrangeiro",
+      location: {
+        linkedinText: "Kyiv Metropolitan Area",
+        countryCode: "UA",
+        parsed: { countryCode: "UA", country: "Ukraine" },
+      },
+    })).toBe(false)
   })
 })

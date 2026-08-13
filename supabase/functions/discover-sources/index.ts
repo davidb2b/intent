@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
-import { buildBrazilProfileBatchInput, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
+import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 
 const corsHeaders = {
@@ -19,6 +19,7 @@ type ActorPost = {
 }
 
 type ProfileDetails = {
+  linkedinUrl?: string
   location?: unknown
   country?: string
   countryCode?: string
@@ -27,21 +28,6 @@ type ProfileDetails = {
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } })
-}
-
-function normalized(value: unknown) {
-  return typeof value === "string" ? value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : ""
-}
-
-function isBrazilianProfile(profile: ProfileDetails | undefined) {
-  if (!profile) return false
-  const values = [profile.location, profile.country, profile.countryCode, profile.basic_info?.location].flatMap((value) => {
-    if (typeof value === "string") return [normalized(value)]
-    if (!value || typeof value !== "object") return []
-    const item = value as Record<string, unknown>
-    return [item.countryCode, item.country_code, item.country, item.full].map(normalized)
-  })
-  return values.some((value) => value === "br" || value === "brazil" || value === "brasil" || value.endsWith(", brazil") || value.endsWith(", brasil"))
 }
 
 async function apifyRun(actorId: string, input: Record<string, unknown>, token: string) {

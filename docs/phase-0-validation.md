@@ -1,6 +1,7 @@
 # Fase 0 — validação de segurança e contrato de dados
 
-Status: em andamento.
+Status: concluída para dados e infraestrutura. A rotação da chave OpenAI foi
+adiada pelo responsável do projeto e permanece como risco de segurança aceito.
 
 Esta fase não libera novas telas. Ela garante que dados, credenciais e
 contratos externos estejam corretos antes da coleta ponta a ponta.
@@ -41,25 +42,21 @@ contratos externos estejam corretos antes da coleta ponta a ponta.
 - A execução registrou 72 autores adiados pelo limite de 25 verificações por
   descoberta. O próximo ciclo deve validar o comportamento do lote antes de
   ampliar esse limite.
+- A validação controlada do Actor de perfil concluiu com dois resultados e
+  custo de US$ 0,008: um perfil com `countryCode: BR` foi aceito e outro com
+  `countryCode: UA` foi rejeitado. A amostra mínima está em
+  `docs/amostras/linkedin-profile-location-validation.json`.
 
 ## Pendências que bloqueiam a Fase 1
 
 1. Rotacionar a chave OpenAI exposta fora do gestor de secrets e substituir o
-   valor apenas em `OPENAI_API_KEY` no Supabase. O console da OpenAI requer
-   login da conta proprietária para esta operação.
-2. Executar o Actor de perfil com URLs públicas brasileiras conhecidas e salvar
-   uma amostra anonimizada em `docs/amostras/`.
-3. Confirmar no payload real:
-   - campo de URL canônica retornada;
-   - todos os formatos de localização/país;
-   - quantidade de itens retornados para uma lista de URLs;
-   - custo e eventuais limites do plano.
-4. Ajustar o adapter apenas depois dessa evidência, com teste automatizado para
-   cada formato confirmado.
+   valor apenas em `OPENAI_API_KEY` no Supabase. Esta ação foi adiada pelo
+   responsável e não bloqueia o início da Fase 1, mas não deve ser esquecida.
+2. Ampliar a matriz de localização se o Actor passar a retornar formatos ainda
+   não cobertos pelo teste atual.
 
 ## Gate de saída
 
-A Fase 0 só termina quando uma fonte brasileira conhecida for aceita pela
-mesma regra usada em produção, uma fonte não brasileira for rejeitada e os
-dois resultados estiverem cobertos por teste automatizado e amostra
-anonimizada.
+A Fase 0 foi encerrada: uma fonte brasileira conhecida foi aceita pela mesma
+regra usada em produção, uma fonte não brasileira foi rejeitada e ambos os
+resultados estão cobertos por teste automatizado e amostra mínima.
