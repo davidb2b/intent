@@ -135,6 +135,12 @@
 .post-detail-title { margin: 10px 0 5px; color: #17221c; font-size: 20px; line-height: 1.32; letter-spacing: -.015em; }
 .post-detail-text { margin: 12px 0; color: #314038; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
 .post-detail-metrics { display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--signal-border); border-bottom: 1px solid var(--signal-border); padding: 12px 0; color: var(--signal-muted); font-size: 11px; }
+.author-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; border: 1px solid var(--signal-border); border-radius: 10px; background: #fbfdfc; padding: 12px; }
+.author-box > div:first-child strong, .author-box > div:first-child span { display: block; }
+.author-box > div:first-child strong { color: #213128; font-size: 13px; }
+.author-box > div:first-child span { margin-top: 3px; color: var(--signal-muted); font-size: 11px; }
+.author-box-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.author-box-actions a { color: var(--signal-brand); font-size: 11px; font-weight: 650; text-decoration: none; }
 .post-detail-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .post-detail-actions a { margin-left: auto; color: var(--signal-brand); font-size: 12px; font-weight: 600; text-decoration: none; }
 .post-detail-empty { margin-top: 18px; border-radius: 8px; background: #f6faf7; color: var(--signal-muted); padding: 12px; font-size: 12px; line-height: 1.5; }
@@ -154,6 +160,7 @@
 .source-monitorada { background: var(--signal-soft); color: var(--signal-brand-dark); }
 .source-candidata { background: #fff7e8; color: #825513; }
 .source-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.company-topics { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--signal-border); padding: 0 18px 16px; }
 .analysis-panel { overflow: hidden; }
 .table-wrap { overflow-x: auto; }
 .table-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -286,6 +293,8 @@
   .overview-grid { grid-template-columns: 1fr; }
   .post-review-layout { grid-template-columns: 1fr; }
   .post-detail-panel { position: static; max-height: none; }
+  .author-box { align-items: flex-start; flex-direction: column; }
+  .author-box-actions { justify-content: flex-start; }
   .panel-heading, .comment-card { padding-left: 18px; padding-right: 18px; }
   .comment-toolbar { align-items: stretch; flex-direction: column; padding-left: 18px; padding-right: 18px; }
   .comment-toolbar input { width: 100%; }
