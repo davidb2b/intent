@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, requestedProfileSlugs } from "../../../../supabase/functions/_shared/brazil-profile-verification"
+import { brazilRelevanceScore, buildBrazilFirstQueries, isLinkedInPersonProfileUrl } from "../../../../supabase/functions/_shared/brazil-first-discovery"
 import { normalizeProfileSlug } from "../../../../supabase/functions/_shared/profile-identity"
 
 describe("profile identity", () => {
@@ -45,5 +46,13 @@ describe("profile identity", () => {
         parsed: { countryCode: "UA", country: "Ukraine" },
       },
     })).toBe(false)
+  })
+
+  it("prioritizes Brazil in discovery without accepting company pages as profiles", () => {
+    expect(buildBrazilFirstQueries(["cost breakdown", "compras"])).toEqual(["cost breakdown Brasil", "compras Brasil"])
+    expect(isLinkedInPersonProfileUrl("https://www.linkedin.com/in/pessoa-brasileira")).toBe(true)
+    expect(isLinkedInPersonProfileUrl("https://www.linkedin.com/company/empresa-brasileira")).toBe(false)
+    expect(brazilRelevanceScore("Compras estratégicas no Brasil e em São Paulo")).toBeGreaterThan(0)
+    expect(brazilRelevanceScore("Procurement strategy in Europe")).toBe(0)
   })
 })

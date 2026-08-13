@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
+import { brazilRelevanceScore, buildBrazilFirstQueries, isLinkedInPersonProfileUrl } from "../_shared/brazil-first-discovery.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 
 const corsHeaders = {
@@ -16,6 +17,7 @@ type ActorPost = {
   engagement?: { comments?: number; reactions?: number | unknown[] }
   commentsCount?: number
   reactionsCount?: number
+  content?: string
 }
 
 type ProfileDetails = {
@@ -53,7 +55,8 @@ async function apifyRun(actorId: string, input: Record<string, unknown>, token: 
 
 function profileUrl(post: ActorPost) {
   const author = post.author ?? post.actor
-  return author?.linkedinUrl?.replace(/\/$/, "") ?? null
+  const url = author?.linkedinUrl?.replace(/\/$/, "") ?? null
+  return isLinkedInPersonProfileUrl(url) ? url : null
 }
 
 function metric(value: number | unknown[] | undefined, fallback?: number) {
@@ -93,24 +96,26 @@ Deno.serve(async (request) => {
   let costUsd = 0
   try {
     const budget = await createCostBudget(admin, projectId, execution.id, body.teto_execucao_usd)
-    const searchInput = { searchQueries: terms, maxPosts: 100, postedLimit: body.janela ?? "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }
+    const searchQueries = buildBrazilFirstQueries(terms)
+    const searchInput = { searchQueries, maxPosts: 100, postedLimit: body.janela ?? "3months", sortBy: "relevance", scrapeComments: false, scrapeReactions: false }
     assertCallWithinBudget(budget, "harvestapi/linkedin-post-search", searchInput)
     const result = await apifyRun("harvestapi/linkedin-post-search", searchInput, apifyToken)
     costUsd = result.costUsd
     registerActualCost(budget, result.costUsd)
     await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-post-search", itens: result.items.length, custo_usd: costUsd })
 
-    const grouped = new Map<string, { url: string; name: string | null; posts: number; comments: number; reactions: number; discoveredBy: string }>()
+    const grouped = new Map<string, { url: string; name: string | null; posts: number; comments: number; reactions: number; brazilScore: number; discoveredBy: string }>()
     for (const item of result.items as ActorPost[]) {
       const url = profileUrl(item)
       if (!url) continue
       const author = item.author ?? item.actor
       const comments = metric(item.engagement?.comments, item.commentsCount)
       const reactions = metric(item.engagement?.reactions, item.reactionsCount)
-      const current = grouped.get(url) ?? { url, name: author?.name ?? null, posts: 0, comments: 0, reactions: 0, discoveredBy: terms[0] }
+      const current = grouped.get(url) ?? { url, name: author?.name ?? null, posts: 0, comments: 0, reactions: 0, brazilScore: 0, discoveredBy: terms[0] }
       current.posts += 1
       current.comments += comments
       current.reactions += reactions
+      current.brazilScore += brazilRelevanceScore(item.content)
       if (!current.name && author?.name) current.name = author.name
       grouped.set(url, current)
     }
@@ -118,12 +123,15 @@ Deno.serve(async (request) => {
     const urls = [...grouped.keys()]
     const { data: existing } = urls.length ? await admin.from("fontes").select("linkedin_url").eq("projeto_id", projectId).in("linkedin_url", urls) : { data: [] }
     const existingUrls = new Set((existing ?? []).map((source) => source.linkedin_url))
-    const candidates = [...grouped.values()].filter((candidate) => !existingUrls.has(candidate.url))
+    const candidates = [...grouped.values()]
+      .filter((candidate) => !existingUrls.has(candidate.url))
+      .sort((a, b) => b.brazilScore - a.brazilScore || b.comments - a.comments || b.reactions - a.reactions)
     const batchCandidates = candidates.slice(0, MAX_PROFILES_PER_DISCOVERY)
     const deferredCandidates = candidates.length - batchCandidates.length
     const profileCache = new Map<string, boolean>()
     let inserted = 0
     let rejected = 0
+    let unverified = 0
     if (batchCandidates.length > 0) {
       const profileInput = buildBrazilProfileBatchInput(batchCandidates.map((candidate) => candidate.url))
       try {
@@ -133,7 +141,12 @@ Deno.serve(async (request) => {
         registerActualCost(budget, profiles.costUsd)
         await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-scraper", itens: profiles.items.length, custo_usd: profiles.costUsd })
         const brazilianSlugs = requestedProfileSlugs(batchCandidates.map((candidate) => candidate.url), (profiles.items as ProfileDetails[]).filter(isBrazilianProfile))
-        for (const candidate of batchCandidates) profileCache.set(candidate.url, brazilianSlugs.has(normalizeProfileSlug(candidate.url)))
+        const returnedSlugs = requestedProfileSlugs(batchCandidates.map((candidate) => candidate.url), profiles.items as ProfileDetails[])
+        for (const candidate of batchCandidates) {
+          const slug = normalizeProfileSlug(candidate.url)
+          if (!returnedSlugs.has(slug)) continue
+          profileCache.set(candidate.url, brazilianSlugs.has(slug))
+        }
       } catch (error) {
         if (error instanceof CostLimitError) throw error
 
@@ -153,13 +166,18 @@ Deno.serve(async (request) => {
     }
 
     for (const candidate of batchCandidates) {
-      if (!profileCache.get(candidate.url)) { rejected += 1; continue }
+      const brazilian = profileCache.get(candidate.url)
+      if (brazilian === undefined) { unverified += 1; continue }
+      if (!brazilian) { rejected += 1; continue }
       const ratio = candidate.reactions > 0 ? candidate.comments / candidate.reactions : candidate.comments > 0 ? candidate.comments : 0
       const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: candidate.name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio }), status: "candidata", descoberta_em: candidate.discoveredBy })
       if (!error) inserted += 1
     }
-    const warnings = deferredCandidates > 0 ? [`${deferredCandidates} autores ficaram para a próxima descoberta por limite de verificação.`] : []
-    await admin.from("execucoes").update({ status: "concluida", posts_lidos: result.items.length, custo_usd: costUsd, parametros: { termos: terms, janela: body.janela ?? "3months", origem: "manual", avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    const warnings = [
+      ...(deferredCandidates > 0 ? [`${deferredCandidates} autores ficaram para a próxima descoberta por limite de verificação.`] : []),
+      ...(unverified > 0 ? [`${unverified} perfis não foram retornados pelo Actor e permaneceram pendentes de verificação.`] : []),
+    ]
+    await admin.from("execucoes").update({ status: "concluida", posts_lidos: result.items.length, custo_usd: costUsd, parametros: { termos: terms, consultas: searchQueries, janela: body.janela ?? "3months", origem: "manual", avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
     return json({ executionId: execution.id, status: "concluida", candidatesFound: grouped.size, candidatesInserted: inserted, candidatesRejected: rejected, costUsd, warnings })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido na descoberta."
