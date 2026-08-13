@@ -158,6 +158,11 @@
 - O diagnóstico final do bloqueio foi o limite diário gratuito do Apify para
   perfis. A Edge Function agora retorna esse motivo explicitamente, em vez de
   tratar a resposta como zero perfis.
+- A verificação de localização foi preparada para usar
+  `harvestapi/linkedin-profile-scraper` em lote limitado a 25 autores, com
+  correspondência obrigatória da URL canônica e `apimaestro` como fallback.
+  A validação com uma fonte brasileira real continua pendente enquanto a conta
+  Apify não permitir a leitura de perfis.
 - O payload de localização do Actor de perfil foi corrigido para ler
   `basic_info.location.country_code` e `basic_info.location.country`.
 - Edge Function `discover-sources` publicada com o contrato separado de

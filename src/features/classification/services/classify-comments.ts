@@ -1,4 +1,5 @@
 import { supabase } from "@/infrastructure/supabase/client"
+import { functionErrorMessage } from "@/lib/supabase-function-error"
 
 export type ClassifyCommentsResult = {
   status: "concluida"
@@ -12,9 +13,7 @@ export async function classifyComments(projectId: string): Promise<ClassifyComme
     body: { projectId },
   })
   if (error) {
-    const context = "context" in error ? (error as { context?: Response }).context : undefined
-    if (context) { try { const body = await context.clone().json() as { error?: string }; if (body.error) throw new Error(body.error) } catch (contextError) { if (contextError instanceof Error && contextError.message !== "Unexpected end of JSON input") throw contextError } }
-    throw new Error(error.message || "Não foi possível classificar os comentários.")
+    throw new Error(await functionErrorMessage(error, "Não foi possível classificar os comentários."))
   }
   if (!data) throw new Error("O backend não retornou o resultado da classificação.")
   return data

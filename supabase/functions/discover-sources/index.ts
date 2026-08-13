@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { profileUsername } from "../_shared/profile-identity.ts"
+import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { buildBrazilProfileBatchInput, MAX_PROFILES_PER_DISCOVERY, requestedProfileSlugs } from "../_shared/brazil-profile-verification.ts"
 import { assertCallWithinBudget, CostLimitError, createCostBudget, registerActualCost } from "../_shared/cost-control.ts"
 
 const corsHeaders = {
@@ -131,28 +132,49 @@ Deno.serve(async (request) => {
     const urls = [...grouped.keys()]
     const { data: existing } = urls.length ? await admin.from("fontes").select("linkedin_url").eq("projeto_id", projectId).in("linkedin_url", urls) : { data: [] }
     const existingUrls = new Set((existing ?? []).map((source) => source.linkedin_url))
+    const candidates = [...grouped.values()].filter((candidate) => !existingUrls.has(candidate.url))
+    const batchCandidates = candidates.slice(0, MAX_PROFILES_PER_DISCOVERY)
+    const deferredCandidates = candidates.length - batchCandidates.length
     const profileCache = new Map<string, boolean>()
     let inserted = 0
     let rejected = 0
-    for (const candidate of grouped.values()) {
-      if (existingUrls.has(candidate.url)) continue
-      if (!profileCache.has(candidate.url)) {
-        const username = profileUsername(candidate.url)
-        const profileInput = { username, includeEmail: false }
-        assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", profileInput)
-        const profile = await apifyRun("apimaestro/linkedin-profile-detail", profileInput, apifyToken)
+    if (batchCandidates.length > 0) {
+      const profileInput = buildBrazilProfileBatchInput(batchCandidates.map((candidate) => candidate.url))
+      try {
+        assertCallWithinBudget(budget, "harvestapi/linkedin-profile-scraper", profileInput)
+        const profiles = await apifyRun("harvestapi/linkedin-profile-scraper", profileInput, apifyToken)
+        costUsd += profiles.costUsd
+        registerActualCost(budget, profiles.costUsd)
+        await admin.from("custos").insert({ execucao_id: execution.id, actor: "harvestapi/linkedin-profile-scraper", itens: profiles.items.length, custo_usd: profiles.costUsd })
+        const brazilianSlugs = requestedProfileSlugs(batchCandidates.map((candidate) => candidate.url), (profiles.items as ProfileDetails[]).filter(isBrazilianProfile))
+        for (const candidate of batchCandidates) profileCache.set(candidate.url, brazilianSlugs.has(normalizeProfileSlug(candidate.url)))
+      } catch (error) {
+        if (error instanceof CostLimitError) throw error
+
+        // Fallback is intentionally narrow: if the bulk provider is down, the
+        // original profile-detail Actor verifies the first candidate and either
+        // returns an explicit error or proves the fallback contract still works.
+        const candidate = batchCandidates[0]
+        const fallbackInput = { username: profileUsername(candidate.url), includeEmail: false }
+        assertCallWithinBudget(budget, "apimaestro/linkedin-profile-detail", fallbackInput)
+        const profile = await apifyRun("apimaestro/linkedin-profile-detail", fallbackInput, apifyToken)
         costUsd += profile.costUsd
         registerActualCost(budget, profile.costUsd)
         await admin.from("custos").insert({ execucao_id: execution.id, actor: "apimaestro/linkedin-profile-detail", itens: 1, custo_usd: profile.costUsd })
         profileCache.set(candidate.url, isBrazilianProfile(profile.items[0] as ProfileDetails | undefined))
+        for (const remaining of batchCandidates.slice(1)) profileCache.set(remaining.url, false)
       }
+    }
+
+    for (const candidate of batchCandidates) {
       if (!profileCache.get(candidate.url)) { rejected += 1; continue }
       const ratio = candidate.reactions > 0 ? candidate.comments / candidate.reactions : candidate.comments > 0 ? candidate.comments : 0
       const { error } = await admin.from("fontes").insert({ projeto_id: projectId, tipo: "perfil", linkedin_url: candidate.url, nome: candidate.name, meta: JSON.stringify({ posts: candidate.posts, comentarios: candidate.comments, reacoes: candidate.reactions, razao_comentarios_reacoes: ratio }), status: "candidata", descoberta_em: candidate.discoveredBy })
       if (!error) inserted += 1
     }
-    await admin.from("execucoes").update({ status: "concluida", posts_lidos: result.items.length, custo_usd: costUsd, concluida_em: new Date().toISOString() }).eq("id", execution.id)
-    return json({ executionId: execution.id, status: "concluida", candidatesFound: grouped.size, candidatesInserted: inserted, candidatesRejected: rejected, costUsd })
+    const warnings = deferredCandidates > 0 ? [`${deferredCandidates} autores ficaram para a próxima descoberta por limite de verificação.`] : []
+    await admin.from("execucoes").update({ status: "concluida", posts_lidos: result.items.length, custo_usd: costUsd, parametros: { termos: terms, janela: body.janela ?? "3months", origem: "manual", avisos: warnings }, concluida_em: new Date().toISOString() }).eq("id", execution.id)
+    return json({ executionId: execution.id, status: "concluida", candidatesFound: grouped.size, candidatesInserted: inserted, candidatesRejected: rejected, costUsd, warnings })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido na descoberta."
     const abortedByCost = error instanceof CostLimitError
