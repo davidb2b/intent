@@ -15,7 +15,7 @@ O agendamento está ativo no projeto Supabase:
 4. O job `signal-lab-weekly-monitoring` está ativo com a expressão
    `0 9 * * 1`, que equivale a segunda-feira, 06:00 BRT (`09:00 UTC`).
 5. A chamada usa `POST /functions/v1/run-monitoring`, com `janela: "month"`
-   e o projeto Signal Lab cadastrado. Ela envia `apikey` e
+   para cada pesquisa ativa que tenha ao menos uma fonte monitorada. Ela envia `apikey` e
    `Authorization: Bearer ...` com a chave pública armazenada no Vault, além
    de `x-scheduler-secret`.
 
@@ -28,9 +28,9 @@ Exemplo de body:
 }
 ```
 
-A função força `origem: "agendada"`, registra a execução no histórico e
-continua aplicando RLS lógico, deduplicação, filtro brasileiro e limites de
-custo. Sem o secret correto, a chamada não é aceita.
+A função força `origem: "agendada"`, registra uma execução por pesquisa no
+histórico e continua aplicando RLS lógico, deduplicação, filtro brasileiro e
+limites de custo. Sem o secret correto, a chamada não é aceita.
 
 ## Estado atual
 

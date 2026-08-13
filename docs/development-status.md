@@ -94,7 +94,8 @@
 - As extensões `pg_cron` e `pg_net` foram habilitadas; URL, chave pública e
   secret do agendador foram armazenados no Supabase Vault.
 - O job `signal-lab-weekly-monitoring` está ativo com `0 9 * * 1` (segunda,
-  06:00 BRT) e usa o único projeto Signal Lab hoje cadastrado.
+  06:00 BRT) e inicia uma execução para cada projeto ativo que possua fontes
+  monitoradas, preservando o isolamento entre contas.
 - A migration `0007_fix_scheduled_monitoring_auth.sql` mantém o cron enviando
   `apikey` e `Authorization: Bearer ...` a partir do Vault, além do secret do
   agendador. A rota foi validada com esses headers e respondeu `404` para um
