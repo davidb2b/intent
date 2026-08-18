@@ -64,8 +64,8 @@ radar privado e não aparecem ao cliente.
 O núcleo está homologado. Ainda pertencem à Fase 2, mas serão implementados em
 blocos separados para preservar controle de custo e isolamento de falhas:
 
-1. cascata do post para descobrir outras pessoas que interagiram;
-2. cascata da empresa para ampliar o radar na mesma conta;
+1. cascata da empresa para ampliar primeiro o radar na mesma conta;
+2. cascata do post para descobrir outras pessoas que interagiram;
 3. investigação controlada de autores e influenciadores;
 4. execução recorrente de watchlists;
 5. revelação de contato sob demanda, com consentimento de ação e débito
