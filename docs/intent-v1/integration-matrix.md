@@ -26,6 +26,7 @@ Status: **contrato documental aprovado; acesso real pendente**.
 | Primário — comentários | `harvestapi/linkedin-profile-comments` | Run real: 8 itens, 27 s, US$ 0,016; preserva comentário, identidade, timestamp, URL e conteúdo do post | **Aprovado** |
 | Primário — reações | `harvestapi/linkedin-profile-reactions` | Run real: 11 itens, 27 s, US$ 0,022; preserva ação, identidade, timestamp, URL e conteúdo do post | **Aprovado** |
 | Fallback combinado | `unseenuser/linkedin-user-comments-reactions` | Run real: 19 itens, 16 s, US$ 0,095; não entrega timestamp, URL nem conteúdo do post | **Rejeitado para produção** |
+| Próximo fallback candidato | `scraping_solutions/linkedin-profile-comments-reactions-scraper-no-cookies` | Contrato público declara tipo, perfil de entrada, timestamp, URL/texto/autor do post e dedupe; US$ 1,20/1.000 | **Precisa run real** |
 | Reserva experimental | `iron-crawler/linkedin-profile-activity-scraper` | Sem cookie, quatro tipos, US$ 15/1.000, sem avaliações e baixo uso | Não usar antes de PoC específica |
 | Rejeitado | `crawlerbros/linkedin-user-activity-scraper` | Exige `li_at` e proxy residencial recomendado | Proibido pela arquitetura |
 
