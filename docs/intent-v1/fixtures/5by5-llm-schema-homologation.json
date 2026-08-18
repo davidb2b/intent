@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "source": "PoC real fornecida no protótipo Intent v7.3 em 16/08/2026",
+  "containsPersonalData": false,
+  "sourceTextByUrl": {
+    "https://www.5by5.com.br": "+150 projetos em produção · 98% clientes recorrentes · aviação com 15 mil colaboradores · saúde com 800 mil beneficiários/dia"
+  },
+  "companyProfile": {
+    "schema_version": "intent.company_profile.v1",
+    "idioma": "pt-BR",
+    "empresa_resumo": "A 5by5 é uma consultoria tecnológica brasileira que une arquitetura corporativa, engenharia de software e IA aplicada, com o framework próprio Beacon.",
+    "oferta": "Consultoria de arquitetura corporativa, engenharia de software, cloud e IA aplicada.",
+    "proposta_valor": "Transformar desafios tecnológicos complexos em soluções digitais escaláveis e levar iniciativas críticas à produção.",
+    "dores_resolvidas": [
+      "Entrega lenta de software corporativo complexo",
+      "Sistemas legados travando a transformação digital",
+      "Migração para nuvem sem governança arquitetural",
+      "IA que não chega à produção com segurança e ROI"
+    ],
+    "diferenciais": [
+      "Arquitetura corporativa integrada à execução",
+      "Framework próprio Beacon para agentes de IA",
+      "Experiência em operações enterprise de alta criticidade"
+    ],
+    "provas_sociais": [
+      {
+        "afirmacao": "Mais de 150 projetos em produção",
+        "evidencia_literal": "+150 projetos em produção",
+        "fonte_url": "https://www.5by5.com.br"
+      },
+      {
+        "afirmacao": "98% de clientes recorrentes",
+        "evidencia_literal": "98% clientes recorrentes",
+        "fonte_url": "https://www.5by5.com.br"
+      },
+      {
+        "afirmacao": "Case de aviação com 15 mil colaboradores",
+        "evidencia_literal": "aviação com 15 mil colaboradores",
+        "fonte_url": "https://www.5by5.com.br"
+      },
+      {
+        "afirmacao": "Case de saúde com 800 mil beneficiários por dia",
+        "evidencia_literal": "saúde com 800 mil beneficiários/dia",
+        "fonte_url": "https://www.5by5.com.br"
+      }
+    ],
+    "segmentos_atendidos": ["Transporte", "Saúde", "Educação", "Varejo", "Aviação", "Energia"],
+    "palavras_categoria": ["Arquitetura corporativa", "Engenharia de software", "Cloud", "IA corporativa"],
+    "firmografia": {
+      "nome": "5by5",
+      "dominio": "5by5.com.br",
+      "linkedin_url": null,
+      "industria_literal": "IT Services and IT Consulting",
+      "faixa_funcionarios": "51-200",
+      "fundada_em": 2016,
+      "sede": "São Bernardo do Campo, SP",
+      "pais": "Brasil"
+    }
+  },
+  "buyerProfile": {
+    "schema_version": "intent.buyer_profile.v1",
+    "cargos": ["CTO", "CIO", "VP de Engenharia", "Head de Arquitetura", "Diretor de TI", "Head de Plataformas"],
+    "senioridades": ["c_suite", "vp", "head", "director"],
+    "setores": [
+      { "familia": "aviacao", "label_linkedin": "Airlines and Aviation" },
+      { "familia": "saude", "label_linkedin": "Hospitals and Health Care" },
+      { "familia": "varejo", "label_linkedin": "Retail" },
+      { "familia": "transporte_logistica", "label_linkedin": "Transportation & Logistics" },
+      { "familia": "energia_utilities", "label_linkedin": "Utilities" },
+      { "familia": "financeiro", "label_linkedin": "Financial Services" }
+    ],
+    "portes": ["501-1000", "1001-5000", "5001-10000", "10000+"],
+    "regioes": ["Brasil"],
+    "exclusoes": [
+      { "tipo": "mesma_categoria", "valor": "Consultorias e software houses", "motivo": "Evitar fornecedores da mesma categoria" },
+      { "tipo": "open_to_work", "valor": "Perfis open to work", "motivo": "Não representa demanda empresarial ativa" },
+      { "tipo": "dominio_proprio", "valor": "5by5.com.br", "motivo": "Excluir colaboradores do próprio cliente" },
+      { "tipo": "concorrente", "valor": "Concorrentes", "motivo": "Excluir empresas concorrentes da abordagem" },
+      { "tipo": "cliente_atual", "valor": "Clientes atuais", "motivo": "Não abordar clientes já atendidos" }
+    ]
+  },
+  "buyingSignals": {
+    "schema_version": "intent.buying_signals.v1",
+    "idioma": "pt-BR",
+    "dores": [
+      "Core legado limita escala, integração e velocidade de entrega",
+      "Arquiteturas inconsistentes entre squads elevam retrabalho e risco operacional",
+      "Plataformas internas não acompanham picos de tráfego e crescimento",
+      "Migrações para nuvem avançam sem governança arquitetural ou retorno claro",
+      "Iniciativas de IA não chegam à produção com segurança e ROI mensurável",
+      "Equipes internas sem capacidade para executar programas complexos no prazo",
+      "Integrações críticas exigem continuidade, conformidade e alta disponibilidade",
+      "Seleção de parceiros tecnológicos envolve alto risco técnico e financeiro"
+    ],
+    "gatilhos": [
+      "Lead declara que está avaliando consultoria, integrador ou parceiro de engenharia",
+      "Lead pede recomendações, referências, proposta ou comparação de fornecedores",
+      "Empresa publica RFP, aprova orçamento ou define prazo para modernizar legado",
+      "Lead relata incidentes recorrentes, dívida técnica ou dificuldade de escalar",
+      "Empresa anuncia programa de transformação digital ou reestruturação de tecnologia",
+      "Novo CTO, CIO ou Head de Engenharia ou Arquitetura assume o cargo",
+      "Empresa contrata em volume para plataforma, cloud, SRE e arquitetura",
+      "Iniciativa de IA travada em piloto, sem governança ou integração"
+    ],
+    "temas": [
+      "Arquitetura corporativa",
+      "Engenharia de software",
+      "Engenharia de plataformas",
+      "Modernização de sistemas core",
+      "Modernização de aplicações legadas",
+      "Migração para nuvem",
+      "IA corporativa",
+      "DevSecOps",
+      "Observabilidade",
+      "Governança de tecnologia",
+      "Desenvolvimento de produtos digitais",
+      "Transformação digital ponta a ponta"
+    ],
+    "concorrentes": [
+      { "nome": "CI&T", "dominio": "ciandt.com", "motivo": "Líder da categoria de transformação digital no Brasil" },
+      { "nome": "Thoughtworks", "dominio": "thoughtworks.com", "motivo": "Oferta sobreposta em modernização e arquitetura" },
+      { "nome": "TQI", "dominio": "tqi.com.br", "motivo": "Oferta direta de engenharia e arquitetura" },
+      { "nome": "UDS Tecnologia", "dominio": "uds.com.br", "motivo": "Desenvolvimento sob medida, cloud e IA para o mesmo ICP" },
+      { "nome": "Compass UOL", "dominio": "compass.uol", "motivo": "Engenharia e modernização de aplicações enterprise" }
+    ],
+    "regras": [
+      { "nome": "Avaliação direta de parceiro tecnológico", "prioridade": "High", "descricao": "Aumentar fortemente quando o lead avaliar parceiros de engenharia", "palavras_chave": ["avaliando", "fornecedor", "parceiro", "proposta", "RFP", "indicação"] },
+      { "nome": "Dor tecnológica declarada", "prioridade": "High", "descricao": "Aumentar fortemente diante de problema concreto de legado, escala ou integração", "palavras_chave": ["legado", "dívida técnica", "não escala", "incidente", "integração"] },
+      { "nome": "Programa ativo com orçamento ou prazo", "prioridade": "High", "descricao": "Aumentar quando existir projeto ativo, orçamento, RFP ou prazo", "palavras_chave": ["projeto", "programa", "orçamento aprovado", "prazo", "modernização"] },
+      { "nome": "Nova liderança com mandato de transformação", "prioridade": "High", "descricao": "Aumentar quando nova liderança assumir com mandato de mudança", "palavras_chave": ["assumi", "novo desafio", "nova fase", "mandato"] },
+      { "nome": "Interesse em IA aplicada", "prioridade": "High", "descricao": "Aumentar quando o lead discutir IA em produção, agentes ou governança", "palavras_chave": ["IA", "agentes", "LLM", "produção", "piloto"] },
+      { "nome": "Expansão de capacidade tecnológica", "prioridade": "Medium", "descricao": "Aumentar quando a empresa contratar arquitetura, plataforma, SRE ou dados", "palavras_chave": ["contratando", "vagas", "time crescendo", "hiring"] }
+    ]
+  }
+}

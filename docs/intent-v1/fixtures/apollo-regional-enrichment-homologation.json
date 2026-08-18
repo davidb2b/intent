@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "executedAt": "2026-08-18T13:05:00Z",
+  "containsPersonalData": false,
+  "search": {
+    "endpoint": "POST /api/v1/mixed_people/api_search",
+    "filters": {
+      "personLocations": ["Brazil"],
+      "personTitles": ["CEO", "CTO", "Head of Marketing"],
+      "page": 1,
+      "perPage": 3
+    },
+    "status": 200,
+    "items": 3,
+    "creditsConsumed": 0
+  },
+  "enrichment": {
+    "endpoint": "POST /api/v1/people/match",
+    "identifier": "Apollo person ID from the filtered search",
+    "revealPersonalEmails": false,
+    "revealPhoneNumber": false,
+    "runWaterfallEmail": false,
+    "runWaterfallPhone": false,
+    "status": 200,
+    "literalCountry": "Brazil",
+    "creditsConsumed": 1,
+    "phoneReturned": false,
+    "contactFieldsDiscarded": true
+  },
+  "secret": {
+    "name": "APOLLO_API_KEY",
+    "scope": ["api/v1/mixed_people/api_search", "api/v1/people/match"],
+    "storedInSupabase": true,
+    "valuePersistedInFixture": false
+  },
+  "decision": "approved_for_literal_brazil_validation"
+}

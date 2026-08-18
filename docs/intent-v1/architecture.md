@@ -127,9 +127,16 @@ E-mail e telefone não ficam numa tabela legível pelo browser. Proposta:
   somente o contato solicitado;
 - `contatos_revelados`: mantém a concessão para não cobrar duas vezes.
 
+O browser recebe grants apenas para uma allowlist de colunas. RLS filtra linhas,
+mas não é usado como substituto de segurança de coluna. `fit`, `origem` e
+`apollo_id` ficam em estrutura operacional privada ou sem grant para
+`authenticated`; `jobs`, payloads brutos e custos USD são `service_role` only.
+
+O contrato e a evidência executável estão em `private-data-rls.md` e
+`supabase/tests/intent_v1_private_data_rls.sql`.
+
 ## Observabilidade
 
 Cada integração registra `provider`, `operation`, `external_run_id`, latência,
 itens, custo, tentativa, erro tipado e completude. Resultado vazio, resposta
 parcial e falha são estados diferentes.
-

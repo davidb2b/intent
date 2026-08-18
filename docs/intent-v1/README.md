@@ -1,7 +1,8 @@
 # Intent v1 — plano vigente
 
-Status: Fase 0 em andamento  
-Branch: `phase/0-intent-v1-foundation`  
+Status: Fase 0 tecnicamente concluída; aceite semântico do David pendente
+
+Branch: `main`
 Fontes de verdade: SPEC Intent v1, motor people-first v2 e protótipo v7.3.
 
 ## Objetivo do produto
@@ -49,7 +50,7 @@ busca temática poderá existir como complemento, nunca como coração do motor.
 
 | Fase | Entrega | Estado | Gate |
 |---|---|---|---|
-| 0 | Contratos, arquitetura, integrações e estratégia de migração | Em andamento | Apollo e vigília homologados com payload real |
+| 0 | Contratos, arquitetura, integrações e estratégia de migração | Concluída tecnicamente | aceite semântico do David |
 | 1 | Onboarding site -> ICP editável/versionado | Não iniciada | 5by5 + 2 sites, menos de 3 min, custo persistido |
 | 2 | Radar people-first, fila, julgamento, créditos e cascatas | Não iniciada | sinal real vira lead sem duplicação e respeita saldo |
 | 3 | Início, Pessoas, Contas, Watchlist, ICP e classificação | Não iniciada | protótipo v7.3 com dados reais e sem conceitos internos |
@@ -61,6 +62,8 @@ busca temática poderá existir como complemento, nunca como coração do motor.
 - [`architecture.md`](architecture.md): fronteiras, componentes e fluxo.
 - [`domain-contracts.md`](domain-contracts.md): vocabulário e invariantes.
 - [`integration-matrix.md`](integration-matrix.md): Apollo, Apify e LLM.
+- [`llm-contracts.md`](llm-contracts.md): schemas estritos, modelos e custo.
+- [`private-data-rls.md`](private-data-rls.md): dados privados, grants e RLS.
 - [`migration-strategy.md`](migration-strategy.md): evolução sem perda de dados.
 
 ## Critério para avançar
@@ -71,5 +74,5 @@ A Fase 1 só começa depois de:
 2. uma execução real do Actor primário e do fallback de atividade de perfil;
 3. fixtures anonimizadas dos payloads salvas no repositório;
 4. custo, latência, campos ausentes e limites registrados;
-5. contratos de fila, créditos e saída estruturada aprovados.
-
+5. contratos de fila, créditos e saída estruturada aprovados;
+6. país literal comprovado por enriquecimento e RLS validado antes da migration.

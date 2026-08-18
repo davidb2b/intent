@@ -19,17 +19,26 @@ Contrato confirmado na documentação:
 
 Homologação real de 18/08/2026:
 
-- chave dedicada criada apenas para `mixed_people/api_search`;
+- chave dedicada inicial criada para `mixed_people/api_search`;
 - `auth/health` respondeu HTTP 200 com `healthy=true` e `is_logged_in=true`;
 - busca com `person_locations=["Brazil"]`, três cargos e `per_page=5`
   respondeu HTTP 200 com cinco pessoas;
 - limites observados nos headers: 200/minuto, 6.000/hora e 50.000/24 horas;
 - o retorno expõe nomes parcialmente ofuscados e indicadores de disponibilidade,
   mas não devolve e-mail, telefone nem o país literal;
-- `APOLLO_API_KEY` foi cadastrado nos secrets do Supabase e não foi salvo no Git.
+- uma segunda chave de escopo mínimo foi criada para
+  `mixed_people/api_search` + `people/match` e substituiu o secret
+  `APOLLO_API_KEY` no Supabase;
+- uma pessoa da amostra filtrada foi enriquecida por Apollo ID com e-mail
+  pessoal, telefone e waterfalls explicitamente desabilitados;
+- o enriquecimento respondeu `country="Brazil"` literalmente, consumiu
+  1 crédito Apollo e todo campo de contato eventualmente presente foi
+  descartado sem entrar na fixture;
+- a evidência anonimizada está em
+  `fixtures/apollo-regional-enrichment-homologation.json`.
 
-Status: **acesso e People Search aprovados; validação regional literal continua
-obrigatória antes de ativar uma pessoa no radar**.
+Status: **People Search e validação regional literal aprovados. A etapa de
+enriquecimento continua obrigatória antes de ativar uma pessoa no radar**.
 
 ## Apify — atividade da pessoa
 
@@ -61,6 +70,11 @@ Resultado da homologação de 18/08/2026:
    output real. O adaptador deve preservar essa parcialidade explicitamente;
 10. a localização Brasil não vem desses payloads. A elegibilidade regional deve
    ser comprovada antes do enfileiramento por Apollo ou enriquecimento de perfil.
+11. o teste de perfil inexistente mostrou que o primário pode concluir
+    `SUCCEEDED` com zero itens e diagnóstico `No valid source provided`;
+12. o fallback concluiu `SUCCEEDED/PARTIAL`, entregou um item `error` e custou
+    US$ 0,001. O status normalizado correto nos dois casos é
+    `profile_unavailable`, não `no_activity`.
 
 As métricas e a cobertura anonimizada estão versionadas em
 `fixtures/profile-activity-homologation.json`. Os outputs brutos permanecem na
@@ -89,14 +103,24 @@ mais restrito**.
 ## LLM
 
 Três contratos diferentes no onboarding e um no julgamento. Nunca usar resposta
-livre como fonte direta de persistência. Cada operação deve ter:
+livre como fonte direta de persistência. Cada operação possui:
 
-- JSON Schema versionado;
+- JSON Schema versionado com `strict=true` e `additionalProperties=false`;
 - enum fechado onde a busca depende do valor;
 - timeout e máximo de tentativas;
 - validação de provas literais;
 - modelo, tokens, custo, latência e versão do prompt;
 - erro de schema separado de erro do provedor.
+
+Modelos congelados na Fase 0:
+
+- perfil da empresa e comprador: `gpt-5.4-nano-2026-03-17`;
+- sinais de compra: `gpt-5.4-mini-2026-03-17`;
+- julgamento: `gpt-5.4-nano-2026-03-17`.
+
+Os três schemas aceitaram a PoC real de 5by5 e rejeitaram campos adicionais,
+taxonomias abertas, região fora do Brasil, contagens inválidas e provas sem
+fonte. Configuração, custo e testes estão em `llm-contracts.md`.
 
 ## Secrets necessárias
 

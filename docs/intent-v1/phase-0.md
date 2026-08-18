@@ -45,7 +45,7 @@ Gate: não implementar `seed-radar` antes dos cinco itens de execução real.
 - [x] Levantar fallback combinado para comentários + reações sem cookie.
 - [x] Rodar primário e fallback com os mesmos 3 perfis públicos brasileiros.
 - [x] Comparar cobertura, identidade, timestamps, post, evidência e custo.
-- [ ] Confirmar comportamento para perfil indisponível.
+- [x] Confirmar comportamento para perfil indisponível.
 - [x] Salvar fixture anonimizada e decisão dos quatro Actors testados.
 
 Gate: nenhum Actor é considerado homologado apenas por README, nota ou número
@@ -56,9 +56,9 @@ de usuários. A aprovação exige input, output e custo de execução real.
 - [x] Separar geração de ICP de julgamento de sinal.
 - [x] Definir que toda resposta passa por schema estrito.
 - [x] Definir proveniência e literalidade para provas sociais e evidência.
-- [ ] Fixar o modelo por operação e teto de custo.
-- [ ] Validar os três schemas do onboarding com 5by5.
-- [ ] Montar suíte dourada de julgamento com exemplos fortes, fracos e fora ICP.
+- [x] Fixar o modelo por operação e teto de custo.
+- [x] Validar os três schemas do onboarding com a PoC real de 5by5.
+- [x] Montar suíte dourada de julgamento com exemplos fortes, fracos e fora ICP.
 
 ## Trilha 0.5 — banco, fila e créditos
 
@@ -67,7 +67,7 @@ de usuários. A aprovação exige input, output e custo de execução real.
 - [x] Definir reserva e lançamento atômicos de crédito.
 - [x] Definir jobs com retry, lease e dedupe.
 - [ ] Transformar os contratos aprovados em migration da Fase 1/2.
-- [ ] Criar testes de RLS antes de aplicar a migration remota.
+- [x] Criar e executar testes de RLS antes de aplicar a migration remota.
 
 ## Gate final da Fase 0
 
@@ -76,22 +76,31 @@ A fase termina somente quando:
 - [x] Apollo real aprovado;
 - [x] Actor primário real aprovado;
 - [x] Actor fallback real aprovado;
-- [ ] Brasil comprovado nos payloads;
+- [x] Brasil comprovado literalmente por enriquecimento;
 - [x] campos ausentes e degradação documentados;
-- [ ] schemas de LLM aprovados;
-- [ ] estratégia de dados privados aprovada;
+- [x] schemas de LLM aprovados;
+- [x] estratégia de dados privados aprovada e testada;
 - [x] nenhuma secret foi registrada no Git;
 - [x] testes e build da `main` passam.
 
 ## Riscos atualmente abertos
 
 1. People Search aceita o filtro Brasil, mas não devolve o país literal no
-   payload resumido; a regra regional exige confirmação por enriquecimento.
+   payload resumido. O enriquecimento confirmou `country=Brazil`; produção deve
+   manter essa segunda etapa antes de ativar a pessoa no radar.
 2. O fallback aprovado é degradado: exige lote mínimo de 20, não informa timezone
    e omite texto/autor separado do post. Deve ser chamado por tipo e nunca
    substituir silenciosamente campos ausentes.
-3. Scraping público pode devolver atividade parcial; parcialidade deve ser
-   explícita e nunca convertida em "sem intenção".
-4. O RLS legado permite escrita ampla do proprietário e não protege revelação
-   de contato contra leitura direta; precisa ser endurecido antes da Fase 2.
+3. Um run `SUCCEEDED` pode representar perfil indisponível. O adapter deve ler
+   diagnóstico ou item `error`; vazio sem diagnóstico continua parcial, nunca
+   vira automaticamente "sem atividade".
+4. O RLS legado permite escrita ampla do proprietário. A estratégia alvo foi
+   aprovada em PostgreSQL descartável, mas só protege produção depois da
+   migration aditiva da Fase 1/2.
 5. O monólito atual de UI deve ser dividido antes da reprodução do protótipo.
+
+## Estado de encerramento
+
+Os gates técnicos da Fase 0 estão concluídos. A única aprovação externa ainda
+aberta é o aceite semântico do David; a migration remota permanece
+intencionalmente fora desta fase.
