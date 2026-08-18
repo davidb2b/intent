@@ -5,6 +5,7 @@ import {
   buyingSignalsSchema,
   companyProfileSchema,
   enforceBrazilianBuyerScope,
+  keepVerifiedCompanyProofs,
 } from "../../../../supabase/functions/_shared/intent-onboarding-llm"
 
 const unsupportedStrictKeywords = new Set([
@@ -38,5 +39,18 @@ describe("Intent structured output schemas", () => {
 
   it("enforces the fixed Brazilian scope independently from model wording", () => {
     expect(enforceBrazilianBuyerScope({ regioes: ["São Paulo", "América Latina"] })).toEqual({ regioes: ["Brasil"] })
+  })
+
+  it("keeps only social proof found literally in the collected source", () => {
+    const profile = keepVerifiedCompanyProofs({
+      provas_sociais: [
+        { afirmacao: "Confirmada", evidencia_literal: "Mais de 100 projetos", fonte_url: "https://empresa.test" },
+        { afirmacao: "Alterada", evidencia_literal: "Mais de cem projetos", fonte_url: "https://empresa.test" },
+      ],
+    }, { "https://empresa.test": "Clientes atendidos. Mais de 100 projetos realizados." })
+
+    expect(profile.provas_sociais).toEqual([
+      { afirmacao: "Confirmada", evidencia_literal: "Mais de 100 projetos", fonte_url: "https://empresa.test" },
+    ])
   })
 })

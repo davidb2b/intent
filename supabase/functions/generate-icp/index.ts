@@ -5,6 +5,7 @@ import {
   buyingSignalsSchema,
   companyProfileSchema,
   enforceBrazilianBuyerScope,
+  keepVerifiedCompanyProofs,
   runStructuredOutput,
   validateBuyerProfile,
   validateBuyingSignals,
@@ -320,6 +321,10 @@ Deno.serve(async (request) => {
       maxOutputTokens: 2_500,
       maxCostUsd: 0.015,
     })
+    const receivedProofCount = Array.isArray(companyProfile.value.provas_sociais) ? companyProfile.value.provas_sociais.length : 0
+    companyProfile.value = keepVerifiedCompanyProofs(companyProfile.value, sourceTextByUrl)
+    const verifiedProofCount = Array.isArray(companyProfile.value.provas_sociais) ? companyProfile.value.provas_sociais.length : 0
+    if (verifiedProofCount < receivedProofCount) warnings.push("Provas sociais sem correspondência literal foram descartadas e não participam do ICP.")
     validateCompanyProfile(companyProfile.value, sourceTextByUrl)
     await recordCost(companyProfile, "llm_company_profile", 1)
 

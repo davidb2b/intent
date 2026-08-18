@@ -139,6 +139,21 @@ export function enforceBrazilianBuyerScope(value: Record<string, unknown>): Reco
   return { ...value, regioes: ["Brasil"] }
 }
 
+export function keepVerifiedCompanyProofs(
+  value: Record<string, unknown>,
+  sourceTextByUrl: Readonly<Record<string, string>>,
+): Record<string, unknown> {
+  const proofs = Array.isArray(value.provas_sociais) ? value.provas_sociais : []
+  const verified = proofs.filter((proof) => {
+    if (!proof || typeof proof !== "object") return false
+    const item = proof as Record<string, unknown>
+    const sourceUrl = typeof item.fonte_url === "string" ? item.fonte_url : ""
+    const literal = typeof item.evidencia_literal === "string" ? item.evidencia_literal : ""
+    return Boolean(sourceUrl && literal && sourceTextByUrl[sourceUrl]?.includes(literal))
+  })
+  return { ...value, provas_sociais: verified }
+}
+
 const prices = {
   "gpt-5.4-mini-2026-03-17": { input: 0.75, output: 4.5 },
   "gpt-5.4-nano-2026-03-17": { input: 0.2, output: 1.25 },
