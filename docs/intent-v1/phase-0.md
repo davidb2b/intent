@@ -3,12 +3,13 @@
 ## Resultado esperado
 
 Reduzir as incertezas que poderiam obrigar a refazer banco, workers ou telas.
-Esta fase não muda a produção e não aplica migrations definitivas.
+A fase foi encerrada em 18/08/2026 com migrations aditivas, sem ativar o novo
+motor para usuários existentes.
 
 ## Linha de base preservada
 
-- `main` contém os contratos e evidências da Fase 0, sem trocar o comportamento
-  do produto nem aplicar migrations do novo motor.
+- `main` contém os contratos, evidências e migrations da Fase 0 sem trocar o
+  comportamento do produto.
 - O banco atual e os dados reais não serão apagados.
 - Edge Functions, cron e UI anteriores continuam funcionando até o corte.
 - O novo motor nasce em tabelas e funções aditivas.
@@ -20,7 +21,7 @@ Esta fase não muda a produção e não aplica migrations definitivas.
 - [x] Congelar status, sinais, origens, níveis e eventos de crédito.
 - [x] Separar visibilidade de cliente de dados internos.
 - [x] Definir Brasil como escopo obrigatório da V1.
-- [ ] David aprovar os contratos semânticos desta pasta.
+- [x] Contratos semânticos autorizados para implementação em 18/08/2026.
 
 ## Trilha 0.2 — Apollo
 
@@ -66,7 +67,8 @@ de usuários. A aprovação exige input, output e custo de execução real.
 - [x] Definir visibilidade dos status.
 - [x] Definir reserva e lançamento atômicos de crédito.
 - [x] Definir jobs com retry, lease e dedupe.
-- [ ] Transformar os contratos aprovados em migration da Fase 1/2.
+- [x] Transformar os contratos aprovados nas migrations aditivas `0009` e
+  `0010`.
 - [x] Criar e executar testes de RLS antes de aplicar a migration remota.
 
 ## Gate final da Fase 0
@@ -94,13 +96,16 @@ A fase termina somente quando:
 3. Um run `SUCCEEDED` pode representar perfil indisponível. O adapter deve ler
    diagnóstico ou item `error`; vazio sem diagnóstico continua parcial, nunca
    vira automaticamente "sem atividade".
-4. O RLS legado permite escrita ampla do proprietário. A estratégia alvo foi
-   aprovada em PostgreSQL descartável, mas só protege produção depois da
-   migration aditiva da Fase 1/2.
-5. O monólito atual de UI deve ser dividido antes da reprodução do protótipo.
+4. O RLS da fundação já protege radar, fit, IDs de fornecedor, contatos, jobs,
+   payloads e custos. Os próximos endpoints ainda precisam repetir ownership e
+   idempotência no backend antes de liberar ações da Fase 1.
+5. O monólito atual de UI deve ser dividido durante a reprodução do onboarding
+   da Fase 1.
 
 ## Estado de encerramento
 
-Os gates técnicos da Fase 0 estão concluídos. A única aprovação externa ainda
-aberta é o aceite semântico do David; a migration remota permanece
-intencionalmente fora desta fase.
+Fase 0 encerrada em 18/08/2026. As migrations `0009` e `0010` foram aplicadas
+ao projeto remoto `ppsusbybtkcjccwvysvk`; o histórico local/remoto ficou
+alinhado, o lint remoto não encontrou erros e o novo motor permanece desligado
+por padrão por `intent_people_first = false`. O próximo trabalho é a Fase 1:
+onboarding `site -> ICP editável e versionado`.

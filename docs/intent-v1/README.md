@@ -1,6 +1,6 @@
 # Intent v1 — plano vigente
 
-Status: Fase 0 tecnicamente concluída; aceite semântico do David pendente
+Status: Fase 0 encerrada; Fase 1 é a próxima entrega
 
 Branch: `main`
 Fontes de verdade: SPEC Intent v1, motor people-first v2 e protótipo v7.3.
@@ -44,13 +44,14 @@ busca temática poderá existir como complemento, nunca como coração do motor.
 - A V1 começa no Brasil e deve aplicar região tanto na busca quanto na
   validação de dados retornados.
 - Nenhuma dependência com Golden Dog.
-- Nada entra em `main` sem preview, validação automatizada e aceite do David.
+- Nada ativa o novo motor para usuários sem preview, validação automatizada e
+  aceite de produto do David.
 
 ## Fases vigentes
 
 | Fase | Entrega | Estado | Gate |
 |---|---|---|---|
-| 0 | Contratos, arquitetura, integrações e estratégia de migração | Concluída tecnicamente | aceite semântico do David |
+| 0 | Contratos, arquitetura, integrações e estratégia de migração | Encerrada | migrations `0009`/`0010`, RLS, testes e banco remoto validados |
 | 1 | Onboarding site -> ICP editável/versionado | Não iniciada | 5by5 + 2 sites, menos de 3 min, custo persistido |
 | 2 | Radar people-first, fila, julgamento, créditos e cascatas | Não iniciada | sinal real vira lead sem duplicação e respeita saldo |
 | 3 | Início, Pessoas, Contas, Watchlist, ICP e classificação | Não iniciada | protótipo v7.3 com dados reais e sem conceitos internos |
@@ -75,4 +76,5 @@ A Fase 1 só começa depois de:
 3. fixtures anonimizadas dos payloads salvas no repositório;
 4. custo, latência, campos ausentes e limites registrados;
 5. contratos de fila, créditos e saída estruturada aprovados;
-6. país literal comprovado por enriquecimento e RLS validado antes da migration.
+6. país literal comprovado por enriquecimento e RLS validado antes da migration;
+7. migrations `0009` e `0010` aplicadas e alinhadas no Supabase remoto.

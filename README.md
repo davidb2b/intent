@@ -1,8 +1,9 @@
-# Signal Lab
+# Intent
 
-Pesquisa de sinais públicos de mercado no LinkedIn para a categoria do
-projeto. O produto parte de temas e fontes monitoradas; não faz outreach,
-disparo ou integração com CRM.
+Motor people-first de intenção B2B. O produto cria um ICP versionado, mantém um
+radar privado de pessoas brasileiras aderentes e apresenta somente sinais
+públicos com evidência literal. O fluxo temático anterior permanece como
+legado durante a migração.
 
 ## Fundação atual
 
@@ -11,8 +12,10 @@ disparo ou integração com CRM.
 - catálogo de Actors em `src/infrastructure/apify`
 - arquitetura e fluxo em `docs/architecture.md`
 - validação operacional em `docs/phase-0-validation.md`
-- migration inicial em `supabase/migrations/0001_signal_lab.sql`
+- migrations versionadas em `supabase/migrations/`; a fundação Intent v1 está
+  em `0009` e o endurecimento de escrita do cliente em `0010`
 - amostras de Actor em `docs/actors/`
+- plano vigente em `docs/intent-v1/README.md`
 
 ## Desenvolvimento
 

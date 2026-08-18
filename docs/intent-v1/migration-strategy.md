@@ -5,6 +5,18 @@
 A evolução é aditiva. Nenhuma migration da transição apaga tabelas, colunas ou
 dados. O produto legado continua operável até o novo motor passar pelos gates.
 
+## Estado aplicado
+
+Em 18/08/2026, a fundação foi aplicada no Supabase remoto por duas migrations:
+
+- `0009_intent_v1_foundation.sql`: schema aditivo, índices, contratos, fila,
+  créditos, separação privada e RLS;
+- `0010_intent_v1_client_write_hardening.sql`: impede o browser de promover ou
+  rebaixar diretamente o status comercial de uma pessoa.
+
+Nenhum registro legado recebeu status, origem, fit ou intenção por backfill. A
+flag `projetos.intent_people_first` nasce desligada.
+
 ## Compatibilidade
 
 | Legado | Intent v1 | Tratamento |
@@ -59,4 +71,3 @@ Os registros existentes servem para histórico e regressão. Eles não recebem
 `origem='semente_apollo'`, `status='lead'` ou intenção sem passar pelo novo
 pipeline e por um ICP ativo. Isso evita transformar coleta temática antiga em
 resultado comercial falso.
-

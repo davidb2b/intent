@@ -1,5 +1,11 @@
 # Status atual do desenvolvimento
 
+> Atualização de 18/08/2026: após a mudança de direção do produto, o plano
+> vigente está em `docs/intent-v1/README.md`. A Fase 0 do Intent v1 foi
+> encerrada com as migrations aditivas `0009` e `0010` aplicadas ao Supabase,
+> RLS validado em PostgreSQL descartável e `intent_people_first` desligado por
+> padrão. As fases históricas abaixo descrevem o produto legado.
+
 ## Concluído
 
 - Passo 0: validação real dos Actors e amostras salvas.

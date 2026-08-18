@@ -51,8 +51,10 @@ real.
 
 ## Evidência automatizada
 
-`supabase/tests/intent_v1_private_data_rls.sql` é um contrato executável em
-PostgreSQL descartável. Ele prova isolamento entre dois owners, invisibilidade
-de `vigiado`, ausência de privilégio nas colunas privadas e bloqueio total das
-tabelas server-only. A migration definitiva só será escrita depois do aceite
-dos contratos e repetirá os mesmos asserts antes de qualquer `db push` remoto.
+`supabase/tests/intent_v1_private_data_rls.sql` preserva o contrato isolado da
+Fase 0. O teste `supabase/tests/intent_v1_foundation_rls.sql` executa os mesmos
+asserts sobre o schema real criado pelas migrations: isolamento entre dois
+owners, invisibilidade de `vigiado`, continuidade da revisão humana legada,
+ausência dos campos operacionais na tabela pública e bloqueio das tabelas
+server-only. O teste passou antes do `db push`; o lint do schema remoto também
+terminou sem erros.
