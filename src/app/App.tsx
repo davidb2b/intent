@@ -36,6 +36,7 @@ import { getOverviewMetrics, getTopCompanies, getUsefulComments } from "@/featur
 import { authService } from "@/features/auth/services/auth-service"
 import { OnboardingFlow } from "@/features/onboarding/OnboardingFlow"
 import { IntentAuthScreen } from "@/features/onboarding/components/IntentAuthScreen"
+import { loadOnboardingWorkspace } from "@/features/onboarding/services/onboarding-service"
 import { saveResearch } from "@/features/research/services/save-research"
 import "./App.css"
 
@@ -276,6 +277,17 @@ function App() {
       })
       .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
       .finally(() => { if (active) setSummaryLoading(false) })
+    return () => { active = false }
+  }, [authReady, session])
+
+  useEffect(() => {
+    if (!authReady || !session) return
+    if (["/onboarding", "/icp", "/reset-password"].includes(window.location.pathname)) return
+    let active = true
+    void loadOnboardingWorkspace(session.userId).then((workspace) => {
+      if (!active || workspace.activeIcp) return
+      window.location.replace(workspace.latestIcp ? "/icp" : "/onboarding")
+    }).catch(() => undefined)
     return () => { active = false }
   }, [authReady, session])
 

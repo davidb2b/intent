@@ -39,13 +39,16 @@ export function OnboardingFlow({ session }: { session: Session }) {
     const poll = async () => {
       try {
         const next = await loadOnboardingExecution(workspace.project.id)
-        if (active && next) setExecution(next)
+        if (active && next) {
+          setExecution(next)
+          if (next.status !== "rodando") await refresh()
+        }
       } catch { /* The invoking request owns the final error state. */ }
     }
     void poll()
     const timer = window.setInterval(poll, 1_000)
     return () => { active = false; window.clearInterval(timer) }
-  }, [isRunning, workspace?.project.id])
+  }, [isRunning, refresh, workspace?.project.id])
 
   const start = async (siteUrl: string, regenerate = false) => {
     if (!workspace) return
