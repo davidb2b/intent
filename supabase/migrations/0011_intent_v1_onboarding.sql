@@ -22,7 +22,7 @@ create or replace function public.intent_reserve_onboarding_credits(
 returns uuid
 language plpgsql
 security definer
-set search_path = pg_catalog, public
+set search_path = pg_catalog, public, extensions
 as $$
 declare
   current_competence date := date_trunc('month', timezone('America/Sao_Paulo', now()))::date;
