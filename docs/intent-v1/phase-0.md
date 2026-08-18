@@ -27,11 +27,11 @@ Esta fase não muda a produção e não aplica migrations definitivas.
 - [x] Confirmar filtros de cargo, senioridade, localização, domínio e porte.
 - [x] Confirmar paginação e limite de exibição.
 - [x] Confirmar que People Search não entrega e-mail nem telefone.
-- [ ] Cadastrar `APOLLO_API_KEY` nos secrets do Supabase.
-- [ ] Executar `auth/health` com a chave real.
-- [ ] Consultar os limites reais da conta.
-- [ ] Rodar amostra com Brasil, 2-3 cargos e `per_page=10`.
-- [ ] Salvar fixture anonimizada e custo observado.
+- [x] Cadastrar `APOLLO_API_KEY` nos secrets do Supabase.
+- [x] Executar `auth/health` com a chave real.
+- [x] Consultar os limites reais da conta.
+- [x] Rodar amostra com Brasil, três cargos e amostra limitada.
+- [x] Salvar fixture anonimizada e limites observados.
 
 Gate: não implementar `seed-radar` antes dos cinco itens de execução real.
 
@@ -72,7 +72,7 @@ de usuários. A aprovação exige input, output e custo de execução real.
 
 A fase termina somente quando:
 
-- [ ] Apollo real aprovado;
+- [x] Apollo real aprovado;
 - [x] Actor primário real aprovado;
 - [ ] Actor fallback real aprovado;
 - [ ] Brasil comprovado nos payloads;
@@ -84,7 +84,8 @@ A fase termina somente quando:
 
 ## Riscos atualmente abertos
 
-1. A chave do Apollo ainda não está disponível no backend.
+1. People Search aceita o filtro Brasil, mas não devolve o país literal no
+   payload resumido; a regra regional exige confirmação por enriquecimento.
 2. A dupla primária foi aprovada, mas o fallback combinado testado foi rejeitado
    por não preservar post nem timestamp; outro candidato precisa de run real.
 3. Scraping público pode devolver atividade parcial; parcialidade deve ser

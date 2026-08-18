@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "executedAt": "2026-08-18T12:49:00Z",
+  "endpoint": "POST /api/v1/mixed_people/api_search",
+  "request": {
+    "personLocations": ["Brazil"],
+    "personTitles": [
+      "Chief Marketing Officer",
+      "Head of Marketing",
+      "Diretor de Marketing"
+    ],
+    "page": 1,
+    "perPage": 5
+  },
+  "response": {
+    "status": 200,
+    "itemCount": 5,
+    "totalEntries": 51995,
+    "health": {
+      "status": 200,
+      "healthy": true,
+      "isLoggedIn": true
+    },
+    "rateLimits": {
+      "perMinute": 200,
+      "perHour": 6000,
+      "per24Hours": 50000
+    },
+    "coverage": {
+      "peopleWithCountryAvailabilityFlag": 5,
+      "organizationsWithCountryAvailabilityFlag": 5,
+      "literalCountryReturned": 0,
+      "emailsReturned": 0,
+      "phonesReturned": 0,
+      "obfuscatedLastNames": 5
+    }
+  },
+  "secret": {
+    "name": "APOLLO_API_KEY",
+    "storedInSupabase": true,
+    "valuePersistedInFixture": false
+  },
+  "decision": "approved_with_regional_validation_required",
+  "containsPersonalData": false
+}

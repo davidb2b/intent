@@ -17,7 +17,19 @@ Contrato confirmado na documentação:
 - limites de requisição dependem do plano e devem ser lidos da conta real;
 - HTTP 429 é retryable com backoff e respeito ao reset.
 
-Status: **contrato documental aprovado; acesso real pendente**.
+Homologação real de 18/08/2026:
+
+- chave dedicada criada apenas para `mixed_people/api_search`;
+- `auth/health` respondeu HTTP 200 com `healthy=true` e `is_logged_in=true`;
+- busca com `person_locations=["Brazil"]`, três cargos e `per_page=5`
+  respondeu HTTP 200 com cinco pessoas;
+- limites observados nos headers: 200/minuto, 6.000/hora e 50.000/24 horas;
+- o retorno expõe nomes parcialmente ofuscados e indicadores de disponibilidade,
+  mas não devolve e-mail, telefone nem o país literal;
+- `APOLLO_API_KEY` foi cadastrado nos secrets do Supabase e não foi salvo no Git.
+
+Status: **acesso e People Search aprovados; validação regional literal continua
+obrigatória antes de ativar uma pessoa no radar**.
 
 ## Apify — atividade da pessoa
 
@@ -84,7 +96,7 @@ livre como fonte direta de persistência. Cada operação deve ter:
 
 - `APIFY_TOKEN`: existente no backend legado;
 - `OPENAI_API_KEY`: existente no backend legado;
-- `APOLLO_API_KEY`: pendente;
+- `APOLLO_API_KEY`: existente no backend desde 18/08/2026;
 - `SCHEDULER_SECRET`: existente no backend legado.
 
 Valores nunca devem ser copiados para documentação, fixture, front ou logs.
