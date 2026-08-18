@@ -83,6 +83,13 @@ Apify e não foram copiados para o Git por conterem dados pessoais públicos.
 Status: **dupla primária homologada e fallback degradado aprovado com contrato
 mais restrito**.
 
+## Apify — atividade da pessoa em produção
+
+O worker `process-intent-jobs` usa a dupla HarvestAPI como fonte principal. O
+fallback aprovado é chamado somente quando a fonte principal falha ou identifica
+perfil indisponível. Resultado vazio válido permanece `no_activity` e não aciona
+o fallback nem cria sinal artificial.
+
 ## Apify — cascata do post
 
 | Operação | Primário | Fallback | Estado |

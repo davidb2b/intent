@@ -6,6 +6,7 @@ export type ApifyRunResult = {
   durationMs: number
   items: unknown[]
   runId: string
+  logMessages: string[]
 }
 
 export async function runApifyActor(
@@ -43,11 +44,24 @@ export async function runApifyActor(
   const items = Array.isArray(rawItems) ? rawItems : []
   if (hasApifyItemLimit(items)) throw new Error(`O Actor ${actor} atingiu o limite de itens da conta.`)
 
+  let logMessages: string[] = []
+  if (items.length === 0) {
+    const log = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/log`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    }).catch(() => null)
+    if (log?.ok) {
+      const body = await log.text()
+      logMessages = body.split("\n").map((line) => line.trim()).filter(Boolean).slice(-100)
+    }
+  }
+
   return {
     actor,
     costUsd: Number(run.data?.usageTotalUsd ?? 0),
     durationMs: Date.now() - startedAt,
     items,
     runId,
+    logMessages,
   }
 }
