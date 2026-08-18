@@ -4,6 +4,7 @@ import {
   buyerProfileSchema,
   buyingSignalsSchema,
   companyProfileSchema,
+  enforceBrazilianBuyerScope,
   runStructuredOutput,
   validateBuyerProfile,
   validateBuyingSignals,
@@ -197,8 +198,10 @@ Deno.serve(async (request) => {
       onboarding_aviso: null,
     }).eq("id", project.id)
 
-    const cachedSite = isRegeneration ? await readCache("apify", "website_content") : undefined
-    const cachedGoogle = isRegeneration ? await readCache("apify", "google_market") : undefined
+    // Reuse fresh raw payloads on regeneration and on a retry after a failed
+    // LLM step. This avoids paying providers twice for the same public source.
+    const cachedSite = await readCache("apify", "website_content")
+    const cachedGoogle = await readCache("apify", "google_market")
     let siteItems = Array.isArray(cachedSite?.items) ? cachedSite.items : null
     let searchItems = Array.isArray(cachedGoogle?.items) ? cachedGoogle.items : null
 
@@ -267,7 +270,7 @@ Deno.serve(async (request) => {
 
     let companyItems: unknown[] = []
     if (ownLinkedinUrl) {
-      const cachedCompany = isRegeneration ? await readCache("apify", "linkedin_company") : undefined
+      const cachedCompany = await readCache("apify", "linkedin_company")
       companyItems = Array.isArray(cachedCompany?.items) ? cachedCompany.items : []
       if (!companyItems.length) {
         let companyError: unknown
@@ -326,11 +329,12 @@ Deno.serve(async (request) => {
       model: "gpt-5.4-nano-2026-03-17",
       schema: buyerProfileSchema,
       schemaName: "intent_buyer_profile_v1",
-      system: "Defina o comprador B2B no Brasil. Use cargos e setores como aparecem no LinkedIn. Inclua obrigatoriamente as cinco exclusões do schema e nunca expanda a região para fora do Brasil.",
+      system: "Defina o comprador B2B no Brasil. Use cargos e setores como aparecem no LinkedIn. regioes deve conter somente o valor literal Brasil. Inclua exatamente uma exclusão de cada tipo obrigatório: mesma_categoria, open_to_work, dominio_proprio, concorrente e cliente_atual.",
       user: JSON.stringify({ company_profile: companyProfile.value }),
       maxOutputTokens: 2_500,
       maxCostUsd: 0.007,
     })
+    buyerProfile.value = enforceBrazilianBuyerScope(buyerProfile.value)
     validateBuyerProfile(buyerProfile.value)
     await recordCost(buyerProfile, "llm_buyer_profile", 1)
 
@@ -340,7 +344,7 @@ Deno.serve(async (request) => {
       model: "gpt-5.4-mini-2026-03-17",
       schema: buyingSignalsSchema,
       schemaName: "intent_buying_signals_v1",
-      system: "Gere sinais de compra B2B objetivos e específicos. Escolha apenas concorrentes reais, preserve idioma do site e respeite exatamente as quantidades do schema.",
+      system: "Gere sinais de compra B2B objetivos e específicos. Escolha apenas concorrentes reais e preserve o idioma do site. Retorne exatamente 8 dores, 8 gatilhos, 12 temas, 5 concorrentes e entre 6 e 8 regras. Não repita itens.",
       user: JSON.stringify({ company_profile: companyProfile.value, buyer_profile: buyerProfile.value, google_candidates: results.slice(0, 30), linkedin_company: companyItems }),
       maxOutputTokens: 4_000,
       maxCostUsd: 0.035,

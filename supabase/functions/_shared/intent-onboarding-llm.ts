@@ -135,6 +135,10 @@ export type StructuredOutputResult = {
   value: Record<string, unknown>
 }
 
+export function enforceBrazilianBuyerScope(value: Record<string, unknown>): Record<string, unknown> {
+  return { ...value, regioes: ["Brasil"] }
+}
+
 const prices = {
   "gpt-5.4-mini-2026-03-17": { input: 0.75, output: 4.5 },
   "gpt-5.4-nano-2026-03-17": { input: 0.2, output: 1.25 },

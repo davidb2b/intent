@@ -4,6 +4,7 @@ import {
   buyerProfileSchema,
   buyingSignalsSchema,
   companyProfileSchema,
+  enforceBrazilianBuyerScope,
 } from "../../../../supabase/functions/_shared/intent-onboarding-llm"
 
 const unsupportedStrictKeywords = new Set([
@@ -33,5 +34,9 @@ describe("Intent structured output schemas", () => {
     ["signals", buyingSignalsSchema],
   ])("keeps the %s schema inside the strict Responses subset", (_name, schema) => {
     expect(findUnsupportedKeywords(schema)).toEqual([])
+  })
+
+  it("enforces the fixed Brazilian scope independently from model wording", () => {
+    expect(enforceBrazilianBuyerScope({ regioes: ["São Paulo", "América Latina"] })).toEqual({ regioes: ["Brasil"] })
   })
 })
