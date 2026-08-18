@@ -29,8 +29,8 @@ export async function saveResearch(input: SaveResearchInput) {
   }
 
   const projectResult = mustCreateResearch
-    ? await supabase.from("projetos").insert({ owner_id: normalized.ownerId, nome: "Signal Lab", categoria: keyword, ativo: true }).select("id").single()
-    : await supabase.from("projetos").update({ nome: "Signal Lab", categoria: keyword }).eq("id", activeProject!.id).select("id").single()
+    ? await supabase.from("projetos").insert({ owner_id: normalized.ownerId, nome: "Intent", categoria: keyword, ativo: true }).select("id").single()
+    : await supabase.from("projetos").update({ nome: "Intent", categoria: keyword }).eq("id", activeProject!.id).select("id").single()
   const project = projectResult.data
   if (projectResult.error || !project) throw new Error(projectResult.error?.message ?? "Não foi possível salvar a pesquisa.")
   const { error: termError } = await supabase.from("termos").upsert({ projeto_id: project.id, termo: keyword, contexto_positivo: normalized.positiveContext || null, contexto_negativo: normalized.negativeContext || null, ativo: true }, { onConflict: "projeto_id,termo" })

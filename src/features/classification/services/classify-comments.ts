@@ -15,6 +15,6 @@ export async function classifyComments(projectId: string): Promise<ClassifyComme
   if (error) {
     throw new Error(await functionErrorMessage(error, "Não foi possível classificar os comentários."))
   }
-  if (!data) throw new Error("O backend não retornou o resultado da classificação.")
+  if (!data) throw new Error("Não recebemos a confirmação da análise. Tente novamente.")
   return data
 }

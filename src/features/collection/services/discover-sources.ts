@@ -24,6 +24,6 @@ export async function discoverSources(projectId: string, terms: string[], janela
   if (error) {
     throw new Error(await functionErrorMessage(error, "A descoberta demorou mais que o esperado e não foi concluída. Nenhuma fonte foi criada; tente novamente."))
   }
-  if (!data) throw new Error("O backend não retornou o resultado da descoberta.")
+  if (!data) throw new Error("Não recebemos a confirmação da busca. Tente novamente.")
   return data
 }

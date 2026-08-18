@@ -8,6 +8,6 @@ export async function analyzePosts(projectId: string, target: "discovery" | "mon
   if (error) {
     throw new Error(await functionErrorMessage(error, "Não foi possível analisar os posts."))
   }
-  if (!data) throw new Error("O backend não retornou o resultado da análise.")
+  if (!data) throw new Error("Não recebemos a confirmação da análise. Tente novamente.")
   return data
 }

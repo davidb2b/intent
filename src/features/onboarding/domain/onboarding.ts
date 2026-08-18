@@ -48,10 +48,10 @@ export const ONBOARDING_STAGES: Array<{
   title: string
   description: string
 }> = [
-  { id: "site", title: "Lendo o site", description: "Proposta de valor, dores resolvidas e provas sociais" },
-  { id: "market", title: "Pesquisando o mercado", description: "Página da empresa no LinkedIn e concorrentes" },
-  { id: "firmography", title: "Confirmando a firmografia", description: "Setor, porte, fundação, sede e especialidades" },
-  { id: "icp", title: "Montando o ICP", description: "Comprador ideal e sinais reais de compra" },
+  { id: "site", title: "Conhecendo a empresa", description: "Oferta, proposta de valor, diferenciais e resultados" },
+  { id: "market", title: "Entendendo o mercado", description: "Presença pública, posicionamento e concorrentes" },
+  { id: "firmography", title: "Confirmando os dados", description: "Setor, porte, fundação, localização e especialidades" },
+  { id: "icp", title: "Criando o perfil ideal", description: "Quem compra, o que importa e quando priorizar" },
 ]
 
 export function normalizePublicSiteUrl(value: string) {

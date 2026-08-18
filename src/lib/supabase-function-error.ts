@@ -1,3 +1,5 @@
+import { productErrorMessage } from "./product-messages"
+
 type FunctionErrorLike = {
   message?: unknown
   context?: unknown
@@ -15,7 +17,7 @@ export async function functionErrorMessage(error: unknown, fallback: string) {
   if (isResponseLike(value?.context)) {
     try {
       const body = await value.context.clone().json() as { error?: unknown }
-      if (typeof body.error === "string" && body.error.trim()) return body.error
+      if (typeof body.error === "string" && body.error.trim()) return productErrorMessage(body.error, fallback)
     } catch {
       // The transport error message below is still useful when the body is not JSON.
     }
@@ -24,6 +26,5 @@ export async function functionErrorMessage(error: unknown, fallback: string) {
   const message = typeof value?.message === "string" ? value.message.trim() : ""
   // Supabase may hide the body when an Edge Function times out or returns a
   // non-2xx response. Never show that transport jargon to a product user.
-  if (!message || /edge function returned a non-2xx|failed to send a request|fetch failed/i.test(message)) return fallback
-  return message
+  return productErrorMessage(message, fallback)
 }

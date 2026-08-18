@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { LoaderCircle, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { authService } from "@/features/auth/services/auth-service"
+import { productErrorMessage } from "@/lib/product-messages"
 import type { IcpRecord, OnboardingExecution, OnboardingWorkspace } from "./domain/onboarding"
 import { activateIcp, generateIcp, loadOnboardingExecution, loadOnboardingWorkspace, saveIcp } from "./services/onboarding-service"
 import { IcpEditor } from "./components/IcpEditor"
@@ -28,7 +29,7 @@ export function OnboardingFlow({ session }: { session: Session }) {
 
   useEffect(() => {
     let active = true
-    void refresh().catch((caught) => { if (active) setError(caught instanceof Error ? caught.message : "Não foi possível carregar o workspace.") })
+    void refresh().catch((caught) => { if (active) setError(productErrorMessage(caught, "Não conseguimos preparar sua conta agora. Tente novamente em alguns instantes.")) })
     return () => { active = false }
   }, [refresh])
 
@@ -56,12 +57,12 @@ export function OnboardingFlow({ session }: { session: Session }) {
     setBusy(regenerate ? "regenerating" : "starting")
     const domain = new URL(siteUrl).hostname.replace(/^www\./, "")
     setWorkspace((current) => current ? { ...current, project: { ...current.project, siteUrl, domain } } : current)
-    setExecution({ id: "pending", status: "rodando", stage: "site", progress: 2, message: "Preparando a análise das fontes públicas.", error: null, costUsd: 0 })
+    setExecution({ id: "pending", status: "rodando", stage: "site", progress: 2, message: "Reunindo as primeiras informações públicas.", error: null, costUsd: 0 })
     try {
       await generateIcp(workspace.project.id, siteUrl, regenerate)
       await refresh()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível concluir a análise.")
+      setError(productErrorMessage(caught, "Não conseguimos concluir a análise agora. Seus dados estão seguros; tente novamente em alguns instantes."))
       const latest = await loadOnboardingExecution(workspace.project.id).catch(() => null)
       if (latest) setExecution(latest)
       throw caught
@@ -74,13 +75,13 @@ export function OnboardingFlow({ session }: { session: Session }) {
   const activate = async (icp: IcpRecord) => { setBusy("activating"); try { await activateIcp(icp.id); await refresh(); window.history.pushState({}, "", "/icp") } finally { setBusy(null) } }
   const regenerate = async () => { if (workspace?.project.siteUrl) await start(workspace.project.siteUrl, true) }
 
-  if (!workspace && !error) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Carregando workspace…</span></div>
+  if (!workspace && !error) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Preparando sua experiência…</span></div>
 
   const editorVisible = Boolean(workspace?.latestIcp && !isRunning)
   const body = workspace && isRunning ? <OnboardingProgress domain={workspace.project.domain ?? new URL(workspace.project.siteUrl ?? "https://intent.local").hostname} execution={execution} />
     : workspace?.latestIcp ? <IcpEditor busy={busy === "starting" ? null : busy} initialIcp={workspace.latestIcp} onActivate={activate} onRegenerate={regenerate} onSave={save} warning={workspace.project.onboardingWarning} />
     : workspace ? <OnboardingStart busy={busy === "starting"} initialUrl={workspace.project.siteUrl} onStart={(siteUrl) => start(siteUrl)} />
-    : <main className="intent-onboarding-main"><div className="intent-pipeline-error"><strong>Não foi possível abrir o onboarding.</strong><p>{error}</p></div></main>
+    : <main className="intent-onboarding-main"><div className="intent-pipeline-error"><strong>Não conseguimos preparar sua conta</strong><p>{error}</p></div></main>
 
   return <div className="intent-onboarding-shell">
     {!editorVisible && <header className="intent-lite-topbar"><a className="intent-brand" href="/overview"><span>In</span>Intent</a><div><span>{session.email}</span><Button onClick={() => void authService.signOut()} size="sm" variant="ghost"><LogOut size={14} />Sair</Button></div></header>}

@@ -1,5 +1,6 @@
 import { Check, LoaderCircle, TriangleAlert } from "lucide-react"
 import { ONBOARDING_STAGES, stagePosition, type OnboardingExecution } from "../domain/onboarding"
+import { productErrorMessage, productStatusMessage } from "@/lib/product-messages"
 
 const icons = ["🌐", "🔎", "💼", "🧠"]
 
@@ -10,10 +11,10 @@ export function OnboardingProgress({ domain, execution }: { domain: string; exec
   return <main className="intent-onboarding-main intent-pipeline-main">
     <section className="intent-pipeline">
       <header className="intent-pipeline-heading">
-        <p>Configuração inteligente</p>
-        <h1>Analisando <span>{domain}</span></h1>
-        <div className="intent-progress-track" aria-label={`Progresso real: ${execution?.progress ?? 0}%`}><span style={{ width: `${execution?.progress ?? 0}%` }} /></div>
-        <small>{execution?.message ?? "Preparando a análise das fontes públicas."}</small>
+        <p>Seu Intent está ganhando contexto</p>
+        <h1>Conhecendo <span>{domain}</span></h1>
+        <div className="intent-progress-track" aria-label={`Progresso da análise: ${execution?.progress ?? 0}%`}><span style={{ width: `${execution?.progress ?? 0}%` }} /></div>
+        <small>{productStatusMessage(execution?.message, "Reunindo as primeiras informações públicas.")}</small>
       </header>
       <div className="intent-stages">
         {ONBOARDING_STAGES.map((stage, index) => {
@@ -21,13 +22,13 @@ export function OnboardingProgress({ domain, execution }: { domain: string; exec
           const active = !failed && currentPosition === index
           return <article className={`intent-stage ${done ? "is-done" : ""} ${active ? "is-active" : ""}`} key={stage.id}>
             <div className="intent-stage-icon">{icons[index]}</div>
-            <div><h2>{stage.title}</h2><p>{stage.description}</p>{active && <small>{execution?.message}</small>}</div>
+            <div><h2>{stage.title}</h2><p>{stage.description}</p>{active && <small>{productStatusMessage(execution?.message, "Esta etapa está em andamento.")}</small>}</div>
             <div className="intent-stage-status">{done ? <Check size={16} /> : active ? <LoaderCircle className="intent-spin" size={17} /> : <span>{index + 1}</span>}</div>
           </article>
         })}
       </div>
-      {failed && <div className="intent-pipeline-error" role="alert"><TriangleAlert size={18} /><div><strong>A análise não foi concluída</strong><p>{execution?.error ?? execution?.message ?? "Tente novamente."}</p></div></div>}
-      <p className="intent-pipeline-footnote">O avanço exibido vem da execução real no back-end. Esta tela não simula etapas.</p>
+      {failed && <div className="intent-pipeline-error" role="alert"><TriangleAlert size={18} /><div><strong>Não conseguimos concluir esta etapa</strong><p>{productErrorMessage(execution?.error ?? execution?.message, "Seus dados estão seguros. Aguarde alguns instantes e tente novamente.")}</p></div></div>}
+      <p className="intent-pipeline-footnote">Acompanhe cada etapa com transparência. Somente informações confirmadas entram no seu perfil ideal.</p>
     </section>
   </main>
 }

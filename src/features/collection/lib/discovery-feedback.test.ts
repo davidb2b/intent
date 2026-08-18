@@ -15,10 +15,10 @@ const baseResult = {
 
 describe("discovery feedback", () => {
   it("explains a real zero-result outcome without implying data was collected", () => {
-    expect(discoveryFeedback({ ...baseResult, postsFound: 0 }, "cost breakdown")).toContain("Nenhuma fonte foi criada")
+    expect(discoveryFeedback({ ...baseResult, postsFound: 0 }, "cost breakdown")).toContain("Ainda não encontramos conversas públicas")
   })
 
   it("tells the user what remains after Brazilian profiles are found", () => {
-    expect(discoveryFeedback({ ...baseResult, postsFound: 14, candidatesInserted: 2 }, "cost breakdown")).toContain("ative uma fonte")
+    expect(discoveryFeedback({ ...baseResult, postsFound: 14, candidatesInserted: 2 }, "cost breakdown")).toContain("escolha quem deseja acompanhar")
   })
 })

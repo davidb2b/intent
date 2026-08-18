@@ -38,6 +38,7 @@ import { OnboardingFlow } from "@/features/onboarding/OnboardingFlow"
 import { IntentAuthScreen } from "@/features/onboarding/components/IntentAuthScreen"
 import { loadOnboardingWorkspace } from "@/features/onboarding/services/onboarding-service"
 import { saveResearch } from "@/features/research/services/save-research"
+import { authErrorMessage, productErrorMessage, productStatusMessage } from "@/lib/product-messages"
 import "./App.css"
 
 type View = "overview" | "posts" | "comments" | "companies" | "people"
@@ -72,7 +73,7 @@ function formatCurrency(value: number) {
 }
 
 function formatExecutionStatus(status: string) {
-  return status === "concluida" ? "Concluída" : status === "rodando" ? "Em andamento" : status === "abortada_por_custo" ? "Abortada por custo" : "Falhou"
+  return status === "concluida" ? "Concluída" : status === "rodando" ? "Em andamento" : status === "abortada_por_custo" ? "Pausada para proteger o limite" : "Não concluída"
 }
 
 function stateFromLatestExecution(summary: SignalSummary): CollectionState {
@@ -112,26 +113,26 @@ const viewCopy: Record<View, { eyebrow: string; subtitle: string; title: string;
   overview: {
     eyebrow: "Visão geral",
     subtitle: "Da palavra-chave às empresas e pessoas que participam da conversa.",
-    title: "Nenhum sinal coletado ainda",
+    title: "Sua próxima oportunidade começa com um tema",
     description: "Configure uma pesquisa para começar a encontrar conversas públicas sobre um tema.",
   },
   posts: {
     eyebrow: "Posts",
     subtitle: "Posts públicos encontrados para o tema monitorado.",
     title: "Nenhum post disponível",
-    description: "Os posts encontrados pela coleta aparecerão aqui, sem dados fictícios.",
+    description: "Os conteúdos públicos mais relevantes para o tema aparecerão aqui.",
   },
   comments: {
     eyebrow: "Comentários",
     subtitle: "Comentários públicos que sinalizam interesse no tema.",
     title: "Nenhum comentário disponível",
-    description: "Os comentários coletados e classificados aparecerão aqui.",
+    description: "As conversas que demonstram interesse no tema aparecerão aqui.",
   },
   companies: {
     eyebrow: "Empresas",
     subtitle: "Contas identificadas a partir da participação nas conversas.",
     title: "Nenhuma empresa identificada",
-    description: "As empresas observadas nas conversas aparecerão aqui quando houver uma coleta.",
+    description: "As empresas identificadas a partir das conversas aparecerão aqui.",
   },
   people: {
     eyebrow: "Pessoas",
@@ -258,14 +259,14 @@ function App() {
           executionId: latestExecution.id,
           stage: latestExecution.stage,
           progress: latestExecution.progress,
-          message: latestExecution.progressMessage ?? "Preparando a coleta real.",
+          message: latestExecution.progressMessage ?? "Preparando a atualização.",
         } : null)
         setCollectionMessage(staleExecution
-          ? "A coleta anterior foi interrompida antes de concluir. Você já pode atualizar novamente; ela será encerrada e substituída por uma nova execução."
+          ? "A atualização anterior não foi concluída. Seus resultados continuam disponíveis e você já pode tentar novamente."
           : latestExecution?.status === "falhou" || latestExecution?.status === "abortada_por_custo"
-          ? latestExecution.error ?? "A última coleta não foi concluída."
+          ? productErrorMessage(latestExecution.error, "A última atualização não foi concluída. Seus resultados anteriores continuam disponíveis.")
           : latestExecution?.outcome === "no_posts" || latestExecution?.outcome === "no_brazilian_profiles"
-            ? latestExecution.message ?? "A coleta foi concluída, mas não encontrou fontes brasileiras válidas para este tema."
+            ? productErrorMessage(latestExecution.message, "Ainda não encontramos conversas brasileiras relevantes para este tema. Tente ampliar o contexto da pesquisa.")
             : "")
         setKeyword(summary.keyword ?? "")
         setPositiveContext(summary.positiveContext ?? "")
@@ -275,7 +276,7 @@ function App() {
           if (active) { setSignalPosts(posts); setDiscoveredPosts(discoveryPosts); setSignalComments(comments); setSignalSources(sources); setSignalCompanies(companies); setSignalPeople(people) }
         }
       })
-      .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
+      .catch((error) => { if (active) setSummaryError(productErrorMessage(error, "Não conseguimos carregar seus sinais agora. Atualize a página em alguns instantes.")) })
       .finally(() => { if (active) setSummaryLoading(false) })
     return () => { active = false }
   }, [authReady, session])
@@ -349,15 +350,15 @@ function App() {
 
   async function handleCollect() {
     if (!keyword.trim() || !session || collectionState === "running") {
-      if (!session) { setAuthOpen(true); setCollectionMessage("Faça login para iniciar uma coleta real.") }
+      if (!session) { setAuthOpen(true); setCollectionMessage("Entre na sua conta para atualizar os resultados.") }
       return
     }
     try {
-      if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de iniciar uma coleta.")
+      if (!signalSummary?.projectId) throw new Error("Salve sua pesquisa antes de atualizar os resultados.")
       await monitorSources(signalSummary.projectId, [])
     } catch (error) {
       setCollectionState("error")
-      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar a coleta.")
+      setCollectionMessage(productErrorMessage(error, "Não conseguimos atualizar os resultados agora. Tente novamente em alguns instantes."))
     }
   }
 
@@ -383,20 +384,20 @@ function App() {
     const stopWatching = watchCollectionProgress(projectId)
     try {
       if (idsToMonitor.length > 0) {
-        setCollectionMessage(`Preparando ${idsToMonitor.length} perfil${idsToMonitor.length === 1 ? "" : "is"} para monitoramento…`)
+        setCollectionMessage(`Preparando ${idsToMonitor.length} perfil${idsToMonitor.length === 1 ? "" : "is"} para acompanhamento…`)
         await Promise.all(idsToMonitor.map((sourceId) => updateSourceStatus(sourceId, "monitorada")))
         setSignalSources((sources) => sources.map((source) => idsToMonitor.includes(source.id) ? { ...source, status: "monitorada" } : source))
         setSelectedSourceIds(new Set())
       }
-      setCollectionMessage("Coletando posts e comentários reais. Os resultados encontrados continuam visíveis enquanto a pesquisa é concluída.")
+      setCollectionMessage("Atualizando conteúdos, comentários e sinais de interesse. Seus resultados atuais continuam visíveis durante a busca.")
       const result = await runMonitoring(projectId)
       await refreshSignalData(projectId)
       setCollectionState("success")
-      setCollectionMessage(`${result.postsRead} posts e ${result.commentsRead} comentários foram coletados. Pessoas e empresas já foram atualizadas.`)
+      setCollectionMessage(`Atualização concluída: ${result.postsRead} posts e ${result.commentsRead} comentários encontrados. Pessoas e empresas também foram atualizadas.`)
       navigate("comments")
     } catch (error) {
       setCollectionState("error")
-      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível executar o monitoramento.")
+      setCollectionMessage(productErrorMessage(error, "Não conseguimos concluir esta atualização. Seus resultados anteriores continuam disponíveis."))
     } finally {
       stopWatching()
       setCollectionAction(null)
@@ -405,20 +406,20 @@ function App() {
 
   async function handleDiscover() {
     if (!keyword.trim() || !session || collectionState === "running") {
-      if (!session) { setAuthOpen(true); setCollectionMessage("Faça login para descobrir fontes reais.") }
+      if (!session) { setAuthOpen(true); setCollectionMessage("Entre na sua conta para encontrar conversas sobre este tema.") }
       return
     }
     setCollectionState("running")
     setCollectionAction("discover")
-    setCollectionMessage("Buscando posts e validando a localização brasileira dos autores no Apify. Isso pode levar alguns instantes.")
+    setCollectionMessage("Buscando conversas públicas e confirmando perfis do mercado brasileiro. Isso pode levar alguns instantes.")
     let stopWatching: (() => void) | null = null
     try {
-      if (!signalSummary?.projectId) throw new Error("Salve a configuração da pesquisa antes de descobrir fontes.")
+      if (!signalSummary?.projectId) throw new Error("Salve sua pesquisa antes de encontrar novas conversas.")
       stopWatching = watchCollectionProgress(signalSummary.projectId)
       const result = await discoverSources(signalSummary.projectId, [keyword])
       await refreshSignalData(signalSummary.projectId)
       setCollectionState("success")
-      setCollectionMessage(result.message ?? discoveryFeedback(result, keyword))
+      setCollectionMessage(productStatusMessage(result.message, discoveryFeedback(result, keyword)))
       if (result.candidatesInserted > 0) {
         setSelectedSourceIds(new Set())
         setPostsMode("sources")
@@ -426,7 +427,7 @@ function App() {
       }
     } catch (error) {
       setCollectionState("error")
-      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível descobrir fontes.")
+      setCollectionMessage(productErrorMessage(error, "Não conseguimos encontrar novas conversas agora. Ajuste o contexto ou tente novamente em alguns instantes."))
     } finally {
       stopWatching?.()
       setCollectionAction(null)
@@ -445,9 +446,9 @@ function App() {
           ? await authService.resetPasswordForEmail(authEmail, `${window.location.origin}/reset-password`)
           : await authService.updatePassword(authPassword)
     setAuthBusy(false)
-    if (result.error) { setAuthError(result.error.message); return }
+    if (result.error) { setAuthError(authErrorMessage(result.error)); return }
     setAuthOpen(false)
-    setCollectionMessage(authMode === "signup" ? "Conta criada. Verifique seu e-mail se a confirmação estiver habilitada." : authMode === "recovery" ? "Enviamos o link de recuperação para seu e-mail." : authMode === "update-password" ? "Senha atualizada com sucesso." : "Login realizado.")
+    setCollectionMessage(authMode === "signup" ? "Sua conta foi criada. Confira seu e-mail para confirmar o acesso." : authMode === "recovery" ? "Enviamos as instruções de recuperação para seu e-mail." : authMode === "update-password" ? "Sua senha foi atualizada. Você já pode continuar." : "Bem-vindo de volta ao Intent.")
   }
 
   async function handleSaveSettings(event: FormEvent<HTMLFormElement>) {
@@ -455,18 +456,18 @@ function App() {
     if (!session || !keyword.trim()) return
     setCollectionState("running")
     setCollectionAction("settings")
-    setCollectionMessage("Salvando configuração da pesquisa…")
+    setCollectionMessage("Preparando sua pesquisa…")
     let stopWatching: (() => void) | null = null
     try {
       const saved = await saveResearch({ ownerId: session.userId, keyword, positiveContext, negativeContext })
       setSignalSummary((summary) => summary ? { ...summary, projectId: saved.projectId, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext } : { projectId: saved.projectId, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext, lastExecutionOrigin: null, monthlyCostUsd: 0, estimatedNextCostUsd: 0, monitoredSources: 0, executionHistory: [] })
-      setCollectionMessage("Pesquisa salva. Buscando fontes brasileiras reais no Apify…")
+      setCollectionMessage("Pesquisa salva. Agora estamos encontrando as conversas e os perfis mais relevantes para este tema…")
       stopWatching = watchCollectionProgress(saved.projectId)
       const discovery = await discoverSources(saved.projectId, [saved.keyword])
       await refreshSignalData(saved.projectId)
       setSettingsOpen(false)
       setCollectionState("success")
-      setCollectionMessage(discovery.message ?? discoveryFeedback(discovery, saved.keyword))
+      setCollectionMessage(productStatusMessage(discovery.message, discoveryFeedback(discovery, saved.keyword)))
       if (discovery.candidatesInserted > 0) {
         setSelectedSourceIds(new Set())
         setPostsMode("sources")
@@ -474,7 +475,7 @@ function App() {
       }
     } catch (error) {
       setCollectionState("error")
-      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível salvar a configuração.")
+      setCollectionMessage(productErrorMessage(error, "Não conseguimos salvar sua pesquisa agora. Revise os campos e tente novamente."))
     } finally {
       stopWatching?.()
       setCollectionAction(null)
@@ -483,8 +484,8 @@ function App() {
 
   async function handleLogout() {
     const { error } = await authService.signOut()
-    if (error) setCollectionMessage(error.message)
-    else setCollectionMessage("Sessão encerrada.")
+    if (error) setCollectionMessage(productErrorMessage(error, "Não conseguimos encerrar sua sessão agora. Tente novamente."))
+    else setCollectionMessage("Você saiu da sua conta com segurança.")
   }
 
   function commentMatchesFilter(comment: SignalComment) {
@@ -544,15 +545,15 @@ function App() {
   async function handleClassifyComments() {
     if (!signalSummary?.projectId || classificationBusy) return
     setClassificationBusy(true)
-    setCollectionMessage("Classificando comentários reais…")
+    setCollectionMessage("Organizando os comentários por tipo de interesse…")
     try {
       const result = await classifyComments(signalSummary.projectId)
       const [comments, summary] = await Promise.all([loadSignalComments(signalSummary.projectId), loadSignalSummary(session?.userId ?? "")])
       setSignalComments(comments)
       setSignalSummary(summary)
-      setCollectionMessage(result.classified ? `${result.classified} comentários classificados. ${result.remaining} pendentes.` : "Nenhum comentário pendente para classificar.")
+      setCollectionMessage(result.classified ? `${result.classified} comentários organizados. ${result.remaining} ainda aguardam análise.` : "Todos os comentários já estão organizados.")
     } catch (error) {
-      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível classificar os comentários.")
+      setCollectionMessage(productErrorMessage(error, "Não conseguimos organizar os comentários agora. Tente novamente em alguns instantes."))
     } finally {
       setClassificationBusy(false)
     }
@@ -562,14 +563,14 @@ function App() {
     if (!signalSummary?.projectId || postAnalysisBusy) return
     const target = discoveredPosts.length > 0 ? "discovery" : "monitoring"
     setPostAnalysisBusy(true)
-    setCollectionMessage(target === "discovery" ? "Analisando um resultado real da busca…" : "Analisando posts reais monitorados…")
+    setCollectionMessage(target === "discovery" ? "Entendendo por que este conteúdo é relevante…" : "Identificando os sinais presentes nos conteúdos acompanhados…")
     try {
       const result = await analyzePosts(signalSummary.projectId, target)
       if (target === "discovery") setDiscoveredPosts(await loadDiscoveredPosts(signalSummary.projectId))
       else setSignalPosts(await loadSignalPosts(signalSummary.projectId))
-      setCollectionMessage(result.analyzed ? "Análise do post concluída." : "Nenhum post pendente para analisar.")
+      setCollectionMessage(result.analyzed ? "Conteúdo analisado. Os principais sinais já estão disponíveis." : "Todos os conteúdos já foram analisados.")
     } catch (error) {
-      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível analisar os posts.")
+      setCollectionMessage(productErrorMessage(error, "Não conseguimos analisar os conteúdos agora. Tente novamente em alguns instantes."))
     } finally { setPostAnalysisBusy(false) }
   }
 
@@ -584,10 +585,10 @@ function App() {
         setSignalPosts((posts) => posts.map((item) => item.id === postId ? { ...item, curationStatus: status } : item))
       }
       setCollectionState("success")
-      setCollectionMessage(status === "aprovado" ? "Post aprovado para monitoramento." : "Post descartado da curadoria.")
+      setCollectionMessage(status === "aprovado" ? "Conteúdo adicionado ao acompanhamento." : "Conteúdo removido das sugestões.")
     } catch (error) {
       setCollectionState("error")
-      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível salvar a decisão do post.")
+      setCollectionMessage(productErrorMessage(error, "Não conseguimos salvar sua decisão agora. Tente novamente."))
     }
   }
 
@@ -596,10 +597,10 @@ function App() {
       await updateSourceStatus(sourceId, status)
       setSignalSources((sources) => sources.map((source) => source.id === sourceId ? { ...source, status } : source))
       setCollectionState("success")
-      setCollectionMessage(status === "monitorada" ? "Fonte aprovada para o monitoramento." : "Fonte descartada.")
+      setCollectionMessage(status === "monitorada" ? "Perfil adicionado ao acompanhamento." : "Perfil removido das sugestões.")
     } catch (error) {
       setCollectionState("error")
-      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível atualizar a fonte.")
+      setCollectionMessage(productErrorMessage(error, "Não conseguimos atualizar este perfil agora. Tente novamente."))
     }
   }
 
@@ -619,9 +620,9 @@ function App() {
       const people = await loadSignalPeople(signalSummary.projectId)
       setSignalPeople(people)
       setPersonUnderReview(null)
-      setCollectionMessage("Revisão humana salva. A classificação automática não substituirá esses campos.")
+      setCollectionMessage("Revisão salva. Suas escolhas serão preservadas nas próximas análises.")
     } catch (error) {
-      setCollectionMessage(error instanceof Error ? error.message : "Não foi possível salvar a revisão da pessoa.")
+      setCollectionMessage(productErrorMessage(error, "Não conseguimos salvar esta revisão agora. Tente novamente."))
     } finally {
       setReviewBusy(false)
     }
@@ -636,10 +637,10 @@ function App() {
     <div className="signal-shell">
       <aside className="signal-sidebar">
         <div className="brand-lockup">
-          <div className="brand-mark">S</div>
+          <div className="brand-mark">I</div>
           <div>
-            <strong>Signal Lab</strong>
-            <span>Inteligência temática</span>
+            <strong>Intent</strong>
+            <span>Sinais de intenção</span>
           </div>
         </div>
 
@@ -666,8 +667,8 @@ function App() {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="cost-box"><p className="eyebrow">Gasto desta pesquisa</p><strong>{isInitialDataLoading ? "—" : formatCurrency(signalSummary?.monthlyCostUsd ?? 0)}</strong><div className="cost-bar"><span style={{ width: `${isInitialDataLoading ? 0 : Math.min(((signalSummary?.monthlyCostUsd ?? 0) / 300) * 100, 100)}%` }} /></div><small>Teto de US$ 300,00 no mês{(signalSummary?.monthlyCostUsd ?? 0) >= 225 ? " · Atenção" : ""}</small></div>
-          <div className="status-line"><span className="status-dot" /> Ambiente preparado</div>
+          <div className="cost-box"><p className="eyebrow">Uso desta pesquisa</p><strong>{isInitialDataLoading ? "—" : formatCurrency(signalSummary?.monthlyCostUsd ?? 0)}</strong><div className="cost-bar"><span style={{ width: `${isInitialDataLoading ? 0 : Math.min(((signalSummary?.monthlyCostUsd ?? 0) / 300) * 100, 100)}%` }} /></div><small>Limite mensal de US$ 300,00{(signalSummary?.monthlyCostUsd ?? 0) >= 225 ? " · Atenção" : ""}</small></div>
+          <div className="status-line"><span className="status-dot" /> Tudo pronto</div>
           <button className="help-link" type="button"><CircleHelp size={15} /> Ajuda</button>
         </div>
       </aside>
@@ -675,7 +676,7 @@ function App() {
       <main className="signal-main">
         <header className="topbar">
           <div>
-            <p className="breadcrumb">Signal Lab <span>/</span> {content.eyebrow}</p>
+            <p className="breadcrumb">Intent <span>/</span> {content.eyebrow}</p>
             <h1>{content.eyebrow}</h1>
             <p className="page-subtitle">{content.subtitle}</p>
           </div>
@@ -700,25 +701,25 @@ function App() {
           </div>
         </section>
 
-        <section className="collection-bar" aria-label="Status da coleta">
+        <section className="collection-bar" aria-label="Status da atualização">
           <div aria-live="polite" className={`collection-status collection-${collectionState}`}>
             {collectionState === "running" ? <LoaderCircle aria-hidden="true" className="collection-spinner" size={14} /> : <span className="status-dot" />}
             {collectionState === "running"
-              ? collectionProgress?.message ?? (collectionAction === "discover" || collectionAction === "settings" ? "Buscando fontes brasileiras" : "Coletando posts e comentários")
-              : isInitialDataLoading ? "Carregando dados reais"
-              : collectionState === "success" ? "Coleta concluída" : collectionState === "error" ? "Coleta com erro" : signalSummary?.lastExecutionAt ? `Última coleta ${formatDate(signalSummary.lastExecutionAt)}` : "Coleta não iniciada"}
+              ? productStatusMessage(collectionProgress?.message, collectionAction === "discover" || collectionAction === "settings" ? "Encontrando conversas brasileiras" : "Atualizando conteúdos e sinais")
+              : isInitialDataLoading ? "Preparando seus resultados"
+              : collectionState === "success" ? "Resultados atualizados" : collectionState === "error" ? "Atualização não concluída" : signalSummary?.lastExecutionAt ? `Última atualização ${formatDate(signalSummary.lastExecutionAt)}` : "Pronto para começar"}
           </div>
           <div className="collection-meta"><Clock3 size={15} /> Próxima: segunda, 06h</div>
           <div className="collection-meta"><span className="cost-label">Próxima estimativa</span> {isInitialDataLoading ? "—" : formatCurrency(signalSummary?.estimatedNextCostUsd ?? 0)}</div>
           <div className="collection-actions">
             <Button className="discover-button" variant="outline" disabled={isInitialDataLoading || !keyword.trim() || !session || collectionState === "running"} onClick={handleDiscover}>
-              {collectionAction === "discover" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Buscando fontes…</> : "Descobrir fontes"}
+              {collectionAction === "discover" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Encontrando conversas…</> : "Encontrar conversas"}
             </Button>
             <Button className="collect-button" disabled={isInitialDataLoading || !keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
-              {collectionAction === "monitor" ? <LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> : <Play size={14} />} {collectionAction === "monitor" ? "Coletando…" : "Atualizar agora"}
+              {collectionAction === "monitor" ? <LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> : <Play size={14} />} {collectionAction === "monitor" ? "Atualizando…" : "Atualizar agora"}
             </Button>
           </div>
-          {collectionState === "running" && <div className="collection-progress" aria-label={`Progresso da coleta: ${collectionProgress?.progress ?? 0}%`}><span style={{ width: `${collectionProgress?.progress ?? 0}%` }} /></div>}
+          {collectionState === "running" && <div className="collection-progress" aria-label={`Progresso da atualização: ${collectionProgress?.progress ?? 0}%`}><span style={{ width: `${collectionProgress?.progress ?? 0}%` }} /></div>}
         </section>
 
         {collectionMessage && <p aria-live="polite" className={`collection-message collection-message-${collectionState}`}>{collectionMessage}</p>}
@@ -742,15 +743,15 @@ function App() {
               </div>
               <div className="overview-grid">
                 <section className="signal-panel overview-panel">
-                  <div className="panel-heading"><div><h2>O que as pessoas estão dizendo</h2><p>Comentários reais coletados; a classificação aparece quando concluída.</p></div><Button type="button" size="sm" variant="outline" onClick={() => navigate("comments")}>Ver todos</Button></div>
+                  <div className="panel-heading"><div><h2>O que as pessoas estão dizendo</h2><p>Conversas públicas organizadas por tipo de interesse.</p></div><Button type="button" size="sm" variant="outline" onClick={() => navigate("comments")}>Ver todos</Button></div>
                   {usefulComments.length > 0 ? <div className="overview-comment-list">{usefulComments.map((comment) => <article className="overview-comment-card" key={comment.id}>
                     <div className="comment-avatar">{comment.personName.slice(0, 1).toUpperCase()}</div>
                     <div className="overview-comment-content"><strong>{comment.personName}</strong><span>{comment.personHeadline ?? "Perfil público"} · {comment.companyName ?? "Empresa não identificada"}</span><p>“{shorten(comment.text, 220)}”</p><div className="overview-comment-tags"><span className="signal-tag">{commentToneLabel(comment.tone)}</span><span>{formatDate(comment.publishedAt)}</span></div></div>
-                  </article>)}</div> : <div className="overview-empty">Ainda não há comentários coletados para esta pesquisa.</div>}
+                  </article>)}</div> : <div className="overview-empty">Ainda não há comentários para esta pesquisa.</div>}
                 </section>
                 <section className="signal-panel overview-panel">
                   <div className="panel-heading"><div><h2>Empresas mais presentes</h2><p>Consolidação dos comentaristas por conta.</p></div><Button type="button" size="sm" variant="outline" onClick={() => navigate("companies")}>Explorar</Button></div>
-                  {topCompanies.length > 0 ? <div className="overview-company-list">{topCompanies.map((company) => <button className="overview-company-card" key={company.id} type="button" onClick={() => { setSelectedCompanyId(company.id); navigate("companies") }}><div className="company-avatar"><Building2 size={17} /></div><div className="company-info"><strong>{company.name}</strong><span>{company.people} pessoa{company.people === 1 ? "" : "s"} observada{company.people === 1 ? "" : "s"}</span></div><div className="company-metric"><strong>{company.comments}</strong><span>comentários</span></div></button>)}</div> : <div className="overview-empty">As empresas aparecerão aqui a partir de comentários reais coletados.</div>}
+                  {topCompanies.length > 0 ? <div className="overview-company-list">{topCompanies.map((company) => <button className="overview-company-card" key={company.id} type="button" onClick={() => { setSelectedCompanyId(company.id); navigate("companies") }}><div className="company-avatar"><Building2 size={17} /></div><div className="company-info"><strong>{company.name}</strong><span>{company.people} pessoa{company.people === 1 ? "" : "s"} observada{company.people === 1 ? "" : "s"}</span></div><div className="company-metric"><strong>{company.comments}</strong><span>comentários</span></div></button>)}</div> : <div className="overview-empty">As empresas aparecerão aqui quando suas pessoas participarem das conversas acompanhadas.</div>}
                 </section>
               </div>
             </section>
@@ -759,7 +760,7 @@ function App() {
             <div className="mode-switch" role="tablist" aria-label="Modo de posts"><Button type="button" size="sm" variant={postsMode === "search" ? "default" : "outline"} onClick={() => setPostsMode("search")}>Resultados da busca</Button><Button type="button" size="sm" variant={postsMode === "sources" ? "default" : "outline"} onClick={() => setPostsMode("sources")}>Perfis monitorados</Button></div>
             {postsMode === "search" ? <div className="post-review-layout">
               <section className="signal-panel post-results-panel">
-                <div className="panel-heading"><div><h2>Resultados da busca</h2><p>{discoveredPosts.length > 0 ? "Posts reais encontrados na descoberta; aprove ou descarte antes de monitorar." : "Clique em um post para revisar."}</p></div><div className="panel-heading-actions"><span className="signal-tag">{reviewPosts.filter((post) => post.curationStatus === "aprovado").length} válidos</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || reviewPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar pendente"}</Button></div></div>
+                <div className="panel-heading"><div><h2>Resultados da busca</h2><p>{discoveredPosts.length > 0 ? "Revise os conteúdos encontrados e escolha quais merecem acompanhamento." : "Selecione um conteúdo para ver os detalhes."}</p></div><div className="panel-heading-actions"><span className="signal-tag">{reviewPosts.filter((post) => post.curationStatus === "aprovado").length} selecionados</span><Button type="button" size="sm" variant="outline" disabled={postAnalysisBusy || reviewPosts.length === 0} onClick={handleAnalyzePosts}>{postAnalysisBusy ? "Analisando…" : "Analisar conteúdos"}</Button></div></div>
                 <div className="post-results-list" aria-label="Lista de posts encontrados">
                   {reviewPosts.map((post) => {
                     const source = signalSources.find((candidate) => candidate.linkedinUrl === post.authorUrl || candidate.name === post.authorName)
@@ -786,11 +787,11 @@ function App() {
                   <p className="post-detail-text">{selectedPost.text || "Sem texto disponível."}</p>
                   <div className="author-box"><div><strong>{selectedPost.authorName ?? "Autor não identificado"}</strong><span>{selectedPost.authorUrl ? displayLinkedInUrl(selectedPost.authorUrl) : "Perfil público"}</span></div><div className="author-box-actions">{source?.status === "monitorada" ? <span className="signal-tag">Perfil monitorado</span> : source?.status === "candidata" ? <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [source.id])}>Monitorar perfil</Button> : null}{selectedPost.authorUrl && <a href={selectedPost.authorUrl} target="_blank" rel="noreferrer">Ver perfil</a>}</div></div>
                   <div className="post-detail-metrics"><span>{selectedPost.reactions ?? 0} reações</span><span>{selectedPost.comments ?? 0} comentários</span><span>{selectedPost.shares ?? 0} compartilhamentos</span></div>
-                  {selectedPost.analysis.topic ? <div className="post-analysis post-analysis-detail"><div><strong>Tópico identificado</strong><span>{selectedPost.analysis.topic}</span></div><div><strong>Problema discutido</strong><span>{selectedPost.analysis.problem}</span></div><div><strong>Por que o post faz sentido</strong><span>{selectedPost.analysis.reason}</span></div><div><strong>Decisão de coleta</strong><span>{selectedPost.analysis.collection}</span></div></div> : <div className="post-detail-empty">Este post ainda não foi analisado. Use “Analisar pendente” para gerar a classificação.</div>}
+                  {selectedPost.analysis.topic ? <div className="post-analysis post-analysis-detail"><div><strong>Tópico identificado</strong><span>{selectedPost.analysis.topic}</span></div><div><strong>Problema discutido</strong><span>{selectedPost.analysis.problem}</span></div><div><strong>Por que o post faz sentido</strong><span>{selectedPost.analysis.reason}</span></div><div><strong>Recomendação</strong><span>{selectedPost.analysis.collection}</span></div></div> : <div className="post-detail-empty">Este conteúdo ainda não foi analisado. Use “Analisar conteúdos” para entender sua relevância.</div>}
                   <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar post</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar post</Button>{selectedPost.linkedinUrl && <a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a>}</div>
                 </article>
               })()}
-            </div> : <section className="signal-panel sources-panel"><div className="panel-heading source-panel-heading"><div><p className="eyebrow">Perfis monitorados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} fontes ativas · {signalSources.filter((source) => source.status === "candidata").length} sugeridas</h2><p>Posts reais encontrados por perfil. O aproveitamento só aparece após uma coleta, pois é calculado pelas pessoas e ICP observados.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalSources.length} fontes</span>{signalSources.some((source) => source.status === "candidata") && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [])}>{collectionAction === "monitor" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Coletando…</> : `Monitorar ${selectedSourceIds.size > 0 ? `seleção (${selectedSourceIds.size})` : `recomendados (${recommendedSources().length})`}`}</Button>}</div></div>{signalSources.length > 0 ? <div className="source-list">{orderedSources.map((source) => <article className={`source-row ${selectedSourceIds.has(source.id) ? "is-selected" : ""}`} key={source.id}><div className="source-selection">{source.status === "candidata" && <input aria-label={`Selecionar ${source.name ?? "perfil"}`} checked={selectedSourceIds.has(source.id)} type="checkbox" onChange={() => toggleSourceSelection(source.id)} />}<div><strong>{source.name}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span>{source.previewPost && <p>“{shorten(source.previewPost, 170)}”</p>}</div></div><div className="source-metrics"><span>{source.posts} posts na janela</span><span>{source.comments} comentários</span><span>{source.people} pessoas</span><span>{source.icp} ICP</span><span>{source.yield === null ? "— sem coleta" : `${source.yield}% aproveitamento`}</span></div><span className={`curation-status source-${source.status}`}>{source.status === "candidata" ? "sugerido" : source.status}</span><div className="source-actions">{source.status === "candidata" && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [source.id])}>Monitorar perfil</Button>}{source.status !== "descartada" && source.status !== "monitorada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Descartar</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhum perfil monitorado</strong><span>Use “Descobrir fontes” para buscar posts e perfis brasileiros para este tema.</span></div>}</section>}
+            </div> : <section className="signal-panel sources-panel"><div className="panel-heading source-panel-heading"><div><p className="eyebrow">Perfis acompanhados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} ativos · {signalSources.filter((source) => source.status === "candidata").length} sugeridos</h2><p>Veja quais perfis geram conversas relevantes e pessoas alinhadas ao seu perfil ideal.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalSources.length} perfis</span>{signalSources.some((source) => source.status === "candidata") && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [])}>{collectionAction === "monitor" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Atualizando…</> : `Acompanhar ${selectedSourceIds.size > 0 ? `seleção (${selectedSourceIds.size})` : `recomendados (${recommendedSources().length})`}`}</Button>}</div></div>{signalSources.length > 0 ? <div className="source-list">{orderedSources.map((source) => <article className={`source-row ${selectedSourceIds.has(source.id) ? "is-selected" : ""}`} key={source.id}><div className="source-selection">{source.status === "candidata" && <input aria-label={`Selecionar ${source.name ?? "perfil"}`} checked={selectedSourceIds.has(source.id)} type="checkbox" onChange={() => toggleSourceSelection(source.id)} />}<div><strong>{source.name}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span>{source.previewPost && <p>“{shorten(source.previewPost, 170)}”</p>}</div></div><div className="source-metrics"><span>{source.posts} posts no período</span><span>{source.comments} comentários</span><span>{source.people} pessoas</span><span>{source.icp} aderentes</span><span>{source.yield === null ? "— aguardando atualização" : `${source.yield}% de aproveitamento`}</span></div><span className={`curation-status source-${source.status}`}>{source.status === "candidata" ? "Sugerido" : source.status === "monitorada" ? "Em acompanhamento" : "Removido"}</span><div className="source-actions">{source.status === "candidata" && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [source.id])}>Acompanhar perfil</Button>}{source.status !== "descartada" && source.status !== "monitorada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Remover</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhum perfil em acompanhamento</strong><span>Use “Encontrar conversas” para descobrir posts e perfis brasileiros para este tema.</span></div>}</section>}
           </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">
             <div className="comment-toolbar">
               <div className="comment-filters" role="group" aria-label="Filtrar comentários">
@@ -798,23 +799,23 @@ function App() {
               </div>
               <Input value={commentSearch} onChange={(event) => setCommentSearch(event.target.value)} placeholder="Buscar pessoa ou comentário" aria-label="Buscar comentários" />
             </div>
-            <div className="panel-heading"><div><p className="eyebrow">Comentários</p><h2>{visibleComments().length} comentários encontrados</h2><p>Classificação automática com evidência preservada.</p></div><div className="panel-heading-actions"><span className="signal-tag">Dados reais</span><Button type="button" size="sm" variant="outline" disabled={classificationBusy} onClick={handleClassifyComments}>{classificationBusy ? "Classificando…" : "Classificar próximo lote (até 12)"}</Button><Button type="button" size="sm" variant="outline" onClick={exportComments}>Baixar CSV</Button></div></div>
+            <div className="panel-heading"><div><p className="eyebrow">Comentários</p><h2>{visibleComments().length} comentários encontrados</h2><p>Entenda rapidamente se cada conversa revela uma dor, pergunta ou experiência relevante.</p></div><div className="panel-heading-actions"><span className="signal-tag">Informações confirmadas</span><Button type="button" size="sm" variant="outline" disabled={classificationBusy} onClick={handleClassifyComments}>{classificationBusy ? "Organizando…" : "Organizar próximos comentários"}</Button><Button type="button" size="sm" variant="outline" onClick={exportComments}>Baixar CSV</Button></div></div>
             {visibleComments().length > 0 ? <div className="table-wrap"><table><thead><tr><th>Pessoa</th><th>Empresa</th><th>Teor</th><th>Comentário</th><th>Post</th></tr></thead><tbody>{visibleComments().map((comment) => <tr key={comment.id}><td><strong>{comment.personName}</strong><small>{comment.personHeadline ?? "Perfil público"}</small><a href={comment.personUrl} target="_blank" rel="noreferrer">Ver perfil</a></td><td><strong>{comment.companyName ?? "Empresa não identificada"}</strong><small>{formatDate(comment.publishedAt)}</small></td><td><span className="signal-tag">{commentToneLabel(comment.tone)}</span>{comment.confidence !== null && comment.confidence < 0.6 && <span className="review-tag">Revisar</span>}</td><td className="table-comment">“{comment.text}”</td><td><a href={comment.postUrl} target="_blank" rel="noreferrer">Ver post</a></td></tr>)}</tbody></table></div> : <div className="filtered-empty"><strong>Nenhum comentário encontrado</strong><span>Remova um filtro ou altere a busca.</span></div>}
           </section> : activeView === "companies" && session && signalSummary?.projectId ? <div className="company-layout">
-            <section className="signal-panel company-results-panel"><div className="panel-heading"><div><h2>Empresas identificadas</h2><p>Contas ordenadas pela participação observada.</p></div><div className="panel-heading-actions"><span className="signal-tag">{visibleCompanies.length} de {signalCompanies.length}</span><Button type="button" size="sm" variant="outline" onClick={exportCompanies}>Baixar CSV</Button></div></div><div className="company-toolbar"><Input value={companySearch} onChange={(event) => setCompanySearch(event.target.value)} placeholder="Buscar empresa, setor ou porte" aria-label="Buscar empresas" />{availableCompanySectors.length > 0 && <select aria-label="Filtrar empresas por setor" value={companySector} onChange={(event) => setCompanySector(event.target.value)}><option value="all">Todos os setores</option>{availableCompanySectors.map((sector) => <option key={sector} value={sector}>{sector}</option>)}</select>}<select aria-label="Ordenar empresas" value={companySort} onChange={(event) => setCompanySort(event.target.value as CompanySort)}><option value="comments">Mais comentários</option><option value="people">Mais pessoas observadas</option><option value="name">Nome: A–Z</option></select></div><div className="company-list">{visibleCompanies.length > 0 ? visibleCompanies.map((company) => <button className={`company-card ${selectedCompany?.id === company.id ? "is-selected" : ""}`} type="button" key={company.id} onClick={() => setSelectedCompanyId(company.id)}><div className="company-avatar"><Building2 size={17} /></div><div className="company-info"><strong>{company.name}</strong><span>{company.people} pessoa{company.people === 1 ? "" : "s"} observada{company.people === 1 ? "" : "s"}</span></div><div className="company-metric"><strong>{company.comments}</strong><span>comentários</span></div></button>) : <div className="filtered-empty"><strong>Nenhuma empresa encontrada</strong><span>Altere a busca ou os filtros para ver as contas coletadas.</span></div>}</div></section>
-            <section className="signal-panel company-detail-panel">{selectedCompany ? <><div className="company-heading"><div><h2>{selectedCompany.name}</h2><p>{selectedCompany.sector ?? "Setor não informado"}{selectedCompany.size ? ` · ${selectedCompany.size}` : ""}<br />A conta apareceu a partir de pessoas que comentaram posts monitorados.</p></div>{selectedCompany.linkedinUrl && <a href={selectedCompany.linkedinUrl} target="_blank" rel="noreferrer">Ver empresa</a>}</div><div className="summary-strip"><div><strong>{selectedCompany.people}</strong><span>pessoas com sinal observado</span></div><div><strong>{selectedCompany.comments}</strong><span>comentários coletados</span></div><div><strong>{signalPeople.filter((person) => person.companyName === selectedCompany.name && person.icp === true).length}</strong><span>dentro do ICP</span></div></div>{selectedCompanyTones.length > 0 && <div className="company-topics" aria-label="Teores observados na empresa">{selectedCompanyTones.map((tone) => <span className="signal-tag" key={tone}>{tone}</span>)}</div>}<section className="people-section"><div className="section-heading"><div><h3>Pessoas observadas</h3><p>Entraram porque comentaram posts monitorados.</p></div><span className="signal-tag">Sinal comprovado</span></div>{signalPeople.filter((person) => person.companyName === selectedCompany.name).length > 0 ? signalPeople.filter((person) => person.companyName === selectedCompany.name).map((person) => <div className="person-row" key={person.id}><div className="comment-avatar">{person.name.slice(0, 1).toUpperCase()}</div><div className="person-info"><strong>{person.name}</strong><span>{person.headline ?? person.role ?? "Perfil público"}</span></div><div className="person-signal"><strong>{person.comments} comentário{person.comments === 1 ? "" : "s"}</strong><span>{person.icp === true ? "Dentro do ICP" : "ICP pendente ou fora"}</span></div></div>) : <div className="filtered-empty"><strong>Nenhuma pessoa disponível</strong><span>Os perfis aparecerão após uma coleta válida de comentários.</span></div>}</section></> : <div className="filtered-empty"><strong>Selecione uma empresa</strong><span>Os detalhes aparecem quando houver uma conta no resultado filtrado.</span></div>}</section>
+            <section className="signal-panel company-results-panel"><div className="panel-heading"><div><h2>Empresas identificadas</h2><p>Contas ordenadas pela participação observada.</p></div><div className="panel-heading-actions"><span className="signal-tag">{visibleCompanies.length} de {signalCompanies.length}</span><Button type="button" size="sm" variant="outline" onClick={exportCompanies}>Baixar CSV</Button></div></div><div className="company-toolbar"><Input value={companySearch} onChange={(event) => setCompanySearch(event.target.value)} placeholder="Buscar empresa, setor ou porte" aria-label="Buscar empresas" />{availableCompanySectors.length > 0 && <select aria-label="Filtrar empresas por setor" value={companySector} onChange={(event) => setCompanySector(event.target.value)}><option value="all">Todos os setores</option>{availableCompanySectors.map((sector) => <option key={sector} value={sector}>{sector}</option>)}</select>}<select aria-label="Ordenar empresas" value={companySort} onChange={(event) => setCompanySort(event.target.value as CompanySort)}><option value="comments">Mais comentários</option><option value="people">Mais pessoas observadas</option><option value="name">Nome: A–Z</option></select></div><div className="company-list">{visibleCompanies.length > 0 ? visibleCompanies.map((company) => <button className={`company-card ${selectedCompany?.id === company.id ? "is-selected" : ""}`} type="button" key={company.id} onClick={() => setSelectedCompanyId(company.id)}><div className="company-avatar"><Building2 size={17} /></div><div className="company-info"><strong>{company.name}</strong><span>{company.people} pessoa{company.people === 1 ? "" : "s"} observada{company.people === 1 ? "" : "s"}</span></div><div className="company-metric"><strong>{company.comments}</strong><span>comentários</span></div></button>) : <div className="filtered-empty"><strong>Nenhuma empresa encontrada</strong><span>Altere a busca ou os filtros para explorar outras contas.</span></div>}</div></section>
+            <section className="signal-panel company-detail-panel">{selectedCompany ? <><div className="company-heading"><div><h2>{selectedCompany.name}</h2><p>{selectedCompany.sector ?? "Setor não informado"}{selectedCompany.size ? ` · ${selectedCompany.size}` : ""}<br />Esta conta apareceu porque suas pessoas participaram das conversas acompanhadas.</p></div>{selectedCompany.linkedinUrl && <a href={selectedCompany.linkedinUrl} target="_blank" rel="noreferrer">Ver empresa</a>}</div><div className="summary-strip"><div><strong>{selectedCompany.people}</strong><span>pessoas com sinal observado</span></div><div><strong>{selectedCompany.comments}</strong><span>comentários encontrados</span></div><div><strong>{signalPeople.filter((person) => person.companyName === selectedCompany.name && person.icp === true).length}</strong><span>aderentes ao perfil ideal</span></div></div>{selectedCompanyTones.length > 0 && <div className="company-topics" aria-label="Teores observados na empresa">{selectedCompanyTones.map((tone) => <span className="signal-tag" key={tone}>{tone}</span>)}</div>}<section className="people-section"><div className="section-heading"><div><h3>Pessoas observadas</h3><p>Participaram de conteúdos ligados ao tema acompanhado.</p></div><span className="signal-tag">Interesse confirmado</span></div>{signalPeople.filter((person) => person.companyName === selectedCompany.name).length > 0 ? signalPeople.filter((person) => person.companyName === selectedCompany.name).map((person) => <div className="person-row" key={person.id}><div className="comment-avatar">{person.name.slice(0, 1).toUpperCase()}</div><div className="person-info"><strong>{person.name}</strong><span>{person.headline ?? person.role ?? "Perfil público"}</span></div><div className="person-signal"><strong>{person.comments} comentário{person.comments === 1 ? "" : "s"}</strong><span>{person.icp === true ? "Dentro do perfil ideal" : "Aderência não confirmada"}</span></div></div>) : <div className="filtered-empty"><strong>Nenhuma pessoa disponível</strong><span>Os perfis aparecerão após a próxima atualização dos comentários.</span></div>}</section></> : <div className="filtered-empty"><strong>Selecione uma empresa</strong><span>Escolha uma conta para ver as pessoas e os sinais relacionados.</span></div>}</section>
           </div> : activeView === "people" && session && signalSummary?.projectId && signalPeople.length > 0 ? <section className="signal-panel analysis-panel">
             <div className="comment-toolbar"><div className="comment-filters" role="group" aria-label="Filtrar pessoas"><Button type="button" size="sm" variant={peopleFilter === "all" ? "default" : "outline"} onClick={() => setPeopleFilter("all")}>Todas</Button><Button type="button" size="sm" variant={peopleFilter === "observed" ? "default" : "outline"} onClick={() => setPeopleFilter("observed")}>Com sinal observado</Button><Button type="button" size="sm" variant={peopleFilter === "discovered" ? "default" : "outline"} onClick={() => setPeopleFilter("discovered")}>Descobertos na empresa</Button></div></div>
-            <div className="panel-heading"><div><p className="eyebrow">Pessoas</p><h2>{peopleFilter === "discovered" ? "Pessoas descobertas na empresa" : `${visiblePeople().length} pessoas observadas`}</h2><p>{peopleFilter === "discovered" ? "Este aprofundamento não integra a V1." : "Pessoas que demonstraram um sinal público em comentários coletados."}</p></div><span className="signal-tag">Dados reais</span></div>
-            {peopleFilter === "discovered" ? <div className="filtered-empty"><strong>Em breve na V2</strong><span>A descoberta de pessoas dentro de uma empresa não será executada nesta versão. Esta lista permanece vazia por definição.</span></div> : <div className="table-wrap"><table><thead><tr><th>Pessoa</th><th>Empresa</th><th>Origem</th><th>Atividade pública</th><th /></tr></thead><tbody>{visiblePeople().map((person) => <tr key={person.id}><td><strong>{person.name}</strong><small>{person.headline ?? person.role ?? "Perfil público"}</small><a href={person.linkedinUrl} target="_blank" rel="noreferrer">Ver perfil</a></td><td>{person.companyName && signalCompanies.some((company) => company.name === person.companyName) ? <button className="company-link" type="button" onClick={() => openCompanyFromPerson(person.companyName)}>{person.companyName}</button> : person.companyName ?? "Empresa não identificada"}</td><td><span className={`signal-tag ${person.icp === true ? "" : "signal-tag-muted"}`}>{person.icp === true ? "Dentro do ICP" : person.icp === false ? "Fora do ICP" : "ICP pendente"}</span></td><td><strong>{person.comments}</strong> <small>comentário{person.comments === 1 ? "" : "s"}</small></td><td><Button type="button" size="xs" variant="outline" onClick={() => openPersonReview(person)}>Revisar</Button></td></tr>)}</tbody></table></div>}
+            <div className="panel-heading"><div><p className="eyebrow">Pessoas</p><h2>{peopleFilter === "discovered" ? "Pessoas da empresa" : `${visiblePeople().length} pessoas observadas`}</h2><p>{peopleFilter === "discovered" ? "Aprofunde sua visão sobre os contatos ligados a cada empresa." : "Pessoas que demonstraram interesse por meio de uma interação pública."}</p></div><span className="signal-tag">Informações confirmadas</span></div>
+            {peopleFilter === "discovered" ? <div className="filtered-empty"><strong>Amplie a visão da conta</strong><span>Em breve, você poderá explorar outros contatos relevantes dentro de cada empresa.</span></div> : <div className="table-wrap"><table><thead><tr><th>Pessoa</th><th>Empresa</th><th>Aderência</th><th>Atividade pública</th><th /></tr></thead><tbody>{visiblePeople().map((person) => <tr key={person.id}><td><strong>{person.name}</strong><small>{person.headline ?? person.role ?? "Perfil público"}</small><a href={person.linkedinUrl} target="_blank" rel="noreferrer">Ver perfil</a></td><td>{person.companyName && signalCompanies.some((company) => company.name === person.companyName) ? <button className="company-link" type="button" onClick={() => openCompanyFromPerson(person.companyName)}>{person.companyName}</button> : person.companyName ?? "Empresa não identificada"}</td><td><span className={`signal-tag ${person.icp === true ? "" : "signal-tag-muted"}`}>{person.icp === true ? "Dentro do perfil ideal" : person.icp === false ? "Fora do perfil ideal" : "Aguardando revisão"}</span></td><td><strong>{person.comments}</strong> <small>comentário{person.comments === 1 ? "" : "s"}</small></td><td><Button type="button" size="xs" variant="outline" onClick={() => openPersonReview(person)}>Revisar</Button></td></tr>)}</tbody></table></div>}
           </section> : activeView === "overview" && session && signalSummary?.projectId ? null : summaryLoading ? <div className="empty-state" aria-busy="true">
             <div className="empty-icon"><Clock3 size={24} /></div>
-            <h2>Carregando dados reais</h2>
-            <p>Buscando a pesquisa, o histórico e os sinais já persistidos.</p>
+            <h2>Preparando sua visão</h2>
+            <p>Reunindo sua pesquisa, o histórico e os sinais mais recentes.</p>
           </div> : <div className="empty-state">
             <div className="empty-icon"><BarChart3 size={24} /></div>
             <h2>{session && signalSummary?.posts ? "Sinais reais disponíveis" : content.title}</h2>
-            <p>{session && signalSummary?.posts ? "Os resultados persistidos no Supabase aparecerão nas áreas de Posts, Comments, Companies e People." : content.description}</p>
+            <p>{session && signalSummary?.posts ? "Explore os resultados nas áreas de Posts, Comentários, Empresas e Pessoas." : content.description}</p>
             {activeView === "overview" && (
               <Button className="empty-action" onClick={() => setSettingsOpen(true)}>
                 <Settings2 size={16} /> Configurar primeira pesquisa
@@ -834,7 +835,7 @@ function App() {
               </div>
               <button aria-label="Fechar configuração" className="icon-button" onClick={() => setSettingsOpen(false)} type="button"><X size={18} /></button>
             </div>
-            <p className="modal-description">Esses parâmetros serão usados na próxima coleta real do Apify.</p>
+            <p className="modal-description">Conte ao Intent o que deseja encontrar. Quanto mais claro o contexto, mais relevantes serão os resultados.</p>
             <form onSubmit={handleSaveSettings}>
               <label htmlFor="keyword">Palavra-chave principal</label>
               <input id="keyword" onChange={(event) => setKeyword(event.target.value)} placeholder="Ex.: cost breakdown" value={keyword} />
@@ -844,18 +845,18 @@ function App() {
               <textarea id="negative-context" onChange={(event) => setNegativeContext(event.target.value)} placeholder="consumer spending, publicidade" value={negativeContext} />
               <div className="modal-actions">
                 <Button onClick={() => setSettingsOpen(false)} type="button" variant="ghost">Cancelar</Button>
-                <Button disabled={!keyword.trim() || collectionState === "running"} type="submit">{collectionAction === "settings" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Buscando fontes…</> : "Salvar configuração"}</Button>
+                <Button disabled={!keyword.trim() || collectionState === "running"} type="submit">{collectionAction === "settings" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Encontrando conversas…</> : "Começar pesquisa"}</Button>
               </div>
             </form>
             {session && signalSummary?.projectId && <section className="settings-history" aria-labelledby="settings-history-title">
-              <div className="settings-history-heading"><div><p className="eyebrow">Histórico</p><h3 id="settings-history-title">Últimas execuções</h3><p>Acompanhe resultado, custo e alertas das coletas reais.</p></div><span className="signal-tag">{signalSummary.executionHistory.length} registros</span></div>
+              <div className="settings-history-heading"><div><p className="eyebrow">Histórico</p><h3 id="settings-history-title">Últimas atualizações</h3><p>Veja quando os resultados foram atualizados, o consumo e os pontos que merecem atenção.</p></div><span className="signal-tag">{signalSummary.executionHistory.length} registros</span></div>
               {recentExecutions.length > 0 ? <div className="execution-list">{recentExecutions.map((execution) => <article className="execution-row" key={execution.id}>
-                <div className="execution-identity"><strong>{execution.type === "descoberta" ? "Descoberta de fontes" : "Monitoramento"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Agendada" : execution.origin === "manual" ? "Manual" : "Origem não informada"}</span></div>
-                <div className="execution-outcome"><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.warnings.length > 0 && <small className="execution-warning">⚠ {execution.warnings.length} aviso(s) de truncamento</small>}</div>
+                <div className="execution-identity"><strong>{execution.type === "descoberta" ? "Busca de conversas" : "Atualização de resultados"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Programada" : execution.origin === "manual" ? "Feita agora" : "Origem não informada"}</span></div>
+                <div className="execution-outcome"><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.warnings.length > 0 && <small className="execution-warning">⚠ Resultado parcial · {execution.warnings.length} ponto{execution.warnings.length === 1 ? "" : "s"} para revisar</small>}</div>
                 <strong className="execution-cost">{formatCurrency(execution.costUsd)}</strong>
-                {execution.error && <p className="execution-error">{execution.error}</p>}
-              </article>)}</div> : <div className="settings-history-empty">Nenhuma execução registrada para esta pesquisa.</div>}
-              {signalSummary.executionHistory.length > recentExecutions.length && <p className="execution-more">Mostrando as últimas {recentExecutions.length} execuções.</p>}
+                {execution.error && <p className="execution-error">{productErrorMessage(execution.error, "Esta atualização não foi concluída. Seus resultados anteriores foram preservados.")}</p>}
+              </article>)}</div> : <div className="settings-history-empty">Nenhuma atualização realizada para esta pesquisa.</div>}
+              {signalSummary.executionHistory.length > recentExecutions.length && <p className="execution-more">Mostrando as últimas {recentExecutions.length} atualizações.</p>}
             </section>}
           </section>
         </div>
@@ -865,7 +866,7 @@ function App() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAuthOpen(false)}>
           <section aria-labelledby="auth-title" aria-modal="true" className="settings-modal auth-modal" role="dialog">
             <div className="modal-header"><div><p className="eyebrow">Acesso seguro</p><h2 id="auth-title">{authMode === "signin" ? "Entrar no Intent" : authMode === "signup" ? "Criar sua conta" : authMode === "recovery" ? "Recuperar senha" : "Atualizar senha"}</h2></div><button aria-label="Fechar acesso" className="icon-button" onClick={() => setAuthOpen(false)} type="button"><X size={18} /></button></div>
-            <p className="modal-description">{authMode === "recovery" ? "Informe seu e-mail e enviaremos um link seguro para redefinir sua senha." : authMode === "update-password" ? "Escolha uma nova senha para voltar a acessar suas análises." : "A coleta é vinculada ao seu usuário e permanece separada de outras contas."}</p>
+            <p className="modal-description">{authMode === "recovery" ? "Informe seu e-mail e enviaremos um link seguro para redefinir sua senha." : authMode === "update-password" ? "Escolha uma nova senha para voltar a acessar suas análises." : "Suas pesquisas e resultados ficam protegidos e separados por conta."}</p>
             <form onSubmit={handleAuth}>
               {authMode !== "update-password" && <><label htmlFor="auth-email">E-mail</label><input autoComplete="email" id="auth-email" onChange={(event) => setAuthEmail(event.target.value)} required type="email" value={authEmail} /></>}
               {authMode !== "recovery" && <><label htmlFor="auth-password">{authMode === "update-password" ? "Nova senha" : "Senha"}</label><div className="password-field"><input autoComplete={authMode === "signin" ? "current-password" : "new-password"} id="auth-password" minLength={6} onChange={(event) => setAuthPassword(event.target.value)} required type={authPasswordVisible ? "text" : "password"} value={authPassword} /><button aria-label={authPasswordVisible ? "Ocultar senha" : "Mostrar senha"} className="password-toggle" onClick={() => setAuthPasswordVisible((visible) => !visible)} type="button">{authPasswordVisible ? "Ocultar" : "Mostrar"}</button></div></>}
@@ -880,13 +881,13 @@ function App() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPersonUnderReview(null)}>
           <section aria-labelledby="person-review-title" aria-modal="true" className="settings-modal person-review-modal" role="dialog">
             <div className="modal-header"><div><p className="eyebrow">Revisão humana</p><h2 id="person-review-title">{personUnderReview.name}</h2></div><button aria-label="Fechar revisão" className="icon-button" onClick={() => setPersonUnderReview(null)} type="button"><X size={18} /></button></div>
-            <p className="modal-description">Esses campos passam a ser protegidos contra a classificação automática.</p>
+            <p className="modal-description">Revise os dados deste perfil. Suas escolhas serão preservadas nas próximas análises.</p>
             <form onSubmit={handlePersonReview}>
               <label htmlFor="person-role">Cargo</label>
               <input id="person-role" value={reviewRole} onChange={(event) => setReviewRole(event.target.value)} placeholder="Ex.: Gerente de Compras" />
               <label htmlFor="person-seniority">Senioridade</label>
-              <select id="person-seniority" value={reviewSeniority} onChange={(event) => setReviewSeniority(event.target.value as PersonSeniority)}>{seniorityOptions.map((option) => <option key={option} value={option}>{option === "diretoria" ? "Diretoria" : option === "gerencia" ? "Gerência" : option === "analista" ? "Analista" : "Fora do ICP"}</option>)}</select>
-              <label className="review-checkbox" htmlFor="person-icp"><span>Dentro do ICP</span><input id="person-icp" checked={reviewIcp} onChange={(event) => setReviewIcp(event.target.checked)} type="checkbox" /></label>
+              <select id="person-seniority" value={reviewSeniority} onChange={(event) => setReviewSeniority(event.target.value as PersonSeniority)}>{seniorityOptions.map((option) => <option key={option} value={option}>{option === "diretoria" ? "Diretoria" : option === "gerencia" ? "Gerência" : option === "analista" ? "Analista" : "Fora do perfil ideal"}</option>)}</select>
+              <label className="review-checkbox" htmlFor="person-icp"><span>Faz parte do perfil ideal</span><input id="person-icp" checked={reviewIcp} onChange={(event) => setReviewIcp(event.target.checked)} type="checkbox" /></label>
               <div className="modal-actions"><Button onClick={() => setPersonUnderReview(null)} type="button" variant="ghost">Cancelar</Button><Button disabled={reviewBusy} type="submit">{reviewBusy ? "Salvando…" : "Salvar revisão"}</Button></div>
             </form>
           </section>

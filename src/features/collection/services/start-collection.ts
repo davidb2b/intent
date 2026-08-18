@@ -30,6 +30,6 @@ export async function startCollection(input: StartCollectionInput): Promise<Star
   if (error) {
     throw new Error(await functionErrorMessage(error, "Não foi possível iniciar a coleta."))
   }
-  if (!data) throw new Error("O backend não retornou o estado da coleta.")
+  if (!data) throw new Error("Não recebemos a confirmação do início da atualização. Tente novamente.")
   return data
 }

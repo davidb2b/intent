@@ -4,20 +4,20 @@ import { cleanup } from "@testing-library/react"
 
 import App from "./app/App"
 
-describe("Signal Lab foundation", () => {
+describe("Intent foundation", () => {
   afterEach(() => cleanup())
 
   it("starts with an honest empty state instead of fabricated metrics", async () => {
     render(<App />)
 
-    expect(await screen.findByText("Nenhum sinal coletado ainda")).toBeInTheDocument()
-    expect(screen.getByText("Coleta não iniciada")).toBeInTheDocument()
+    expect(await screen.findByText("Sua próxima oportunidade começa com um tema")).toBeInTheDocument()
+    expect(screen.getByText("Pronto para começar")).toBeInTheDocument()
     expect(screen.queryByText("42")).not.toBeInTheDocument()
   })
 
   it("navigates between the five product areas", async () => {
     render(<App />)
-    await screen.findByText("Nenhum sinal coletado ainda")
+    await screen.findByText("Sua próxima oportunidade começa com um tema")
 
     fireEvent.click(screen.getByRole("button", { name: "Posts" }))
 
@@ -51,8 +51,8 @@ describe("Signal Lab foundation", () => {
     fireEvent.change(screen.getByLabelText("Palavra-chave principal"), {
       target: { value: "cost breakdown" },
     })
-    expect(screen.getByRole("button", { name: /Salvar configuração/ })).toBeEnabled()
-    fireEvent.click(screen.getByRole("button", { name: /Salvar configuração/ }))
+    expect(screen.getByRole("button", { name: /Começar pesquisa/ })).toBeEnabled()
+    fireEvent.click(screen.getByRole("button", { name: /Começar pesquisa/ }))
 
     expect(screen.getAllByText("cost breakdown").length).toBe(2)
     expect(screen.getAllByRole("button", { name: /Atualizar agora/ })[0]).toBeDisabled()

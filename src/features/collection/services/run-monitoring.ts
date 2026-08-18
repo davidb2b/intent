@@ -16,6 +16,6 @@ export async function runMonitoring(projectId: string, janela = "month") {
   if (error) {
     throw new Error(await functionErrorMessage(error, "Não foi possível iniciar o monitoramento."))
   }
-  if (!data) throw new Error("O backend não retornou o resultado do monitoramento.")
+  if (!data) throw new Error("Não recebemos a confirmação da atualização. Tente novamente.")
   return data
 }

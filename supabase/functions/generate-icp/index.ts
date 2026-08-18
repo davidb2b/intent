@@ -91,6 +91,16 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Falha inesperada no onboarding."
 }
 
+function publicErrorMessage(message: string) {
+  if (/crédito|limite|quota|rate limit/i.test(message)) {
+    return "O limite disponível para esta análise foi atingido. Seus dados estão preservados; tente novamente quando o saldo for renovado."
+  }
+  if (/timeout|timed out|tempo.*esgot/i.test(message)) {
+    return "Esta etapa levou mais tempo que o esperado. Seus dados estão seguros; aguarde alguns instantes e tente novamente."
+  }
+  return "Não conseguimos concluir a análise agora. Seus dados estão seguros; tente novamente em alguns instantes."
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405)
@@ -100,25 +110,25 @@ Deno.serve(async (request) => {
   const apifyToken = Deno.env.get("APIFY_TOKEN")
   const openAiKey = Deno.env.get("OPENAI_API_KEY")
   if (!supabaseUrl || !serviceRoleKey || !apifyToken || !openAiKey) {
-    return json({ error: "Backend de onboarding não configurado." }, 503)
+    return json({ error: "Não foi possível iniciar a análise neste momento. Tente novamente em alguns instantes." }, 503)
   }
 
   const authHeader = request.headers.get("Authorization")
-  if (!authHeader) return json({ error: "Faça login para gerar o ICP." }, 401)
+  if (!authHeader) return json({ error: "Entre na sua conta para continuar." }, 401)
   const admin = createClient(supabaseUrl, serviceRoleKey)
   const userClient = createClient(supabaseUrl, serviceRoleKey, { global: { headers: { Authorization: authHeader } } })
   const { data: { user }, error: userError } = await userClient.auth.getUser()
   if (userError || !user) return json({ error: "Sessão inválida. Faça login novamente." }, 401)
 
   let body: Body
-  try { body = await request.json() } catch { return json({ error: "JSON inválido." }, 400) }
+  try { body = await request.json() } catch { return json({ error: "Não conseguimos entender esta solicitação. Atualize a página e tente novamente." }, 400) }
 
   let site: URL
   try { site = normalizedSiteUrl(body.siteUrl) } catch (error) { return json({ error: errorMessage(error) }, 400) }
-  if (!body.projectId) return json({ error: "projectId é obrigatório." }, 400)
+  if (!body.projectId) return json({ error: "Não encontramos sua empresa para iniciar a análise. Atualize a página e tente novamente." }, 400)
 
   const { data: project } = await admin.from("projetos").select("id, nome, site_url").eq("id", body.projectId).eq("owner_id", user.id).maybeSingle()
-  if (!project) return json({ error: "Projeto não encontrado para este usuário." }, 404)
+  if (!project) return json({ error: "Não encontramos sua empresa nesta conta. Atualize a página e tente novamente." }, 404)
 
   const { data: existingIcps } = await admin.from("icps").select("id, versao").eq("projeto_id", project.id).order("versao", { ascending: false })
   const isRegeneration = body.regenerate === true && Boolean(existingIcps?.length)
@@ -134,7 +144,7 @@ Deno.serve(async (request) => {
   }).select("id").single()
   if (executionError || !execution) {
     const conflict = executionError?.code === "23505"
-    return json({ error: conflict ? "Já existe um onboarding em andamento." : "Não foi possível iniciar o onboarding." }, conflict ? 409 : 500)
+    return json({ error: conflict ? "Já existe uma análise em andamento. Aguarde a conclusão antes de iniciar outra." : "Não foi possível iniciar a análise agora. Tente novamente em alguns instantes." }, conflict ? 409 : 500)
   }
 
   const creditReference = `onboarding:${execution.id}`
@@ -208,7 +218,7 @@ Deno.serve(async (request) => {
     let searchItems = Array.isArray(cachedGoogle?.items) ? cachedGoogle.items : null
 
     if (!siteItems || !searchItems) {
-      await progress("site", 12, "Lendo o site e pesquisando o mercado em paralelo.")
+      await progress("site", 12, "Conhecendo a empresa e o mercado ao redor dela.")
       const sitePromise = siteItems ? Promise.resolve(null) : runApifyActor(SITE_ACTOR, {
         startUrls: [{ url: site.toString() }],
         crawlerType: "cheerio",
@@ -241,7 +251,7 @@ Deno.serve(async (request) => {
 
     let pages = sitePages(siteItems ?? [])
     if (pages.reduce((sum, page) => sum + page.content.length, 0) < 2_000) {
-      await progress("site", 26, "O site usa conteúdo dinâmico. Executando o fallback com navegador.")
+      await progress("site", 26, "O site exige uma leitura mais detalhada. Estamos concluindo essa etapa.")
       try {
         const fallback = await runApifyActor(SITE_ACTOR, {
           startUrls: [{ url: site.toString() }],
@@ -261,7 +271,7 @@ Deno.serve(async (request) => {
 
     const results = googleResults(searchItems ?? [])
     const ownLinkedinUrl = linkedinCompanyUrl(results)
-    await progress("market", 42, ownLinkedinUrl ? "Company page encontrada. Confirmando a firmografia." : "Mercado pesquisado; company page não confirmada.")
+    await progress("market", 42, ownLinkedinUrl ? "Perfil público encontrado. Confirmando os dados da empresa." : "Pesquisa de mercado concluída. Alguns dados da empresa precisarão de revisão.")
 
     let companyItems: unknown[] = []
     if (ownLinkedinUrl) {
@@ -294,7 +304,7 @@ Deno.serve(async (request) => {
     }
 
     await admin.from("projetos").update({ linkedin_empresa_url: ownLinkedinUrl }).eq("id", project.id)
-    await progress("firmography", 58, "Fontes reunidas. Gerando o perfil da empresa.")
+    await progress("firmography", 58, "Informações reunidas. Organizando o perfil da empresa.")
 
     const sourceTextByUrl = Object.fromEntries(pages.map((page) => [page.url, page.content]))
     const companyInput = JSON.stringify({
@@ -322,7 +332,7 @@ Deno.serve(async (request) => {
     validateCompanyProfile(companyProfile.value, sourceTextByUrl)
     await recordCost(companyProfile, "llm_company_profile", 1)
 
-    await progress("icp", 72, "Perfil da empresa pronto. Definindo quem compra.")
+    await progress("icp", 72, "Perfil da empresa pronto. Identificando quem tem maior potencial de compra.")
     const buyerProfile = await runStructuredOutput({
       apiKey: openAiKey,
       model: "gpt-5.4-nano-2026-03-17",
@@ -337,7 +347,7 @@ Deno.serve(async (request) => {
     validateBuyerProfile(buyerProfile.value)
     await recordCost(buyerProfile, "llm_buyer_profile", 1)
 
-    await progress("icp", 84, "Comprador definido. Montando dores, gatilhos e prioridades.")
+    await progress("icp", 84, "Público ideal definido. Organizando os sinais que merecem prioridade.")
     const buyingSignals = await runStructuredOutput({
       apiKey: openAiKey,
       model: "gpt-5.4-mini-2026-03-17",
@@ -351,7 +361,7 @@ Deno.serve(async (request) => {
     validateBuyingSignals(buyingSignals.value)
     await recordCost(buyingSignals, "llm_buying_signals", 1)
 
-    await progress("icp", 94, `ICP v${version} validado. Persistindo o rascunho.`)
+    await progress("icp", 94, "Seu perfil ideal está pronto. Preparando a revisão.")
     const { data: icp, error: icpError } = await admin.from("icps").insert({
       projeto_id: project.id,
       versao: version,
@@ -395,7 +405,7 @@ Deno.serve(async (request) => {
       status: warnings.length ? "parcial" : "concluida",
       etapa_atual: "concluida",
       progresso: 100,
-      mensagem_progresso: warnings.length ? `ICP v${version} pronto com avisos para revisão.` : `ICP v${version} pronto para revisão.`,
+      mensagem_progresso: warnings.length ? `Versão ${version} pronta. Alguns campos merecem sua revisão.` : `Versão ${version} pronta para revisão.`,
       custo_usd: totalCostUsd,
       concluida_em: new Date().toISOString(),
     }).eq("id", execution.id)
@@ -406,6 +416,6 @@ Deno.serve(async (request) => {
     const message = errorMessage(error)
     await admin.from("projetos").update({ onboarding_status: "falhou", onboarding_aviso: message }).eq("id", project.id)
     await admin.from("execucoes").update({ status: "falhou", etapa_atual: "falhou", mensagem_progresso: message, erro: message, custo_usd: totalCostUsd, concluida_em: new Date().toISOString() }).eq("id", execution.id)
-    return json({ error: message, projectId: project.id, executionId: execution.id }, 502)
+    return json({ error: publicErrorMessage(message), projectId: project.id, executionId: execution.id }, 502)
   }
 })

@@ -19,14 +19,14 @@ export function OnboardingStart({ initialUrl, busy, onStart }: { initialUrl?: st
   return <main className="intent-onboarding-main">
     <section className="intent-onboarding-hero">
       <div className="intent-hero-icon"><Globe2 size={22} /></div>
-      <h1>Cole o site do cliente.<br />O Intent monta a pesquisa inteira.</h1>
-      <p>A partir do domínio, o Intent lê o site, encontra a company page no LinkedIn, descobre os concorrentes e gera o ICP completo — quem compra e como reconhecer que está comprando. Tudo editável antes de ativar.</p>
+      <h1>Comece pelo site da empresa.<br />O Intent revela onde estão as oportunidades.</h1>
+      <p>Em poucos minutos, reunimos informações públicas para criar o perfil de cliente ideal, identificar quem compra e reconhecer os sinais que merecem atenção. Você revisa tudo antes de ativar.</p>
       <form className="intent-url-box" onSubmit={submit}>
         <Input aria-label="Site da empresa" autoComplete="url" disabled={busy} placeholder="https://empresa.com.br" value={site} onChange={(event) => setSite(event.target.value)} />
-        <Button disabled={busy || !site.trim()} type="submit">{busy ? "Iniciando…" : "Analisar site"}<ArrowRight size={16} /></Button>
+        <Button disabled={busy || !site.trim()} type="submit">{busy ? "Preparando análise…" : "Criar perfil ideal"}<ArrowRight size={16} /></Button>
       </form>
       {error && <p className="intent-inline-error" role="alert">{error}</p>}
-      <p className="intent-trust-note">A análise usa somente fontes públicas. O consumo inicial é de 12 créditos e os custos técnicos ficam registrados.</p>
+      <p className="intent-trust-note">Usamos somente informações públicas. Você mantém o controle da revisão e do consumo de créditos em todas as etapas.</p>
     </section>
   </main>
 }

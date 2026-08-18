@@ -24,6 +24,6 @@ export async function loadCollectionProgress(projectId: string): Promise<Collect
     executionId: data.id,
     stage: data.etapa_atual,
     progress: data.progresso,
-    message: data.mensagem_progresso ?? "Preparando a coleta real.",
+    message: data.mensagem_progresso ?? "Preparando a atualização.",
   }
 }

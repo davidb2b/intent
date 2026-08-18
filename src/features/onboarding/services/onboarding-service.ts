@@ -1,4 +1,5 @@
 import { supabase } from "@/infrastructure/supabase/client"
+import { productErrorMessage } from "@/lib/product-messages"
 import { functionErrorMessage } from "@/lib/supabase-function-error"
 import type { IcpRecord, IntentProject, OnboardingExecution, OnboardingWorkspace } from "../domain/onboarding"
 
@@ -52,11 +53,11 @@ export async function prepareIntentProject(userId: string): Promise<IntentProjec
   // pertence ao único projeto ativo do usuário, garantido pelo índice parcial
   // `projetos_one_active_per_owner_idx`.
   const existing = await supabase.from("projetos").select(columns).eq("owner_id", userId).eq("ativo", true).maybeSingle()
-  if (existing.error) throw new Error(existing.error.message)
+  if (existing.error) throw new Error(productErrorMessage(existing.error, "Não conseguimos preparar sua conta agora. Tente novamente em alguns instantes."))
   if (existing.data) return mapProject(existing.data as ProjectRow)
 
   const created = await supabase.from("projetos").insert({ owner_id: userId, nome: "Intent", categoria: "Intent" }).select(columns).single()
-  if (created.error) throw new Error(created.error.message)
+  if (created.error) throw new Error(productErrorMessage(created.error, "Não conseguimos preparar sua conta agora. Tente novamente em alguns instantes."))
   return mapProject(created.data as ProjectRow)
 }
 
@@ -66,8 +67,8 @@ export async function loadOnboardingWorkspace(userId: string): Promise<Onboardin
     supabase.from("icps").select("id,projeto_id,versao,status,empresa_resumo,firmografia,comprador,sinais_de_compra,custo_usd,criado_em,ativado_em").eq("projeto_id", project.id).order("versao", { ascending: false }),
     supabase.from("execucoes").select("id,status,etapa_atual,progresso,mensagem_progresso,erro,custo_usd").eq("projeto_id", project.id).eq("tipo", "onboarding").order("iniciada_em", { ascending: false }).limit(1).maybeSingle(),
   ])
-  if (icpsResult.error) throw new Error(icpsResult.error.message)
-  if (executionResult.error) throw new Error(executionResult.error.message)
+  if (icpsResult.error) throw new Error(productErrorMessage(icpsResult.error, "Não conseguimos carregar seu perfil ideal agora. Tente novamente em alguns instantes."))
+  if (executionResult.error) throw new Error(productErrorMessage(executionResult.error, "Não conseguimos carregar o andamento da análise agora. Tente novamente em alguns instantes."))
   const icps = (icpsResult.data as IcpRow[] | null)?.map(mapIcp) ?? []
   const executionRow = executionResult.data as Record<string, unknown> | null
   const execution: OnboardingExecution | null = executionRow ? {
@@ -84,7 +85,7 @@ export async function loadOnboardingWorkspace(userId: string): Promise<Onboardin
 
 export async function loadOnboardingExecution(projectId: string): Promise<OnboardingExecution | null> {
   const result = await supabase.from("execucoes").select("id,status,etapa_atual,progresso,mensagem_progresso,erro,custo_usd").eq("projeto_id", projectId).eq("tipo", "onboarding").order("iniciada_em", { ascending: false }).limit(1).maybeSingle()
-  if (result.error) throw new Error(result.error.message)
+  if (result.error) throw new Error(productErrorMessage(result.error, "Não conseguimos atualizar o andamento da análise agora. Tente novamente em alguns instantes."))
   const row = result.data as Record<string, unknown> | null
   return row ? {
     id: String(row.id), status: row.status as OnboardingExecution["status"], stage: String(row.etapa_atual ?? "site") as OnboardingExecution["stage"], progress: Number(row.progresso ?? 0), message: String(row.mensagem_progresso ?? "Preparando a análise."), error: typeof row.erro === "string" ? row.erro : null, costUsd: Number(row.custo_usd ?? 0),
