@@ -46,7 +46,8 @@ real.
 - `pessoa_contatos_privados`: contato criptografado/server-only;
 - `contatos_revelados`: ledger de concessões, sem duplicar cobrança;
 - `sinais`: evidência e julgamento auditável por projeto;
-- `jobs`, `integracao_raw_payloads`, `custos`: server-only;
+- `jobs`, `integracao_raw_payloads`, `custos` e
+  `watchlist_operacao_privada`: server-only;
 - RPCs explícitas para marcar cliente, ativar ICP e revelar contato.
 
 ## Evidência automatizada

@@ -1,6 +1,6 @@
 # Intent v1 — plano vigente
 
-Status: Fases 0 e 1 encerradas; núcleo e cascatas de empresa, post e autor da Fase 2 homologados em produção
+Status: Fases 0 e 1 encerradas; núcleo, cascatas e ciclo recorrente da Watchlist da Fase 2 publicados em produção
 
 Branch: `main`
 Fontes de verdade: SPEC Intent v1, motor people-first v2 e protótipo v7.3.
@@ -53,7 +53,7 @@ busca temática poderá existir como complemento, nunca como coração do motor.
 |---|---|---|---|
 | 0 | Contratos, arquitetura, integrações e estratégia de migração | Encerrada | migrations `0009`/`0010`, RLS, testes e banco remoto validados |
 | 1 | Onboarding site -> ICP editável/versionado | Encerrada | ICP real gerado, editado, versionado e ativado em produção |
-| 2 | Radar people-first, fila, julgamento, créditos e cascatas | Em andamento | núcleo e cascatas de empresa/post/autor homologados; ciclo da Watchlist e contatos ainda pendentes |
+| 2 | Radar people-first, fila, julgamento, créditos e cascatas | Em andamento | núcleo, cascatas e ciclo da Watchlist publicados; falta uma execução paga observada e a revelação de contato |
 | 3 | Início, Pessoas, Contas, Watchlist, ICP e classificação | Não iniciada | protótipo v7.3 com dados reais e sem conceitos internos |
 | 4 | Hardening, observabilidade, segurança e homologação final | Não iniciada | smoke em produção, RLS, custos e recuperação de falhas |
 
@@ -70,7 +70,8 @@ busca temática poderá existir como complemento, nunca como coração do motor.
 
 ## Próximo gate
 
-O próximo bloco implementa o ciclo recorrente das fontes aprovadas na
-Watchlist. Ele precisa coletar posts próprios sem confundi-los com atividade
-feita pelo perfil, alimentar as cascatas já homologadas e continuar respeitando
-dedupe, isolamento por projeto e orçamento diário.
+O próximo gate é uma execução real completa de uma fonte V1 aprovada na
+Watchlist. A aprovação continua humana e explícita: o ciclo já publicado coleta
+somente posts próprios, encaminha somente posts inéditos para a cascata
+existente e mantém dedupe, isolamento por projeto e orçamento diário. Depois
+disso, o último bloco funcional da Fase 2 é a revelação de contato sob demanda.

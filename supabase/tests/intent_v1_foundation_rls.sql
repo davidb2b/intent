@@ -151,6 +151,11 @@ select public.intent_test_assert(
 );
 
 select public.intent_test_assert(
+  not has_table_privilege(current_user, 'public.watchlist_operacao_privada', 'SELECT'),
+  'recurring Watchlist operations are server-only'
+);
+
+select public.intent_test_assert(
   not has_table_privilege(current_user, 'public.custos', 'SELECT'),
   'provider costs are server-only'
 );

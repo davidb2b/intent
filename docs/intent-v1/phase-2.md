@@ -95,6 +95,28 @@ browser e não expõe fit, Actors ou a mecânica da cascata. Um autor descartado
 pelo usuário não é reativado pelo motor. A análise não chama provedores e tem
 custo externo zero.
 
+## Ciclo recorrente da Watchlist
+
+O ciclo recorrente está publicado e reaproveita a fila já homologada:
+
+```text
+fonte V1 aprovada (`pagina` ou `pessoa`)
+  -> job `varrer_watchlist` no máximo uma vez a cada 24 horas
+  -> posts próprios públicos via Actor sem cookies
+  -> normalização de URL, ID público, data e métricas realmente retornadas
+  -> dedupe por post e fonte
+  -> somente posts inéditos entram em `varrer_post`
+  -> comentários, reações, pessoas e contas seguem a cascata existente
+```
+
+O Actor recebe uma fonte por execução, aceita URLs de perfil e de página de
+empresa e busca no máximo dez posts. Fontes legadas sem tipo de Watchlist não
+entram nesse ciclo; também não existe ativação automática de candidatas. O
+estado, payload bruto, custo e próxima coleta ficam no backend, fora do browser.
+O agendamento verifica fontes de hora em hora e a fila é processada a cada
+minuto. A única homologação ainda pendente é observar uma execução paga, com
+uma fonte V1 aprovada por uma pessoa.
+
 ## Homologação real
 
 A execução de produção usou um ICP ativo e concluiu toda a fila sem erro:
@@ -149,10 +171,11 @@ radar privado e não aparecem ao cliente.
 
 ## Próximo bloco da Fase 2
 
-O núcleo está homologado. Ainda pertencem à Fase 2, mas serão implementados em
-blocos separados para preservar controle de custo e isolamento de falhas:
+O núcleo e o ciclo estão publicados. Restam dois gates separados para preservar
+controle de custo e isolamento de falhas:
 
-1. execução recorrente de watchlists;
+1. aprovar uma fonte V1 e observar uma execução recorrente completa com dados
+   públicos reais;
 2. revelação de contato sob demanda, com consentimento de ação e débito
    específico por tipo de contato.
 

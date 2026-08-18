@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { buildBrazilProfileBatchInput, isBrazilianProfile, requestedProfileSlugs } from "../../../../supabase/functions/_shared/brazil-profile-verification"
 import { brazilRelevanceScore, buildBrazilFirstQueries, buildBrazilProfileSearchInput, isLinkedInPersonProfileUrl } from "../../../../supabase/functions/_shared/brazil-first-discovery"
 import { canonicalProfileUrl, normalizeProfileSlug } from "../../../../supabase/functions/_shared/profile-identity"
-import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR } from "../../../../supabase/functions/_shared/monitoring-posts"
+import { buildMonitoredProfilePostsInput, MONITORED_PROFILE_POSTS_ACTOR, normalizeWatchlistPost } from "../../../../supabase/functions/_shared/monitoring-posts"
 import { usablePersonName } from "../../../../supabase/functions/_shared/person-enrichment"
 
 describe("profile identity", () => {
@@ -18,11 +18,50 @@ describe("profile identity", () => {
       "https://www.linkedin.com/in/marcos-ribeiro-123",
     ], "month")).toEqual({
       targetUrls: ["https://www.linkedin.com/in/marcos-ribeiro-123"],
-      maxPosts: 30,
+      maxPosts: 10,
       postedLimit: "month",
       scrapeComments: false,
       scrapeReactions: false,
     })
+  })
+
+  it("accepts company pages in the same approved Watchlist contract", () => {
+    expect(buildMonitoredProfilePostsInput([
+      "https://www.linkedin.com/company/empresa-brasileira/?trk=public",
+    ], "week")).toMatchObject({
+      targetUrls: ["https://www.linkedin.com/company/empresa-brasileira"],
+      maxPosts: 10,
+      postedLimit: "week",
+    })
+  })
+
+  it("normalizes stable public post fields without inventing missing values", () => {
+    expect(normalizeWatchlistPost({
+      id: "urn:li:activity:7400000000000000000",
+      linkedinUrl: "https://www.linkedin.com/posts/ana_tema-activity-7400000000000000000?utm_source=test",
+      content: "Uma conversa pública relevante",
+      postedAt: { timestamp: 1_786_838_400_000 },
+      author: { name: "Ana Silva", linkedinUrl: "https://www.linkedin.com/in/Ana-Silva/?trk=public" },
+      engagement: { comments: 3, reactions: ["a", "b"], shares: 1 },
+    }, {
+      linkedinUrl: "https://www.linkedin.com/in/ana-silva",
+      name: "Ana Silva",
+    })).toEqual({
+      authorName: "Ana Silva",
+      authorUrl: "https://www.linkedin.com/in/ana-silva",
+      comments: 3,
+      linkedinUrl: "https://www.linkedin.com/posts/ana_tema-activity-7400000000000000000",
+      postUrn: "urn:li:activity:7400000000000000000",
+      publishedAt: "2026-08-16T00:00:00.000Z",
+      reactions: 2,
+      shares: 1,
+      text: "Uma conversa pública relevante",
+    })
+
+    expect(normalizeWatchlistPost({ id: "sem-identidade-publica" }, {
+      linkedinUrl: "https://www.linkedin.com/in/ana-silva",
+      name: "Ana Silva",
+    })).toBeNull()
   })
 
   it("keeps two different slugs as different people", () => {

@@ -39,6 +39,121 @@ insert into public.projetos (
   3
 );
 
+insert into public.icps (
+  id,
+  projeto_id,
+  versao,
+  status,
+  empresa_resumo,
+  firmografia,
+  comprador,
+  sinais_de_compra,
+  modelo_geracao,
+  prompt_versao,
+  ativado_em
+) values (
+  '42000000-0000-0000-0000-000000000001',
+  '02000000-0000-0000-0000-000000000001',
+  1,
+  'ativo',
+  'Empresa de teste',
+  '{}'::jsonb,
+  '{}'::jsonb,
+  '{}'::jsonb,
+  'test',
+  'test.v1',
+  now()
+);
+
+insert into public.fontes (
+  id,
+  projeto_id,
+  tipo,
+  tipo_watchlist,
+  linkedin_url,
+  nome,
+  status
+) values (
+  '32000000-0000-0000-0000-000000000001',
+  '02000000-0000-0000-0000-000000000001',
+  'perfil',
+  'pessoa',
+  'https://www.linkedin.com/in/pessoa-watchlist',
+  'Pessoa Watchlist',
+  'candidata'
+);
+
+update public.fontes
+   set status = 'monitorada'
+ where id = '32000000-0000-0000-0000-000000000001';
+
+select public.intent_phase2_assert(
+  (
+    select count(*) = 1
+      from public.jobs
+     where projeto_id = '02000000-0000-0000-0000-000000000001'
+       and tipo = 'varrer_watchlist'
+       and status = 'pendente'
+       and payload ->> 'fonte_id' = '32000000-0000-0000-0000-000000000001'
+       and payload ->> 'icp_id' = '42000000-0000-0000-0000-000000000001'
+  ),
+  'approving a Watchlist queues its first sweep'
+);
+
+select public.intent_phase2_assert(
+  (
+    select status = 'pendente' and ultimo_job_id is not null
+      from public.watchlist_operacao_privada
+     where fonte_id = '32000000-0000-0000-0000-000000000001'
+  ),
+  'the private Watchlist state records the queued sweep'
+);
+
+set local role service_role;
+
+select public.intent_enqueue_watchlist_source(
+  '32000000-0000-0000-0000-000000000001',
+  'duplicate-test'
+);
+
+select public.intent_phase2_assert(
+  (
+    select count(*) = 1
+      from public.jobs
+     where projeto_id = '02000000-0000-0000-0000-000000000001'
+       and tipo = 'varrer_watchlist'
+       and status in ('pendente', 'rodando', 'aguardando_creditos')
+       and payload ->> 'fonte_id' = '32000000-0000-0000-0000-000000000001'
+  ),
+  'an approved Watchlist cannot accumulate overlapping sweeps'
+);
+
+reset role;
+
+insert into public.fontes (
+  id,
+  projeto_id,
+  tipo,
+  linkedin_url,
+  nome,
+  status
+) values (
+  '32000000-0000-0000-0000-000000000002',
+  '02000000-0000-0000-0000-000000000001',
+  'perfil',
+  'https://www.linkedin.com/in/fonte-legada',
+  'Fonte legada',
+  'monitorada'
+);
+
+select public.intent_phase2_assert(
+  public.intent_enqueue_watchlist_source(
+    '32000000-0000-0000-0000-000000000002',
+    'legacy-test'
+  ) is null,
+  'legacy monitored sources never enter the V1 Watchlist engine'
+);
+
 set local role service_role;
 
 select public.intent_phase2_assert(

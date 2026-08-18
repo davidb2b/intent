@@ -18,3 +18,10 @@ as $$
 $$;
 
 grant usage on schema public, auth to anon, authenticated, service_role;
+
+-- Supabase grants the service role full access to application objects. Mirror
+-- that contract in disposable PostgreSQL so RLS and queue tests exercise the
+-- same privileges as production.
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
+alter default privileges in schema public grant execute on functions to service_role;

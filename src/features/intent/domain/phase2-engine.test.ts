@@ -45,6 +45,7 @@ describe("Phase 2 people-first contracts", () => {
     expect(engineBudgetUnits("vigiar_pessoa")).toBe(1);
     expect(engineBudgetUnits("varrer_empresa")).toBe(5);
     expect(engineBudgetUnits("varrer_post")).toBe(10);
+    expect(engineBudgetUnits("varrer_watchlist")).toBe(5);
     expect(engineBudgetUnits("julgar_sinal")).toBe(0);
   });
 

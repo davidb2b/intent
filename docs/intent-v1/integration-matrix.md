@@ -109,7 +109,7 @@ o fallback nem cria sinal artificial.
 | Comentários do post | `harvestapi/linkedin-post-comments` | `apimaestro/linkedin-post-comments-replies-engagements-scraper-no-cookies` | **Aprovado**; preserva autor, comentário, data e URL pública |
 | Reações do post | `harvestapi/linkedin-post-reactions` | `apimaestro/linkedin-post-reactions` | **Aprovado para descoberta**; ausência de data não vira sinal temporal |
 | Perfil detalhado | `harvestapi/linkedin-profile-scraper` | `apimaestro/linkedin-profile-detail` | Contrato legado disponível; preservar campos ausentes |
-| Posts do influenciador | `harvestapi/linkedin-profile-posts` | Nenhum aprovado | Candidato; não confundir posts próprios com atividade feita |
+| Posts próprios da Watchlist | `harvestapi/linkedin-profile-posts` | Nenhum aprovado | **Aprovado** para perfil e página; no máximo 10 posts por fonte, somente após aprovação humana |
 
 Homologação real da cascata em 18/08/2026:
 
@@ -129,8 +129,13 @@ A qualificação inicial do autor não usa um novo provedor. Ela agrega somente
 vínculos de engajamento já aceitos pelo filtro Brasil/ICP e cria uma sugestão
 de pessoa quando existem três engajadores distintos. O caso real homologado
 gerou uma sugestão a partir de três pessoas em dois posts, com custo externo
-zero. A coleta de posts próprios começa apenas depois da aprovação humana e
-será validada no bloco recorrente da Watchlist.
+zero. A coleta de posts próprios começa apenas depois da aprovação humana. O
+ciclo publicado chama `harvestapi/linkedin-profile-posts` com uma única URL de
+perfil ou página e máximo de dez posts; comentários e reações permanecem
+desligados nessa etapa. O adaptador exige ID público estável, preserva somente
+campos que o Actor devolve e envia apenas posts inéditos à cascata `varrer_post`.
+A última homologação pendente é observar uma execução paga de uma fonte V1
+aprovada.
 
 ## Onboarding
 

@@ -27,6 +27,11 @@ import { normalizeCompanyKey, usablePersonName } from "../_shared/person-enrichm
 import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 import { engineBudgetUnits } from "../_shared/intent-engine-budget.ts"
 import { qualifiesAuthorForWatchlist } from "../_shared/intent-author-watchlist.ts"
+import {
+  buildMonitoredProfilePostsInput,
+  MONITORED_PROFILE_POSTS_ACTOR,
+  normalizeWatchlistPost,
+} from "../_shared/monitoring-posts.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -653,6 +658,166 @@ async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey:
   }
 }
 
+async function processWatchlistJob(admin: AdminClient, job: Job, apifyToken: string) {
+  const sourceId = typeof job.payload.fonte_id === "string" ? job.payload.fonte_id : ""
+  const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const window = typeof job.payload.janela === "string" ? job.payload.janela : "week"
+  const executionId = await createExecution(admin, job.projeto_id, "vigilia", {
+    job_id: job.id,
+    fonte_id: sourceId,
+    icp_id: icpId,
+    origem: "watchlist",
+  })
+  let totalCost = 0
+
+  try {
+    const { data: source, error: sourceError } = await admin.from("fontes")
+      .select("id, linkedin_url, nome, status, tipo_watchlist")
+      .eq("id", sourceId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (sourceError || !source) throw new Error("A fonte aprovada não foi encontrada para esta atualização.")
+    if (source.status !== "monitorada") {
+      await finishExecution(admin, executionId, { status: "concluida" })
+      return { skipped: true, reason: "source_not_monitored" }
+    }
+    if (source.tipo_watchlist !== "pagina" && source.tipo_watchlist !== "pessoa") {
+      await finishExecution(admin, executionId, { status: "concluida" })
+      return { skipped: true, reason: "legacy_source" }
+    }
+    if (!usablePersonName(source.nome) || !source.linkedin_url) {
+      throw new Error("A fonte aprovada não possui identidade pública suficiente para ser acompanhada.")
+    }
+
+    const { data: icp, error: icpError } = await admin.from("icps")
+      .select("id, status")
+      .eq("id", icpId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (icpError || !icp || icp.status !== "ativo") {
+      throw new Error("O perfil ideal ativo não foi encontrado para atualizar esta Watchlist.")
+    }
+
+    const startedAt = new Date().toISOString()
+    const { error: startError } = await admin.from("watchlist_operacao_privada").upsert({
+      fonte_id: source.id,
+      projeto_id: job.projeto_id,
+      icp_id: icp.id,
+      status: "rodando",
+      ultimo_job_id: job.id,
+      ultimo_erro: null,
+      atualizado_em: startedAt,
+    }, { onConflict: "fonte_id" })
+    if (startError) throw new Error(`Falha ao preparar a atualização da Watchlist: ${startError.message}`)
+
+    const actorInput = buildMonitoredProfilePostsInput([source.linkedin_url], window)
+    if (!actorInput.targetUrls.length) throw new Error("A fonte aprovada não possui uma URL pública válida.")
+    const result = await runApifyActor(MONITORED_PROFILE_POSTS_ACTOR, actorInput, apifyToken)
+    totalCost += result.costUsd
+    await recordProviderCost(admin, executionId, result, "watchlist_posts")
+    await auditPayload(admin, {
+      projectId: job.projeto_id,
+      jobId: job.id,
+      provider: "apify",
+      operation: MONITORED_PROFILE_POSTS_ACTOR,
+      runId: result.runId,
+      identity: source.id,
+      payload: { input: actorInput, items: result.items, logs: result.logMessages },
+    })
+
+    const normalizedByUrn = new Map<string, ReturnType<typeof normalizeWatchlistPost>>()
+    for (const item of result.items) {
+      const normalized = normalizeWatchlistPost(item, {
+        linkedinUrl: source.linkedin_url,
+        name: source.nome,
+      })
+      if (normalized) normalizedByUrn.set(normalized.postUrn, normalized)
+    }
+    const normalizedPosts = [...normalizedByUrn.values()].filter((post): post is NonNullable<typeof post> => Boolean(post))
+    const urns = normalizedPosts.map((post) => post.postUrn)
+    const existingByUrn = new Map<string, {
+      autor_nome: string | null
+      autor_url: string | null
+      linkedin_url: string
+      post_urn: string
+      publicado_em: string | null
+      texto: string | null
+      total_comentarios: number | null
+      total_reacoes: number | null
+      total_shares: number | null
+    }>()
+    if (urns.length > 0) {
+      const { data: existingPosts, error: existingError } = await admin.from("posts")
+        .select("post_urn, linkedin_url, autor_nome, autor_url, texto, publicado_em, total_reacoes, total_comentarios, total_shares")
+        .eq("projeto_id", job.projeto_id)
+        .in("post_urn", urns)
+      if (existingError) throw new Error(`Falha ao verificar posts já conhecidos: ${existingError.message}`)
+      for (const post of existingPosts ?? []) existingByUrn.set(post.post_urn, post)
+    }
+
+    let posts: Array<{ id: string; post_urn: string }> = []
+    if (normalizedPosts.length > 0) {
+      const { data, error: postsError } = await admin.from("posts").upsert(normalizedPosts.map((post) => {
+        const existing = existingByUrn.get(post.postUrn)
+        return {
+          projeto_id: job.projeto_id,
+          fonte_id: source.id,
+          linkedin_url: post.linkedinUrl || existing?.linkedin_url,
+          post_urn: post.postUrn,
+          autor_nome: post.authorName || existing?.autor_nome,
+          autor_url: post.authorUrl || existing?.autor_url,
+          texto: post.text ?? existing?.texto ?? null,
+          publicado_em: post.publishedAt ?? existing?.publicado_em ?? null,
+          total_reacoes: post.reactions ?? existing?.total_reacoes ?? null,
+          total_comentarios: post.comments ?? existing?.total_comentarios ?? null,
+          total_shares: post.shares ?? existing?.total_shares ?? null,
+        }
+      }), { onConflict: "projeto_id,post_urn" }).select("id, post_urn")
+      if (postsError || !data) throw new Error(`Falha ao organizar os posts da Watchlist: ${postsError?.message ?? "registros ausentes"}`)
+      posts = data
+    }
+
+    const newPosts = posts.filter((post) => !existingByUrn.has(post.post_urn))
+    for (const post of newPosts) {
+      await enqueue(admin, job.projeto_id, "varrer_post", { post_id: post.id, icp_id: icp.id }, 35)
+    }
+
+    const completedAt = new Date()
+    const { error: completeError } = await admin.from("watchlist_operacao_privada").update({
+      status: newPosts.length > 0 ? "concluida" : "sem_novos_posts",
+      provider: "apify",
+      provider_run_id: result.runId,
+      posts_lidos: normalizedPosts.length,
+      posts_novos: newPosts.length,
+      ultima_varredura_em: completedAt.toISOString(),
+      proxima_varredura_em: new Date(completedAt.getTime() + 24 * 60 * 60 * 1_000).toISOString(),
+      ultimo_erro: null,
+      atualizado_em: completedAt.toISOString(),
+    }).eq("fonte_id", source.id).eq("projeto_id", job.projeto_id)
+    if (completeError) throw new Error(`Falha ao concluir a atualização da Watchlist: ${completeError.message}`)
+
+    await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost })
+    return {
+      sourceId: source.id,
+      sourceType: source.tipo_watchlist,
+      postsRead: normalizedPosts.length,
+      postsInserted: newPosts.length,
+      postCascadesQueued: newPosts.length,
+      costUsd: totalCost,
+    }
+  } catch (error) {
+    const failedAt = new Date()
+    await admin.from("watchlist_operacao_privada").update({
+      status: "falhou",
+      ultimo_erro: errorMessage(error),
+      proxima_varredura_em: new Date(failedAt.getTime() + 60 * 60 * 1_000).toISOString(),
+      atualizado_em: failedAt.toISOString(),
+    }).eq("fonte_id", sourceId).eq("projeto_id", job.projeto_id)
+    await finishExecution(admin, executionId, { status: "falhou", costUsd: totalCost, error: errorMessage(error) })
+    throw error
+  }
+}
+
 async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { apollo: string; apify: string }) {
   const postId = typeof job.payload.post_id === "string" ? job.payload.post_id : ""
   const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
@@ -1191,6 +1356,7 @@ async function processJob(admin: AdminClient, job: Job, secrets: { apollo: strin
   if (job.tipo === "varrer_empresa") return processCompanyCascadeJob(admin, job, secrets.apollo)
   if (job.tipo === "varrer_post") return processPostCascadeJob(admin, job, { apollo: secrets.apollo, apify: secrets.apify })
   if (job.tipo === "investigar_autor") return processAuthorInvestigationJob(admin, job)
+  if (job.tipo === "varrer_watchlist") return processWatchlistJob(admin, job, secrets.apify)
   throw new Error("Este tipo de etapa ainda não pertence ao fluxo ativo da Fase 2.")
 }
 
@@ -1222,7 +1388,7 @@ Deno.serve(async (request) => {
     if (!owned) return json({ error: "Não encontramos esta empresa na sua conta." }, 404)
   }
 
-  const activeTypes = ["semear_radar", "vigiar_pessoa", "julgar_sinal", "varrer_empresa", "varrer_post", "investigar_autor"]
+  const activeTypes = ["semear_radar", "vigiar_pessoa", "julgar_sinal", "varrer_empresa", "varrer_post", "investigar_autor", "varrer_watchlist"]
   const requestedTypes = Array.isArray(body.jobTypes) ? body.jobTypes.filter((type) => activeTypes.includes(type)) : activeTypes
   const maxJobs = Math.max(1, Math.min(10, Math.trunc(Number(body.maxJobs ?? 5))))
   const processed: Array<Record<string, unknown>> = []

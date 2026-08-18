@@ -3,6 +3,7 @@ const ENGINE_BUDGET_UNITS: Record<string, number> = {
   vigiar_pessoa: 1,
   varrer_empresa: 5,
   varrer_post: 10,
+  varrer_watchlist: 5,
 }
 
 export function engineBudgetUnits(jobType: string) {
