@@ -64,10 +64,53 @@
       },
       "decision": "rejected",
       "reason": "The real output cannot preserve the post evidence and event time required by Intent v1."
+    },
+    {
+      "role": "replacement_fallback",
+      "actor": "scraping_solutions/linkedin-profile-comments-reactions-scraper-no-cookies",
+      "runId": "j8mXcKgwAfKnzrrjL",
+      "status": "succeeded",
+      "durationSeconds": 30,
+      "costUsd": 0.057,
+      "itemCount": 41,
+      "itemsPerProfile": [20, 20, 1],
+      "itemsByType": {
+        "comments": 23,
+        "reactions": 18
+      },
+      "requiredFieldCoverage": {
+        "activityType": 1,
+        "sourceProfileHandle": 1,
+        "eventDateWithoutTimezone": 1,
+        "postUrl": 1,
+        "literalEvidenceOrPostPreview": 1,
+        "eventTimestamp": 0,
+        "postContentSeparateFromEvidence": 0,
+        "postAuthor": 0
+      },
+      "quality": {
+        "parseableDates": 41,
+        "uniquePostUrls": 30,
+        "duplicateEvents": 0
+      },
+      "billingPreflight": {
+        "requestedMaxItemsPerProfile": 5,
+        "minimumAcceptedMaxItemsPerProfile": 20,
+        "firstCostLimitUsd": 0.02,
+        "firstAttemptChargedUsd": 0,
+        "requiredMaximumCostForThreeProfilesUsd": 0.084
+      },
+      "decision": "approved_as_degraded_fallback",
+      "restrictions": [
+        "Invoke comments and reactions separately so one type cannot consume the entire per-profile limit.",
+        "Preserve the raw event date and mark its timezone as unknown.",
+        "Treat missing post text and post author as partial context, never as empty evidence.",
+        "Reconstruct the canonical source profile URL only from the requested validated handle."
+      ]
     }
   ],
   "totals": {
-    "costUsd": 0.133,
-    "itemCount": 38
+    "costUsd": 0.19,
+    "itemCount": 79
   }
 }

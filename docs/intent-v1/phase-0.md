@@ -7,7 +7,8 @@ Esta fase não muda a produção e não aplica migrations definitivas.
 
 ## Linha de base preservada
 
-- `main` permanece no commit anterior ao redesenho do produto.
+- `main` contém os contratos e evidências da Fase 0, sem trocar o comportamento
+  do produto nem aplicar migrations do novo motor.
 - O banco atual e os dados reais não serão apagados.
 - Edge Functions, cron e UI anteriores continuam funcionando até o corte.
 - O novo motor nasce em tabelas e funções aditivas.
@@ -45,7 +46,7 @@ Gate: não implementar `seed-radar` antes dos cinco itens de execução real.
 - [x] Rodar primário e fallback com os mesmos 3 perfis públicos brasileiros.
 - [x] Comparar cobertura, identidade, timestamps, post, evidência e custo.
 - [ ] Confirmar comportamento para perfil indisponível.
-- [x] Salvar fixture anonimizada e decisão dos três Actors testados.
+- [x] Salvar fixture anonimizada e decisão dos quatro Actors testados.
 
 Gate: nenhum Actor é considerado homologado apenas por README, nota ou número
 de usuários. A aprovação exige input, output e custo de execução real.
@@ -74,20 +75,21 @@ A fase termina somente quando:
 
 - [x] Apollo real aprovado;
 - [x] Actor primário real aprovado;
-- [ ] Actor fallback real aprovado;
+- [x] Actor fallback real aprovado;
 - [ ] Brasil comprovado nos payloads;
-- [ ] campos ausentes e degradação documentados;
+- [x] campos ausentes e degradação documentados;
 - [ ] schemas de LLM aprovados;
 - [ ] estratégia de dados privados aprovada;
-- [ ] nenhuma secret foi registrada no Git;
-- [ ] testes e build da branch passam.
+- [x] nenhuma secret foi registrada no Git;
+- [x] testes e build da `main` passam.
 
 ## Riscos atualmente abertos
 
 1. People Search aceita o filtro Brasil, mas não devolve o país literal no
    payload resumido; a regra regional exige confirmação por enriquecimento.
-2. A dupla primária foi aprovada, mas o fallback combinado testado foi rejeitado
-   por não preservar post nem timestamp; outro candidato precisa de run real.
+2. O fallback aprovado é degradado: exige lote mínimo de 20, não informa timezone
+   e omite texto/autor separado do post. Deve ser chamado por tipo e nunca
+   substituir silenciosamente campos ausentes.
 3. Scraping público pode devolver atividade parcial; parcialidade deve ser
    explícita e nunca convertida em "sem intenção".
 4. O RLS legado permite escrita ampla do proprietário e não protege revelação

@@ -38,14 +38,15 @@ obrigatória antes de ativar uma pessoa no radar**.
 | Primário — comentários | `harvestapi/linkedin-profile-comments` | Run real: 8 itens, 27 s, US$ 0,016; preserva comentário, identidade, timestamp, URL e conteúdo do post | **Aprovado** |
 | Primário — reações | `harvestapi/linkedin-profile-reactions` | Run real: 11 itens, 27 s, US$ 0,022; preserva ação, identidade, timestamp, URL e conteúdo do post | **Aprovado** |
 | Fallback combinado | `unseenuser/linkedin-user-comments-reactions` | Run real: 19 itens, 16 s, US$ 0,095; não entrega timestamp, URL nem conteúdo do post | **Rejeitado para produção** |
-| Próximo fallback candidato | `scraping_solutions/linkedin-profile-comments-reactions-scraper-no-cookies` | Contrato público declara tipo, perfil de entrada, timestamp, URL/texto/autor do post e dedupe; US$ 1,20/1.000 | **Precisa run real** |
+| Fallback degradado | `scraping_solutions/linkedin-profile-comments-reactions-scraper-no-cookies` | Run real: 41 itens, 30 s, US$ 0,057; preserva tipo, perfil, data, evidência e URL do post, mas omite timezone, texto separado e autor do post | **Aprovado com restrições** |
 | Reserva experimental | `iron-crawler/linkedin-profile-activity-scraper` | Sem cookie, quatro tipos, US$ 15/1.000, sem avaliações e baixo uso | Não usar antes de PoC específica |
 | Rejeitado | `crawlerbros/linkedin-user-activity-scraper` | Exige `li_at` e proxy residencial recomendado | Proibido pela arquitetura |
 
 Resultado da homologação de 18/08/2026:
 
-1. os mesmos três perfis públicos brasileiros foram usados nos três runs;
-2. o limite foi de 5 itens por perfil, com janela de um mês;
+1. os mesmos três perfis públicos brasileiros foram usados nos quatro runs;
+2. os três primeiros runs usaram 5 itens por perfil; o substituto impôs mínimo
+   de 20, sempre com janela de um mês;
 3. a dupla HarvestAPI retornou 19 itens por US$ 0,038 no total;
 4. um perfil sem comentários retornou zero de forma válida, enquanto ainda
    apresentou uma reação — ausência de comentário não foi tratada como falha;
@@ -53,15 +54,20 @@ Resultado da homologação de 18/08/2026:
    `action`, `comment_text`, `source_profile` e `page_number`;
 6. sem URL/conteúdo do post e sem timestamp, o fallback não sustenta evidência,
    recência, dedupe nem julgamento auditável e, portanto, foi rejeitado;
-7. a localização Brasil não vem desses payloads. A elegibilidade regional deve
+7. o fallback substituto retornou 41 itens, sem duplicatas, por US$ 0,057;
+8. o substituto exige mínimo de 20 itens por perfil, e o modo `both` pode deixar
+   um tipo consumir todo o limite; produção deve chamá-lo separadamente por tipo;
+9. `eventDate` não informa timezone, e `postText`/autor do post não vieram no
+   output real. O adaptador deve preservar essa parcialidade explicitamente;
+10. a localização Brasil não vem desses payloads. A elegibilidade regional deve
    ser comprovada antes do enfileiramento por Apollo ou enriquecimento de perfil.
 
 As métricas e a cobertura anonimizada estão versionadas em
 `fixtures/profile-activity-homologation.json`. Os outputs brutos permanecem na
 Apify e não foram copiados para o Git por conterem dados pessoais públicos.
 
-Status: **dupla primária homologada; busca de fallback compatível continua
-aberta**.
+Status: **dupla primária homologada e fallback degradado aprovado com contrato
+mais restrito**.
 
 ## Apify — cascata do post
 
