@@ -35,6 +35,7 @@ import { filterCompanyResults, getCompanySectors, type CompanySort } from "@/fea
 import { getOverviewMetrics, getTopCompanies, getUsefulComments } from "@/features/analytics/lib/overview"
 import { authService } from "@/features/auth/services/auth-service"
 import { OnboardingFlow } from "@/features/onboarding/OnboardingFlow"
+import { IntentAuthScreen } from "@/features/onboarding/components/IntentAuthScreen"
 import { saveResearch } from "@/features/research/services/save-research"
 import "./App.css"
 
@@ -224,14 +225,6 @@ function App() {
       window.removeEventListener("popstate", onPopState)
     }
   }, [])
-
-  useEffect(() => {
-    const setupRoute = window.location.pathname === "/onboarding" || window.location.pathname === "/icp"
-    if (authReady && !session && setupRoute) {
-      setAuthMode("signin")
-      setAuthOpen(true)
-    }
-  }, [authReady, session])
 
   useEffect(() => {
     if (!authReady) return
@@ -624,6 +617,7 @@ function App() {
 
   const isIntentSetupRoute = window.location.pathname === "/onboarding" || window.location.pathname === "/icp"
   if (isIntentSetupRoute && !authReady) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Validando sua sessão…</span></div>
+  if (isIntentSetupRoute && !session) return <IntentAuthScreen />
   if (isIntentSetupRoute && session) return <OnboardingFlow session={session} />
 
   return (
