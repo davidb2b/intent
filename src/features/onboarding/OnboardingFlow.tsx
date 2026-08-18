@@ -54,6 +54,8 @@ export function OnboardingFlow({ session }: { session: Session }) {
     if (!workspace) return
     setError("")
     setBusy(regenerate ? "regenerating" : "starting")
+    const domain = new URL(siteUrl).hostname.replace(/^www\./, "")
+    setWorkspace((current) => current ? { ...current, project: { ...current.project, siteUrl, domain } } : current)
     setExecution({ id: "pending", status: "rodando", stage: "site", progress: 2, message: "Preparando a análise das fontes públicas.", error: null, costUsd: 0 })
     try {
       await generateIcp(workspace.project.id, siteUrl, regenerate)

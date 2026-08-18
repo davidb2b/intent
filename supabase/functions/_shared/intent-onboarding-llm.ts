@@ -1,11 +1,8 @@
 type JsonSchema = Record<string, unknown>
 
-const text = { type: "string", minLength: 1 } as const
-const strings = (minItems: number, maxItems: number): JsonSchema => ({
+const text = { type: "string" } as const
+const strings = (_minItems: number, _maxItems: number): JsonSchema => ({
   type: "array",
-  minItems,
-  maxItems,
-  uniqueItems: true,
   items: text,
 })
 
@@ -28,7 +25,6 @@ export const companyProfileSchema: JsonSchema = {
     diferenciais: strings(1, 8),
     provas_sociais: {
       type: "array",
-      maxItems: 12,
       items: {
         type: "object",
         additionalProperties: false,
@@ -45,10 +41,10 @@ export const companyProfileSchema: JsonSchema = {
       properties: {
         nome: text,
         dominio: text,
-        linkedin_url: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+        linkedin_url: { anyOf: [{ type: "string" }, { type: "null" }] },
         industria_literal: text,
         faixa_funcionarios: { type: "string", enum: sizeBands },
-        fundada_em: { type: ["integer", "null"], minimum: 1800, maximum: 2200 },
+        fundada_em: { type: ["integer", "null"] },
         sede: text,
         pais: text,
       },
@@ -63,11 +59,9 @@ export const buyerProfileSchema: JsonSchema = {
   properties: {
     schema_version: { type: "string", const: "intent.buyer_profile.v1" },
     cargos: strings(1, 20),
-    senioridades: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", enum: seniorities } },
+    senioridades: { type: "array", items: { type: "string", enum: seniorities } },
     setores: {
       type: "array",
-      minItems: 1,
-      maxItems: 20,
       items: {
         type: "object",
         additionalProperties: false,
@@ -78,12 +72,10 @@ export const buyerProfileSchema: JsonSchema = {
         },
       },
     },
-    portes: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", enum: sizeBands } },
+    portes: { type: "array", items: { type: "string", enum: sizeBands } },
     regioes: strings(1, 20),
     exclusoes: {
       type: "array",
-      minItems: 5,
-      maxItems: 30,
       items: {
         type: "object",
         additionalProperties: false,
@@ -110,8 +102,6 @@ export const buyingSignalsSchema: JsonSchema = {
     temas: strings(12, 12),
     concorrentes: {
       type: "array",
-      minItems: 5,
-      maxItems: 5,
       items: {
         type: "object",
         additionalProperties: false,
@@ -121,8 +111,6 @@ export const buyingSignalsSchema: JsonSchema = {
     },
     regras: {
       type: "array",
-      minItems: 6,
-      maxItems: 8,
       items: {
         type: "object",
         additionalProperties: false,
@@ -232,13 +220,34 @@ function array(value: unknown, label: string, min: number, max: number): unknown
   return value
 }
 
+function nonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) throw new Error(`${label} fora do contrato.`)
+  return value.trim()
+}
+
+function uniqueStringArray(value: unknown, label: string, min: number, max: number): string[] {
+  const items = array(value, label, min, max).map((item) => nonEmptyString(item, label))
+  const normalized = items.map((item) => item.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())
+  if (new Set(normalized).size !== normalized.length) throw new Error(`${label} contém itens duplicados.`)
+  return items
+}
+
 export function validateCompanyProfile(
   value: Record<string, unknown>,
   sourceTextByUrl: Readonly<Record<string, string>>,
 ): void {
   if (value.schema_version !== "intent.company_profile.v1") throw new Error("Versão inválida do perfil da empresa.")
+  nonEmptyString(value.empresa_resumo, "Resumo da empresa")
+  nonEmptyString(value.oferta, "Oferta")
+  nonEmptyString(value.proposta_valor, "Proposta de valor")
+  uniqueStringArray(value.dores_resolvidas, "Dores resolvidas", 1, 8)
+  uniqueStringArray(value.diferenciais, "Diferenciais", 1, 8)
+  uniqueStringArray(value.segmentos_atendidos, "Segmentos atendidos", 1, 20)
+  uniqueStringArray(value.palavras_categoria, "Palavras de categoria", 1, 20)
   const firmography = value.firmografia as Record<string, unknown> | undefined
-  if (!firmography || typeof firmography.dominio !== "string") throw new Error("Firmografia inválida.")
+  if (!firmography) throw new Error("Firmografia inválida.")
+  nonEmptyString(firmography.nome, "Nome da empresa")
+  nonEmptyString(firmography.dominio, "Domínio da empresa")
   for (const proof of array(value.provas_sociais, "Provas sociais", 0, 12)) {
     if (!proof || typeof proof !== "object") throw new Error("Prova social inválida.")
     const item = proof as Record<string, unknown>
@@ -250,7 +259,11 @@ export function validateCompanyProfile(
 
 export function validateBuyerProfile(value: Record<string, unknown>): void {
   if (value.schema_version !== "intent.buyer_profile.v1") throw new Error("Versão inválida do perfil comprador.")
-  const regions = array(value.regioes, "Regiões", 1, 20).map(String)
+  uniqueStringArray(value.cargos, "Cargos", 1, 20)
+  uniqueStringArray(value.senioridades, "Senioridades", 1, seniorities.length)
+  array(value.setores, "Setores", 1, 20)
+  uniqueStringArray(value.portes, "Portes", 1, sizeBands.length)
+  const regions = uniqueStringArray(value.regioes, "Regiões", 1, 20)
   if (!regions.some((region) => region.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() === "brasil")) {
     throw new Error("Brasil é obrigatório no ICP da V1.")
   }
@@ -261,9 +274,9 @@ export function validateBuyerProfile(value: Record<string, unknown>): void {
 
 export function validateBuyingSignals(value: Record<string, unknown>): void {
   if (value.schema_version !== "intent.buying_signals.v1") throw new Error("Versão inválida dos sinais de compra.")
-  array(value.dores, "Dores", 8, 8)
-  array(value.gatilhos, "Gatilhos", 8, 8)
-  array(value.temas, "Temas", 12, 12)
+  uniqueStringArray(value.dores, "Dores", 8, 8)
+  uniqueStringArray(value.gatilhos, "Gatilhos", 8, 8)
+  uniqueStringArray(value.temas, "Temas", 12, 12)
   array(value.concorrentes, "Concorrentes", 5, 5)
   array(value.regras, "Regras", 6, 8)
 }
