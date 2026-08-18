@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "executedAt": "2026-08-18T12:39:00Z",
+  "scope": {
+    "profiles": 3,
+    "profileLabels": ["profile_a", "profile_b", "profile_c"],
+    "maxItemsPerProfile": 5,
+    "window": "past_month",
+    "containsPersonalData": false
+  },
+  "runs": [
+    {
+      "role": "primary_reactions",
+      "actor": "harvestapi/linkedin-profile-reactions",
+      "runId": "LZHJmuJDXKq8QsgiN",
+      "status": "succeeded",
+      "durationSeconds": 27,
+      "costUsd": 0.022,
+      "itemCount": 11,
+      "itemsPerProfile": [5, 5, 1],
+      "requiredFieldCoverage": {
+        "activityType": 1,
+        "occurredAt": 1,
+        "sourceProfile": 1,
+        "postUrl": 1,
+        "postContent": 1
+      },
+      "decision": "approved"
+    },
+    {
+      "role": "primary_comments",
+      "actor": "harvestapi/linkedin-profile-comments",
+      "runId": "SkL0gEOLwcpL0ez6W",
+      "status": "succeeded",
+      "durationSeconds": 27,
+      "costUsd": 0.016,
+      "itemCount": 8,
+      "itemsPerProfile": [5, 3, 0],
+      "requiredFieldCoverage": {
+        "commentText": 1,
+        "occurredAt": 1,
+        "sourceProfile": 1,
+        "postUrl": 1,
+        "postContent": 1
+      },
+      "decision": "approved"
+    },
+    {
+      "role": "combined_fallback",
+      "actor": "unseenuser/linkedin-user-comments-reactions",
+      "runId": "YJfxEXYj6Yp1erKRs",
+      "status": "succeeded",
+      "durationSeconds": 16,
+      "costUsd": 0.095,
+      "itemCount": 19,
+      "itemsPerProfile": [8, 10, 1],
+      "requiredFieldCoverage": {
+        "activityType": 1,
+        "sourceProfile": 1,
+        "commentTextWhenComment": 1,
+        "occurredAt": 0,
+        "postUrl": 0,
+        "postContent": 0
+      },
+      "decision": "rejected",
+      "reason": "The real output cannot preserve the post evidence and event time required by Intent v1."
+    }
+  ],
+  "totals": {
+    "costUsd": 0.133,
+    "itemCount": 38
+  }
+}

@@ -42,10 +42,10 @@ Gate: não implementar `seed-radar` antes dos cinco itens de execução real.
 - [x] Levantar candidatos que observam comentários feitos pela pessoa.
 - [x] Confirmar Actors HarvestAPI separados para comentários e reações.
 - [x] Levantar fallback combinado para comentários + reações sem cookie.
-- [ ] Rodar primário e fallback com os mesmos 3 perfis públicos brasileiros.
-- [ ] Comparar cobertura, identidade, timestamps, post, evidência e custo.
-- [ ] Confirmar comportamento para perfil sem atividade e perfil indisponível.
-- [ ] Salvar fixtures anonimizadas e decisão final.
+- [x] Rodar primário e fallback com os mesmos 3 perfis públicos brasileiros.
+- [x] Comparar cobertura, identidade, timestamps, post, evidência e custo.
+- [ ] Confirmar comportamento para perfil indisponível.
+- [x] Salvar fixture anonimizada e decisão dos três Actors testados.
 
 Gate: nenhum Actor é considerado homologado apenas por README, nota ou número
 de usuários. A aprovação exige input, output e custo de execução real.
@@ -73,7 +73,7 @@ de usuários. A aprovação exige input, output e custo de execução real.
 A fase termina somente quando:
 
 - [ ] Apollo real aprovado;
-- [ ] Actor primário real aprovado;
+- [x] Actor primário real aprovado;
 - [ ] Actor fallback real aprovado;
 - [ ] Brasil comprovado nos payloads;
 - [ ] campos ausentes e degradação documentados;
@@ -85,7 +85,8 @@ A fase termina somente quando:
 ## Riscos atualmente abertos
 
 1. A chave do Apollo ainda não está disponível no backend.
-2. A dupla primária e o fallback de atividade ainda precisam de runs comparáveis.
+2. A dupla primária foi aprovada, mas o fallback combinado testado foi rejeitado
+   por não preservar post nem timestamp; outro candidato precisa de run real.
 3. Scraping público pode devolver atividade parcial; parcialidade deve ser
    explícita e nunca convertida em "sem intenção".
 4. O RLS legado permite escrita ampla do proprietário e não protege revelação

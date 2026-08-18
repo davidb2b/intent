@@ -23,28 +23,32 @@ Status: **contrato documental aprovado; acesso real pendente**.
 
 | Papel | Actor | Evidência pública | Decisão atual |
 |---|---|---|---|
-| Primário — comentários | `harvestapi/linkedin-profile-comments` | Sem cookie, comentários feitos pelo perfil, post completo, US$ 2/1.000, 5.0, 317 usuários mensais | Candidato A1; precisa run real |
-| Primário — reações | `harvestapi/linkedin-profile-reactions` | Confirmado na organização Apify: sem cookie, post completo, US$ 2/1.000, 4.7 (10), 1.1K usuários | Candidato A2; precisa run real |
-| Fallback combinado | `unseenuser/linkedin-user-comments-reactions` | Sem cookie, comentários/reactions/both, janela de data, US$ 5/1.000, 5.0 (5), 104 usuários mensais | Candidato B; precisa run real |
+| Primário — comentários | `harvestapi/linkedin-profile-comments` | Run real: 8 itens, 27 s, US$ 0,016; preserva comentário, identidade, timestamp, URL e conteúdo do post | **Aprovado** |
+| Primário — reações | `harvestapi/linkedin-profile-reactions` | Run real: 11 itens, 27 s, US$ 0,022; preserva ação, identidade, timestamp, URL e conteúdo do post | **Aprovado** |
+| Fallback combinado | `unseenuser/linkedin-user-comments-reactions` | Run real: 19 itens, 16 s, US$ 0,095; não entrega timestamp, URL nem conteúdo do post | **Rejeitado para produção** |
 | Reserva experimental | `iron-crawler/linkedin-profile-activity-scraper` | Sem cookie, quatro tipos, US$ 15/1.000, sem avaliações e baixo uso | Não usar antes de PoC específica |
 | Rejeitado | `crawlerbros/linkedin-user-activity-scraper` | Exige `li_at` e proxy residencial recomendado | Proibido pela arquitetura |
 
-Estratégia de homologação:
+Resultado da homologação de 18/08/2026:
 
-1. usar os mesmos três perfis brasileiros em A1, A2 e B;
-2. limite de 5 comentários por perfil e janela de uma semana/mês;
-3. comparar identidade, texto literal, post URL/URN, autor, timestamp e vazio;
-4. medir latência e custo real do run;
-5. repetir um perfil para comprovar dedupe;
-6. simular falha de A1/A2 e verificar que B mantém o contrato normalizado;
-7. se reações de A2 e B forem incompletas, liberar a V1 primeiro com comentários
-   fortes e manter reações como sinal fraco pendente, sem fabricar ausência.
+1. os mesmos três perfis públicos brasileiros foram usados nos três runs;
+2. o limite foi de 5 itens por perfil, com janela de um mês;
+3. a dupla HarvestAPI retornou 19 itens por US$ 0,038 no total;
+4. um perfil sem comentários retornou zero de forma válida, enquanto ainda
+   apresentou uma reação — ausência de comentário não foi tratada como falha;
+5. o fallback retornou mais itens, mas seu contrato real possui somente
+   `action`, `comment_text`, `source_profile` e `page_number`;
+6. sem URL/conteúdo do post e sem timestamp, o fallback não sustenta evidência,
+   recência, dedupe nem julgamento auditável e, portanto, foi rejeitado;
+7. a localização Brasil não vem desses payloads. A elegibilidade regional deve
+   ser comprovada antes do enfileiramento por Apollo ou enriquecimento de perfil.
 
-O acesso à organização `B2B Insiders_Serviço` foi confirmado no perfil correto
-do Chrome. A conta exibe a dupla HarvestAPI e permite configurar os limites de
-itens, mas os runs de homologação ainda não foram disparados.
+As métricas e a cobertura anonimizada estão versionadas em
+`fixtures/profile-activity-homologation.json`. Os outputs brutos permanecem na
+Apify e não foram copiados para o Git por conterem dados pessoais públicos.
 
-Status: **shortlist definida; nenhum Actor novo homologado ainda**.
+Status: **dupla primária homologada; busca de fallback compatível continua
+aberta**.
 
 ## Apify — cascata do post
 
