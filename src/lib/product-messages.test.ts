@@ -22,6 +22,15 @@ describe("product messages", () => {
     expect(authErrorMessage("Invalid login credentials")).toBe("E-mail ou senha não conferem. Revise os dados e tente novamente.")
   })
 
+  it("translates old validation records into product guidance", () => {
+    expect(productErrorMessage("Uma prova social não foi encontrada literalmente na fonte informada.", "Não conseguimos concluir.")).toBe(
+      "Uma informação não pôde ser confirmada na fonte original. Revise o perfil antes de continuar.",
+    )
+    expect(productErrorMessage("Brasil é obrigatório no ICP da V1.", "Não conseguimos concluir.")).toBe(
+      "Para manter a pesquisa alinhada ao mercado brasileiro, inclua Brasil na região do perfil ideal.",
+    )
+  })
+
   it("summarizes technical onboarding warnings as a review notice", () => {
     expect(onboardingNotice("O Actor falhou. A company page do LinkedIn não foi confirmada. Provas sociais sem correspondência literal foram descartadas.")).toBe(
       "Alguns dados da empresa não puderam ser confirmados nas fontes públicas. Informações sem confirmação literal foram deixadas de fora para manter a análise confiável.",

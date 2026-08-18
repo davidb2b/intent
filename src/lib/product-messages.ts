@@ -1,4 +1,4 @@
-const TECHNICAL_LANGUAGE = /\b(?:actor|apify|backend|back-end|crawler|dataset|digest|edge function|fetch|function|icpid|json|jwt|migration|non-2xx|onboarding|openai|payload|pgcrypto|pgrst|postgres|postgrest|projectid|provider|rls|rpc|schema|secret|sql|supabase)\b|company page|firmografia|status\s+[45]\d\d|does not exist|failed to send|network request|row returned|constraint|relation\s+.+\s+does not exist|column\s+.+\s+does not exist|duplicate key|invalid input syntax|violates|row-level security|null value in column|timeout|timed out/i
+const TECHNICAL_LANGUAGE = /\b(?:actor|apify|backend|back-end|buyer_profile|buying_signals|company_profile|crawler|dataset|digest|edge function|fetch|function|icpid|json|jwt|llm|migration|non-2xx|onboarding|openai|payload|pgcrypto|pgrst|postgres|postgrest|projectid|provider|rls|rpc|schema|secret|sql|supabase)\b|company page|firmografia|status\s+[45]\d\d|does not exist|failed to send|network request|row returned|constraint|relation\s+.+\s+does not exist|column\s+.+\s+does not exist|duplicate key|invalid input syntax|violates|row-level security|null value in column|timeout|timed out/i
 
 function text(value: unknown): string {
   if (value instanceof Error) return value.message.trim()
@@ -9,6 +9,12 @@ export function productErrorMessage(value: unknown, fallback: string): string {
   const message = text(value)
   if (!message) return fallback
 
+  if (/prova social.*não foi encontrada literalmente|social proof.*not found/i.test(message)) {
+    return "Uma informação não pôde ser confirmada na fonte original. Revise o perfil antes de continuar."
+  }
+  if (/Brasil é obrigatório|regi(?:ão|ões).*(?:Brasil|Brazil).*obrigat/i.test(message)) {
+    return "Para manter a pesquisa alinhada ao mercado brasileiro, inclua Brasil na região do perfil ideal."
+  }
   if (/limite.*(?:diário|crédito)|crédito.*insuficiente|quota|rate limit|too many requests/i.test(message)) {
     return "O limite disponível para esta análise foi atingido. Seus dados estão preservados; tente novamente quando o saldo for renovado."
   }

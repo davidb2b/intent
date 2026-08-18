@@ -76,6 +76,12 @@ function formatExecutionStatus(status: string) {
   return status === "concluida" ? "Concluída" : status === "rodando" ? "Em andamento" : status === "abortada_por_custo" ? "Pausada para proteger o limite" : "Não concluída"
 }
 
+function formatExecutionType(type: string) {
+  if (type === "descoberta") return "Busca de conversas"
+  if (type === "onboarding") return "Criação do perfil ideal"
+  return "Atualização de resultados"
+}
+
 function stateFromLatestExecution(summary: SignalSummary): CollectionState {
   const latest = summary.executionHistory[0]
   if (latest?.status === "rodando") return isStaleExecution(latest.startedAt) ? "error" : "running"
@@ -851,7 +857,7 @@ function App() {
             {session && signalSummary?.projectId && <section className="settings-history" aria-labelledby="settings-history-title">
               <div className="settings-history-heading"><div><p className="eyebrow">Histórico</p><h3 id="settings-history-title">Últimas atualizações</h3><p>Veja quando os resultados foram atualizados, o consumo e os pontos que merecem atenção.</p></div><span className="signal-tag">{signalSummary.executionHistory.length} registros</span></div>
               {recentExecutions.length > 0 ? <div className="execution-list">{recentExecutions.map((execution) => <article className="execution-row" key={execution.id}>
-                <div className="execution-identity"><strong>{execution.type === "descoberta" ? "Busca de conversas" : "Atualização de resultados"}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Programada" : execution.origin === "manual" ? "Feita agora" : "Origem não informada"}</span></div>
+                <div className="execution-identity"><strong>{formatExecutionType(execution.type)}</strong><span>{formatDate(execution.startedAt)} · {execution.origin === "agendada" ? "Programada" : execution.origin === "manual" ? "Feita agora" : "Origem não informada"}</span></div>
                 <div className="execution-outcome"><span>{formatExecutionStatus(execution.status)}</span><small>{execution.postsRead} posts · {execution.commentsRead} comentários</small>{execution.warnings.length > 0 && <small className="execution-warning">⚠ Resultado parcial · {execution.warnings.length} ponto{execution.warnings.length === 1 ? "" : "s"} para revisar</small>}</div>
                 <strong className="execution-cost">{formatCurrency(execution.costUsd)}</strong>
                 {execution.error && <p className="execution-error">{productErrorMessage(execution.error, "Esta atualização não foi concluída. Seus resultados anteriores foram preservados.")}</p>}
