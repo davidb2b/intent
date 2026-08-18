@@ -4,12 +4,16 @@ import { searchApolloPeople, enrichApolloPerson, ApolloRequestError } from "../_
 import {
   apolloSearchPersonIds,
   assessApolloFit,
+  buildApolloCompanyPeopleSearchInput,
   buildPersonJudgmentPayload,
   buildApolloPeopleSearchInput,
+  candidateBelongsToCompany,
   normalizeEnrichedApolloPerson,
   personJudgmentCreditReference,
   stripApolloContactFields,
+  type ApolloSeedCandidate,
   type BuyerProfile,
+  type FitAssessment,
 } from "../_shared/intent-phase2-domain.ts"
 import { dedupeActivities, normalizeProfileActivityItem, type NormalizedActivity } from "../_shared/intent-activity.ts"
 import { judgePublicSignal } from "../_shared/intent-signal-llm.ts"
@@ -28,6 +32,7 @@ const PRIMARY_ACTORS = {
 const FALLBACK_ACTOR = "scraping_solutions/linkedin-profile-comments-reactions-scraper-no-cookies"
 const RAW_RETENTION_DAYS = 7
 const DEFAULT_SEED_SIZE = 5
+const DEFAULT_COMPANY_EXPANSION_SIZE = 5
 
 type AdminClient = ReturnType<typeof createClient>
 type Job = {
@@ -129,6 +134,87 @@ function safeCompanyCandidate(value: unknown) {
   return typeof company.name === "string" && company.name.trim() ? company : null
 }
 
+type RadarOrigin = "semente_apollo" | "cascata_empresa"
+
+async function upsertRadarPerson(admin: AdminClient, input: {
+  projectId: string
+  candidate: ApolloSeedCandidate
+  fit: FitAssessment
+  origin: RadarOrigin
+  companyId?: string | null
+}) {
+  const slug = normalizeProfileSlug(input.candidate.linkedinUrl)
+  const { data: existing, error: existingError } = await admin.from("pessoas")
+    .select("id, empresa_id")
+    .eq("projeto_id", input.projectId)
+    .eq("slug", slug)
+    .maybeSingle()
+  if (existingError) throw new Error(`Falha ao verificar pessoa no radar: ${existingError.message}`)
+
+  let personId: string
+  let inserted = false
+  if (existing) {
+    personId = existing.id
+    const { error: personError } = await admin.from("pessoas").update({
+      nome: input.candidate.name,
+      linkedin_url: input.candidate.linkedinUrl,
+      headline: input.candidate.headline,
+      cargo: input.candidate.title,
+      empresa_id: input.companyId ?? existing.empresa_id,
+    }).eq("id", existing.id).eq("projeto_id", input.projectId)
+    if (personError) throw new Error(`Falha ao atualizar pessoa no radar: ${personError.message}`)
+  } else {
+    const { data: created, error: personError } = await admin.from("pessoas").insert({
+      projeto_id: input.projectId,
+      empresa_id: input.companyId ?? null,
+      linkedin_url: input.candidate.linkedinUrl,
+      slug,
+      nome: input.candidate.name,
+      headline: input.candidate.headline,
+      cargo: input.candidate.title,
+      senioridade: null,
+      icp: true,
+      icp_motivo: null,
+      status: "vigiado",
+    }).select("id").single()
+    if (personError || !created) throw new Error(`Falha ao preparar pessoa no radar: ${personError?.message ?? "registro ausente"}`)
+    personId = created.id
+    inserted = true
+  }
+
+  const { data: existingOperation, error: existingOperationError } = await admin.from("pessoa_operacao_privada")
+    .select("origem")
+    .eq("pessoa_id", personId)
+    .maybeSingle()
+  if (existingOperationError) throw new Error(`Falha ao verificar a origem privada da pessoa: ${existingOperationError.message}`)
+
+  const now = new Date().toISOString()
+  const { error: operationError } = await admin.from("pessoa_operacao_privada").upsert({
+    pessoa_id: personId,
+    projeto_id: input.projectId,
+    origem: existingOperation?.origem ?? input.origin,
+    fit: input.fit.score,
+    excluido: input.fit.excluded,
+    fit_evidencia: input.fit.reasons,
+    apollo_id: input.candidate.apolloId,
+    localizacao_status: "brasil_confirmado",
+    pais_literal: input.candidate.country,
+    localizacao_evidencia: {
+      country: input.candidate.country,
+      city: input.candidate.city,
+      state: input.candidate.state,
+      provider: "apollo_people_match",
+    },
+    empresa_candidata: input.candidate.company,
+    verificado_em: now,
+    ultima_verificacao_em: now,
+    atualizado_em: now,
+  }, { onConflict: "pessoa_id" })
+  if (operationError) throw new Error(`Falha ao registrar validação regional: ${operationError.message}`)
+
+  return { personId, inserted }
+}
+
 async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
   const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
   const executionId = await createExecution(admin, job.projeto_id, "semente", { job_id: job.id, icp_id: icpId })
@@ -167,57 +253,13 @@ async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
       if (!candidate) continue
 
       const fit = assessApolloFit(candidate, icp.comprador as BuyerProfile)
-      const slug = normalizeProfileSlug(candidate.linkedinUrl)
-      const { data: existing } = await admin.from("pessoas")
-        .select("id, status")
-        .eq("projeto_id", job.projeto_id).eq("slug", slug).maybeSingle()
-
-      let personId: string
-      if (existing) {
-        personId = existing.id
-        if (existing.status !== null) {
-          await admin.from("pessoas").update({
-            nome: candidate.name,
-            linkedin_url: candidate.linkedinUrl,
-            headline: candidate.headline,
-            cargo: candidate.title,
-          }).eq("id", existing.id)
-        }
-      } else {
-        const { data: created, error: personError } = await admin.from("pessoas").insert({
-          projeto_id: job.projeto_id,
-          linkedin_url: candidate.linkedinUrl,
-          slug,
-          nome: candidate.name,
-          headline: candidate.headline,
-          cargo: candidate.title,
-          senioridade: null,
-          icp: true,
-          icp_motivo: null,
-          status: "vigiado",
-        }).select("id").single()
-        if (personError || !created) throw new Error(`Falha ao preparar pessoa no radar: ${personError?.message ?? "registro ausente"}`)
-        personId = created.id
-        inserted += 1
-      }
-
-      const { error: operationError } = await admin.from("pessoa_operacao_privada").upsert({
-        pessoa_id: personId,
-        projeto_id: job.projeto_id,
-        origem: "semente_apollo",
-        fit: fit.score,
-        excluido: fit.excluded,
-        fit_evidencia: fit.reasons,
-        apollo_id: candidate.apolloId,
-        localizacao_status: "brasil_confirmado",
-        pais_literal: candidate.country,
-        localizacao_evidencia: { country: candidate.country, city: candidate.city, state: candidate.state, provider: "apollo_people_match" },
-        empresa_candidata: candidate.company,
-        verificado_em: new Date().toISOString(),
-        ultima_verificacao_em: new Date().toISOString(),
-        atualizado_em: new Date().toISOString(),
-      }, { onConflict: "pessoa_id" })
-      if (operationError) throw new Error(`Falha ao registrar validação regional: ${operationError.message}`)
+      const { personId, inserted: wasInserted } = await upsertRadarPerson(admin, {
+        projectId: job.projeto_id,
+        candidate,
+        fit,
+        origin: "semente_apollo",
+      })
+      if (wasInserted) inserted += 1
 
       if (!fit.excluded && fit.score >= 60) {
         await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: personId, icp_id: icp.id }, 40)
@@ -401,7 +443,142 @@ async function materializeCompany(admin: AdminClient, projectId: string, personI
   }, { onConflict: "projeto_id,nome_chave" }).select("id").single()
   if (error || !data) throw new Error(`Falha ao materializar empresa do sinal: ${error?.message ?? "empresa ausente"}`)
   await admin.from("pessoas").update({ empresa_id: data.id }).eq("id", personId)
+
+  const apolloId = typeof company.apolloId === "string" && company.apolloId.trim() ? company.apolloId.trim() : null
+  const domain = typeof company.domain === "string" && company.domain.trim() ? company.domain.trim().toLowerCase() : null
+  if (apolloId || domain) {
+    const { error: operationError } = await admin.from("empresa_operacao_privada").upsert({
+      empresa_id: data.id,
+      projeto_id: projectId,
+      apollo_id: apolloId,
+      dominio: domain,
+      nome_literal: name,
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: "empresa_id" })
+    if (operationError) throw new Error(`Falha ao preparar a expansão da empresa: ${operationError.message}`)
+  }
   return data.id as string
+}
+
+async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey: string) {
+  const companyId = typeof job.payload.empresa_id === "string" ? job.payload.empresa_id : ""
+  const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const executionId = await createExecution(admin, job.projeto_id, "cascata", {
+    job_id: job.id,
+    empresa_id: companyId,
+    icp_id: icpId,
+    origem: "empresa",
+  })
+  let inserted = 0
+  let accepted = 0
+  let enrichedCount = 0
+
+  try {
+    const { data: company, error: companyError } = await admin.from("empresa_operacao_privada")
+      .select("empresa_id, apollo_id, dominio, nome_literal")
+      .eq("empresa_id", companyId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (companyError || !company) throw new Error("A empresa ainda não possui uma identidade confirmada para expansão.")
+
+    const { data: icp, error: icpError } = await admin.from("icps")
+      .select("id, status, comprador")
+      .eq("id", icpId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (icpError || !icp || icp.status !== "ativo") throw new Error("O perfil ideal ativo não foi encontrado para esta expansão.")
+
+    const now = new Date().toISOString()
+    const { error: startError } = await admin.from("empresa_operacao_privada").update({
+      expansao_icp_id: icp.id,
+      expansao_status: "rodando",
+      ultimo_erro: null,
+      atualizado_em: now,
+    }).eq("empresa_id", companyId).eq("projeto_id", job.projeto_id)
+    if (startError) throw new Error(`Falha ao iniciar expansão da empresa: ${startError.message}`)
+
+    const companyIdentity = {
+      apolloId: company.apollo_id as string | null,
+      domain: company.dominio as string | null,
+      name: company.nome_literal as string,
+    }
+    const searchInput = buildApolloCompanyPeopleSearchInput(icp.comprador as BuyerProfile, companyIdentity, DEFAULT_COMPANY_EXPANSION_SIZE)
+    const search = await searchApolloPeople(searchInput, apolloKey)
+    await auditPayload(admin, {
+      projectId: job.projeto_id,
+      jobId: job.id,
+      provider: "apollo",
+      operation: "company_people_search",
+      runId: search.requestId,
+      identity: await fingerprint(JSON.stringify(searchInput)),
+      payload: stripApolloContactFields(search.payload),
+    })
+
+    const ids = apolloSearchPersonIds(search.payload).slice(0, DEFAULT_COMPANY_EXPANSION_SIZE)
+    const existingIds = new Set<string>()
+    if (ids.length > 0) {
+      const { data: existingOperations, error: existingError } = await admin.from("pessoa_operacao_privada")
+        .select("apollo_id")
+        .eq("projeto_id", job.projeto_id)
+        .in("apollo_id", ids)
+      if (existingError) throw new Error(`Falha ao verificar pessoas já conhecidas: ${existingError.message}`)
+      for (const operation of existingOperations ?? []) {
+        if (typeof operation.apollo_id === "string") existingIds.add(operation.apollo_id)
+      }
+    }
+
+    for (const apolloId of ids) {
+      if (existingIds.has(apolloId)) continue
+      const enriched = await enrichApolloPerson(apolloId, apolloKey)
+      enrichedCount += 1
+      const candidate = normalizeEnrichedApolloPerson(enriched.payload)
+      await auditPayload(admin, {
+        projectId: job.projeto_id,
+        jobId: job.id,
+        provider: "apollo",
+        operation: "company_person_enrichment",
+        runId: enriched.requestId,
+        identity: apolloId,
+        payload: stripApolloContactFields(enriched.payload),
+      })
+      if (!candidate || !candidateBelongsToCompany(candidate, companyIdentity)) continue
+
+      const fit = assessApolloFit(candidate, icp.comprador as BuyerProfile)
+      const radar = await upsertRadarPerson(admin, {
+        projectId: job.projeto_id,
+        candidate,
+        fit,
+        origin: "cascata_empresa",
+        companyId,
+      })
+      if (radar.inserted) inserted += 1
+      if (!fit.excluded && fit.score >= 60) {
+        accepted += 1
+        await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: radar.personId, icp_id: icp.id }, 40)
+      }
+    }
+
+    const completedAt = new Date().toISOString()
+    const { error: completeError } = await admin.from("empresa_operacao_privada").update({
+      expansao_icp_id: icp.id,
+      expansao_status: "concluida",
+      expandida_em: completedAt,
+      ultimo_erro: null,
+      atualizado_em: completedAt,
+    }).eq("empresa_id", companyId).eq("projeto_id", job.projeto_id)
+    if (completeError) throw new Error(`Falha ao concluir expansão da empresa: ${completeError.message}`)
+
+    await finishExecution(admin, executionId, { status: "concluida", people: inserted })
+    return { searched: ids.length, enriched: enrichedCount, inserted, accepted }
+  } catch (error) {
+    await admin.from("empresa_operacao_privada").update({
+      expansao_status: "falhou",
+      ultimo_erro: errorMessage(error),
+      atualizado_em: new Date().toISOString(),
+    }).eq("empresa_id", companyId).eq("projeto_id", job.projeto_id)
+    await finishExecution(admin, executionId, { status: "falhou", people: inserted, error: errorMessage(error) })
+    throw error
+  }
 }
 
 async function refreshCompanyLevel(admin: AdminClient, projectId: string, companyId: string) {
@@ -564,7 +741,17 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
 
     const { error: settleError } = await admin.rpc("intent_settle_job_credits", { target_job_id: job.id, target_reference: creditReference, target_consume: true })
     if (settleError) throw new Error(`Falha ao confirmar consumo de crédito: ${settleError.message}`)
-    if (companyId) await refreshCompanyLevel(admin, job.projeto_id, companyId)
+    if (companyId) {
+      await refreshCompanyLevel(admin, job.projeto_id, companyId)
+      const { data: expandableCompany } = await admin.from("empresa_operacao_privada")
+        .select("empresa_id")
+        .eq("empresa_id", companyId)
+        .eq("projeto_id", job.projeto_id)
+        .maybeSingle()
+      if (expandableCompany) {
+        await enqueue(admin, job.projeto_id, "varrer_empresa", { empresa_id: companyId, icp_id: icp.id }, 30)
+      }
+    }
     await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost })
     return { candidates: pendingCandidates.length, status: strongestStatus, costUsd: totalCost }
   } catch (error) {
@@ -577,6 +764,7 @@ async function processJob(admin: AdminClient, job: Job, secrets: { apollo: strin
   if (job.tipo === "semear_radar") return processSeedJob(admin, job, secrets.apollo)
   if (job.tipo === "vigiar_pessoa") return processWatchPersonJob(admin, job, secrets.apify)
   if (job.tipo === "julgar_sinal") return processJudgeSignalJob(admin, job, secrets.openai)
+  if (job.tipo === "varrer_empresa") return processCompanyCascadeJob(admin, job, secrets.apollo)
   throw new Error("Este tipo de etapa ainda não pertence ao fluxo ativo da Fase 2.")
 }
 
@@ -608,7 +796,8 @@ Deno.serve(async (request) => {
     if (!owned) return json({ error: "Não encontramos esta empresa na sua conta." }, 404)
   }
 
-  const requestedTypes = Array.isArray(body.jobTypes) ? body.jobTypes.filter((type) => ["semear_radar", "vigiar_pessoa", "julgar_sinal"].includes(type)) : ["semear_radar", "vigiar_pessoa", "julgar_sinal"]
+  const activeTypes = ["semear_radar", "vigiar_pessoa", "julgar_sinal", "varrer_empresa"]
+  const requestedTypes = Array.isArray(body.jobTypes) ? body.jobTypes.filter((type) => activeTypes.includes(type)) : activeTypes
   const maxJobs = Math.max(1, Math.min(10, Math.trunc(Number(body.maxJobs ?? 5))))
   const processed: Array<Record<string, unknown>> = []
 

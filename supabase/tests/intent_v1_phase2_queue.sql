@@ -1,5 +1,3 @@
-\set ON_ERROR_STOP on
-
 begin;
 
 create function public.intent_phase2_assert(condition boolean, label text)
@@ -149,6 +147,43 @@ select public.intent_phase2_assert(
   'the queue records a completed terminal state'
 );
 
+select public.intent_enqueue_job(
+  '02000000-0000-0000-0000-000000000001',
+  'varrer_empresa',
+  '{"empresa_id":"62000000-0000-0000-0000-000000000001","icp_id":"42000000-0000-0000-0000-000000000001"}'::jsonb,
+  30::smallint,
+  3::smallint
+) as id
+into temporary table phase2_company_job;
+
+create temporary table phase2_company_claimed as
+select *
+from public.intent_claim_jobs(
+  array['varrer_empresa'],
+  '02000000-0000-0000-0000-000000000001',
+  1,
+  120
+);
+
+select public.intent_phase2_assert(
+  public.intent_complete_job(
+    (select id from phase2_company_claimed),
+    (select lease_token from phase2_company_claimed)
+  ),
+  'the company expansion can complete with its lease'
+);
+
+select public.intent_phase2_assert(
+  public.intent_enqueue_job(
+    '02000000-0000-0000-0000-000000000001',
+    'varrer_empresa',
+    '{"empresa_id":"62000000-0000-0000-0000-000000000001","icp_id":"42000000-0000-0000-0000-000000000001"}'::jsonb,
+    30::smallint,
+    3::smallint
+  ) = (select id from phase2_company_job),
+  'a completed company cascade is not re-enqueued for the same ICP'
+);
+
 reset role;
 
 select public.intent_phase2_assert(
@@ -159,6 +194,11 @@ select public.intent_phase2_assert(
 select public.intent_phase2_assert(
   not has_table_privilege('authenticated', 'public.pessoa_operacao_privada', 'select'),
   'radar and fit remain server-only'
+);
+
+select public.intent_phase2_assert(
+  not has_table_privilege('authenticated', 'public.empresa_operacao_privada', 'select'),
+  'company provider identity remains server-only'
 );
 
 select public.intent_phase2_assert(

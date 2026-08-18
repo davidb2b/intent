@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   apolloSearchPersonIds,
   assessApolloFit,
+  buildApolloCompanyPeopleSearchInput,
   buildPersonJudgmentPayload,
   buildApolloPeopleSearchInput,
+  candidateBelongsToCompany,
   normalizeEnrichedApolloPerson,
   personJudgmentCreditReference,
   stripApolloContactFields,
@@ -92,6 +94,41 @@ describe("Phase 2 people-first contracts", () => {
       vigilia_job_id: "watch-1",
     });
     expect(personJudgmentCreditReference("person-1", "watch-1")).toBe("pessoa_julgada:person-1:watch-1");
+  });
+
+  it("targets the exact company before expanding the radar", () => {
+    expect(buildApolloCompanyPeopleSearchInput(buyer, {
+      apolloId: "org-1",
+      domain: "empresa.com.br",
+      name: "Empresa",
+    }, 5)).toEqual(expect.objectContaining({
+      organization_ids: ["org-1"],
+      person_locations: ["Brazil"],
+      organization_locations: ["Brazil"],
+      per_page: 5,
+    }));
+    expect(buildApolloCompanyPeopleSearchInput(buyer, {
+      apolloId: null,
+      domain: "https://www.empresa.com.br/sobre",
+      name: "Empresa",
+    }, 5)).toEqual(expect.objectContaining({
+      q_organization_domains_list: ["empresa.com.br"],
+    }));
+  });
+
+  it("rejects an enriched person attached to another company", () => {
+    const candidate = normalizeEnrichedApolloPerson({
+      person: {
+        id: "person-2",
+        name: "Pessoa Dois",
+        linkedin_url: "https://www.linkedin.com/in/pessoa-dois",
+        country: "Brazil",
+        title: "Diretor de Marketing",
+        organization: { id: "org-2", name: "Outra Empresa", primary_domain: "outra.com.br" },
+      },
+    })!;
+    expect(candidateBelongsToCompany(candidate, { apolloId: "org-1", domain: "empresa.com.br", name: "Empresa" })).toBe(false);
+    expect(candidateBelongsToCompany(candidate, { apolloId: null, domain: "outra.com.br", name: "Outra Empresa" })).toBe(true);
   });
 });
 

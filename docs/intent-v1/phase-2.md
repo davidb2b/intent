@@ -34,6 +34,24 @@ Também foram entregues:
 - distinção entre ausência legítima de atividade, perfil indisponível e falha
   do provedor.
 
+## Cascata da empresa
+
+A primeira cascata controlada também está concluída:
+
+```text
+empresa materializada por um sinal aprovado
+  -> identidade privada confirmada por Apollo ID ou domínio
+  -> busca limitada a 5 pessoas da mesma empresa e do ICP ativo
+  -> descarte de Apollo IDs já conhecidos antes do enriquecimento
+  -> confirmação literal de Brasil e vínculo exato com a empresa
+  -> fit privado e exclusões
+  -> novo perfil interno em `vigiado`
+  -> vigília pública somente quando fit >= 60
+```
+
+A expansão é idempotente por empresa e versão de ICP. Ela não consome créditos
+do produto, não busca contatos e não torna o radar interno visível.
+
 ## Homologação real
 
 A execução de produção usou um ICP ativo e concluiu toda a fila sem erro:
@@ -47,6 +65,15 @@ A execução de produção usou um ICP ativo e concluiu toda a fila sem erro:
 - 3 pessoas e 3 empresas materializadas a partir dos sinais;
 - 3 créditos consumidos, um por pessoa julgada e não por atividade;
 - nenhuma tabela operacional acessível a `anon` ou `authenticated`.
+
+A homologação da cascata executou duas empresas reais em produção:
+
+- as duas buscas responderam com sucesso e concluíram sem erro;
+- cada busca encontrou uma pessoa já conhecida daquela empresa;
+- os IDs conhecidos foram descartados antes de novo enriquecimento;
+- nenhuma pessoa duplicada e nenhum contato foram persistidos;
+- o saldo permaneceu em 15 créditos, confirmando custo zero para o cliente;
+- as identidades e o estado de expansão continuam restritos ao backend.
 
 Resultados vazios não são convertidos em sinais. Pessoas sem atividade ficam no
 radar privado e não aparecem ao cliente.
@@ -64,11 +91,10 @@ radar privado e não aparecem ao cliente.
 O núcleo está homologado. Ainda pertencem à Fase 2, mas serão implementados em
 blocos separados para preservar controle de custo e isolamento de falhas:
 
-1. cascata da empresa para ampliar primeiro o radar na mesma conta;
-2. cascata do post para descobrir outras pessoas que interagiram;
-3. investigação controlada de autores e influenciadores;
-4. execução recorrente de watchlists;
-5. revelação de contato sob demanda, com consentimento de ação e débito
+1. cascata do post para descobrir outras pessoas que interagiram;
+2. investigação controlada de autores e influenciadores;
+3. execução recorrente de watchlists;
+4. revelação de contato sob demanda, com consentimento de ação e débito
    específico por tipo de contato.
 
 Esses blocos reutilizarão a fila e o livro de créditos já homologados. Nenhum

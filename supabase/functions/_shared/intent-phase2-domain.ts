@@ -20,6 +20,7 @@ export type ApolloSeedCandidate = {
   city: string | null
   state: string | null
   company: {
+    apolloId: string | null
     name: string
     domain: string | null
     linkedinUrl: string | null
@@ -27,6 +28,8 @@ export type ApolloSeedCandidate = {
     employeeCount: number | null
   } | null
 }
+
+export type ApolloCompanyIdentity = NonNullable<ApolloSeedCandidate["company"]>
 
 export type FitAssessment = {
   score: number
@@ -107,6 +110,17 @@ export function buildApolloPeopleSearchInput(buyer: BuyerProfile, perPage = 5) {
   }
 }
 
+export function buildApolloCompanyPeopleSearchInput(
+  buyer: BuyerProfile,
+  company: Pick<ApolloCompanyIdentity, "apolloId" | "domain" | "name">,
+  perPage = 5,
+) {
+  const { organization_num_employees_ranges: _sizeRanges, ...base } = buildApolloPeopleSearchInput(buyer, perPage)
+  if (company.apolloId) return { ...base, organization_ids: [company.apolloId] }
+  if (company.domain) return { ...base, q_organization_domains_list: [normalizeDomain(company.domain)] }
+  throw new Error(`A empresa ${company.name} ainda não possui identificador ou domínio confirmado.`)
+}
+
 export function apolloSearchPersonIds(payload: unknown): string[] {
   const root = record(payload)
   const people = root && Array.isArray(root.people) ? root.people : []
@@ -142,13 +156,31 @@ export function normalizeEnrichedApolloPerson(payload: unknown): ApolloSeedCandi
     city: text(person.city),
     state: text(person.state),
     company: companyName && organization ? {
+      apolloId: text(organization.id, organization.organization_id),
       name: companyName,
-      domain: text(organization.primary_domain, organization.website_url, organization.domain)?.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] ?? null,
+      domain: normalizeDomain(text(organization.primary_domain, organization.website_url, organization.domain)),
       linkedinUrl: text(organization.linkedin_url),
       industry: text(organization.industry),
       employeeCount: integer(organization.estimated_num_employees, organization.num_employees),
     } : null,
   }
+}
+
+function normalizeDomain(value: string | null | undefined) {
+  const domain = (value ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0]
+  return domain || null
+}
+
+export function candidateBelongsToCompany(
+  candidate: ApolloSeedCandidate,
+  company: Pick<ApolloCompanyIdentity, "apolloId" | "domain" | "name">,
+) {
+  if (!candidate.company) return false
+  if (company.apolloId && candidate.company.apolloId) return company.apolloId === candidate.company.apolloId
+  const expectedDomain = normalizeDomain(company.domain)
+  const actualDomain = normalizeDomain(candidate.company.domain)
+  if (expectedDomain && actualDomain) return expectedDomain === actualDomain
+  return normalized(company.name) === normalized(candidate.company.name)
 }
 
 function titleMatches(actual: string | null, desired: string[]) {

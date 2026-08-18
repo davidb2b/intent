@@ -40,6 +40,18 @@ Homologação real de 18/08/2026:
 Status: **People Search e validação regional literal aprovados. A etapa de
 enriquecimento continua obrigatória antes de ativar uma pessoa no radar**.
 
+### Apollo — cascata da empresa
+
+O worker usa `organization_ids` como filtro prioritário e domínio confirmado
+como fallback. A busca mantém localização da pessoa e da empresa em `Brazil`,
+remove a faixa de porte por já estar dentro de uma empresa exata e limita cada
+expansão a cinco resultados. IDs já presentes no projeto são descartados antes
+do endpoint de enriquecimento.
+
+Na homologação de produção, duas empresas retornaram somente a pessoa que já
+havia originado o sinal. As execuções concluíram sem duplicar pessoas, sem novo
+enriquecimento, sem contatos e sem movimento no livro de créditos do produto.
+
 ## Apify — atividade da pessoa
 
 | Papel | Actor | Evidência pública | Decisão atual |
