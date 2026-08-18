@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { OnboardingProgress } from "./OnboardingProgress"
 import { OnboardingStart } from "./OnboardingStart"
+import { EditableList } from "./EditableList"
 
 describe("Intent onboarding UI", () => {
   afterEach(cleanup)
@@ -20,5 +21,11 @@ describe("Intent onboarding UI", () => {
     expect(screen.getAllByText("Company page encontrada.").length).toBeGreaterThan(0)
     expect(screen.queryByRole("button", { name: /Pular/ })).not.toBeInTheDocument()
     expect(screen.getByLabelText("Progresso real: 42%")).toBeInTheDocument()
+  })
+
+  it("makes an active ICP list visibly immutable", () => {
+    render(<EditableList disabled label="Cargos" onChange={vi.fn()} values={["CTO"]} />)
+    expect(screen.getByRole("button", { name: "Remover CTO" })).toBeDisabled()
+    expect(screen.queryByLabelText("Novo item em Cargos")).not.toBeInTheDocument()
   })
 })
