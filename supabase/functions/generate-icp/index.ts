@@ -328,7 +328,7 @@ Deno.serve(async (request) => {
       model: "gpt-5.4-nano-2026-03-17",
       schema: buyerProfileSchema,
       schemaName: "intent_buyer_profile_v1",
-      system: "Defina o comprador B2B no Brasil. Use cargos e setores como aparecem no LinkedIn. regioes deve conter somente o valor literal Brasil. Inclua exatamente uma exclusão de cada tipo obrigatório: mesma_categoria, open_to_work, dominio_proprio, concorrente e cliente_atual.",
+      system: "Defina o comprador B2B no Brasil. Em cargos, retorne títulos profissionais concretos como CTO, VP de Engenharia e Head de Arquitetura; nunca coloque códigos de senioridade como c_suite, vp, head ou manager nesse campo. Use senioridades somente no campo senioridades e setores como aparecem no LinkedIn. regioes deve conter somente o valor literal Brasil. Inclua exatamente uma exclusão de cada tipo obrigatório: mesma_categoria, open_to_work, dominio_proprio, concorrente e cliente_atual.",
       user: JSON.stringify({ company_profile: companyProfile.value }),
       maxOutputTokens: 2_500,
       maxCostUsd: 0.007,

@@ -6,6 +6,7 @@ import {
   companyProfileSchema,
   enforceBrazilianBuyerScope,
   keepVerifiedCompanyProofs,
+  validateBuyerProfile,
 } from "../../../../supabase/functions/_shared/intent-onboarding-llm"
 
 const unsupportedStrictKeywords = new Set([
@@ -52,5 +53,23 @@ describe("Intent structured output schemas", () => {
     expect(profile.provas_sociais).toEqual([
       { afirmacao: "Confirmada", evidencia_literal: "Mais de 100 projetos", fonte_url: "https://empresa.test" },
     ])
+  })
+
+  it("rejects internal seniority codes used as job titles", () => {
+    expect(() => validateBuyerProfile({
+      schema_version: "intent.buyer_profile.v1",
+      cargos: ["c_suite", "vp"],
+      senioridades: ["c_suite", "vp"],
+      setores: [{ familia: "tecnologia", label_linkedin: "IT Services and IT Consulting" }],
+      portes: ["51-200"],
+      regioes: ["Brasil"],
+      exclusoes: [
+        { tipo: "mesma_categoria", valor: "Consultorias", motivo: "Mesma categoria" },
+        { tipo: "open_to_work", valor: "Open to Work", motivo: "Busca emprego" },
+        { tipo: "dominio_proprio", valor: "5by5.com.br", motivo: "Domínio próprio" },
+        { tipo: "concorrente", valor: "Concorrentes", motivo: "Concorrência" },
+        { tipo: "cliente_atual", valor: "Clientes", motivo: "Cliente atual" },
+      ],
+    })).toThrow(/títulos profissionais concretos/)
   })
 })

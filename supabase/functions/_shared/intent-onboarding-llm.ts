@@ -278,7 +278,10 @@ export function validateCompanyProfile(
 
 export function validateBuyerProfile(value: Record<string, unknown>): void {
   if (value.schema_version !== "intent.buyer_profile.v1") throw new Error("Versão inválida do perfil comprador.")
-  uniqueStringArray(value.cargos, "Cargos", 1, 20)
+  const roles = uniqueStringArray(value.cargos, "Cargos", 1, 20)
+  if (roles.some((role) => seniorities.includes(role as typeof seniorities[number]))) {
+    throw new Error("Cargos deve conter títulos profissionais concretos, não códigos internos de senioridade.")
+  }
   uniqueStringArray(value.senioridades, "Senioridades", 1, seniorities.length)
   array(value.setores, "Setores", 1, 20)
   uniqueStringArray(value.portes, "Portes", 1, sizeBands.length)
