@@ -1,4 +1,10 @@
-# Signal Lab V1 — plano de desenvolvimento
+# Signal Lab V1 — plano legado
+
+> Este plano descreve o produto anterior, orientado por palavra-chave e posts.
+> Ele foi substituído pelo plano people-first do Intent v1 em
+> [`docs/intent-v1/README.md`](intent-v1/README.md). Os itens abaixo continuam
+> úteis como inventário do que já existe, mas não são a sequência vigente de
+> entrega.
 
 ## 0. Decisões que governam todo o projeto
 

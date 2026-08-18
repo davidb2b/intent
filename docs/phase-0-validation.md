@@ -1,4 +1,8 @@
-# Fase 0 — validação de segurança e contrato de dados
+# Fase 0 legada — validação de segurança e contrato de dados
+
+> Esta validação pertence ao produto anterior, orientado por descoberta de
+> posts. A nova Fase 0 do Intent v1 está em
+> [`docs/intent-v1/phase-0.md`](intent-v1/phase-0.md).
 
 Status: concluída para dados e infraestrutura. A rotação da chave OpenAI foi
 adiada pelo responsável do projeto e permanece como risco de segurança aceito.

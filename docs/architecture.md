@@ -1,4 +1,10 @@
-# Signal Lab — fundação
+# Signal Lab — fundação legada
+
+> Documento histórico da arquitetura anterior, orientada por busca de posts.
+> Para o Intent v1 people-first, a fonte vigente é
+> [`docs/intent-v1/README.md`](intent-v1/README.md). Este arquivo permanece no
+> repositório para explicar o legado durante a migração e não deve orientar
+> novas funcionalidades.
 
 ## Limites do sistema
 
