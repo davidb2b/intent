@@ -34,6 +34,9 @@ import { loadDiscoveredPosts, loadSignalComments, loadSignalCompanies, loadSigna
 import { filterCompanyResults, getCompanySectors, type CompanySort } from "@/features/analytics/lib/company-results"
 import { getOverviewMetrics, getTopCompanies, getUsefulComments } from "@/features/analytics/lib/overview"
 import { authService } from "@/features/auth/services/auth-service"
+import { OnboardingFlow } from "@/features/onboarding/OnboardingFlow"
+import { IntentAuthScreen } from "@/features/onboarding/components/IntentAuthScreen"
+import { loadOnboardingWorkspace } from "@/features/onboarding/services/onboarding-service"
 import { saveResearch } from "@/features/research/services/save-research"
 import "./App.css"
 
@@ -274,6 +277,17 @@ function App() {
       })
       .catch((error) => { if (active) setSummaryError(error instanceof Error ? error.message : "Não foi possível ler os sinais.") })
       .finally(() => { if (active) setSummaryLoading(false) })
+    return () => { active = false }
+  }, [authReady, session])
+
+  useEffect(() => {
+    if (!authReady || !session) return
+    if (["/onboarding", "/icp", "/reset-password"].includes(window.location.pathname)) return
+    let active = true
+    void loadOnboardingWorkspace(session.userId).then((workspace) => {
+      if (!active || workspace.activeIcp) return
+      window.location.replace(workspace.latestIcp ? "/icp" : "/onboarding")
+    }).catch(() => undefined)
     return () => { active = false }
   }, [authReady, session])
 
@@ -613,6 +627,11 @@ function App() {
     }
   }
 
+  const isIntentSetupRoute = window.location.pathname === "/onboarding" || window.location.pathname === "/icp"
+  if (isIntentSetupRoute && !authReady) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Validando sua sessão…</span></div>
+  if (isIntentSetupRoute && !session) return <IntentAuthScreen />
+  if (isIntentSetupRoute && session) return <OnboardingFlow session={session} />
+
   return (
     <div className="signal-shell">
       <aside className="signal-sidebar">
@@ -845,7 +864,7 @@ function App() {
       {authOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAuthOpen(false)}>
           <section aria-labelledby="auth-title" aria-modal="true" className="settings-modal auth-modal" role="dialog">
-            <div className="modal-header"><div><p className="eyebrow">Acesso seguro</p><h2 id="auth-title">{authMode === "signin" ? "Entrar no Signal Lab" : authMode === "signup" ? "Criar sua conta" : authMode === "recovery" ? "Recuperar senha" : "Atualizar senha"}</h2></div><button aria-label="Fechar acesso" className="icon-button" onClick={() => setAuthOpen(false)} type="button"><X size={18} /></button></div>
+            <div className="modal-header"><div><p className="eyebrow">Acesso seguro</p><h2 id="auth-title">{authMode === "signin" ? "Entrar no Intent" : authMode === "signup" ? "Criar sua conta" : authMode === "recovery" ? "Recuperar senha" : "Atualizar senha"}</h2></div><button aria-label="Fechar acesso" className="icon-button" onClick={() => setAuthOpen(false)} type="button"><X size={18} /></button></div>
             <p className="modal-description">{authMode === "recovery" ? "Informe seu e-mail e enviaremos um link seguro para redefinir sua senha." : authMode === "update-password" ? "Escolha uma nova senha para voltar a acessar suas análises." : "A coleta é vinculada ao seu usuário e permanece separada de outras contas."}</p>
             <form onSubmit={handleAuth}>
               {authMode !== "update-password" && <><label htmlFor="auth-email">E-mail</label><input autoComplete="email" id="auth-email" onChange={(event) => setAuthEmail(event.target.value)} required type="email" value={authEmail} /></>}
