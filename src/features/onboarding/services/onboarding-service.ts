@@ -48,7 +48,10 @@ function mapIcp(row: IcpRow): IcpRecord {
 
 export async function prepareIntentProject(userId: string): Promise<IntentProject> {
   const columns = "id,nome,site_url,site_dominio,onboarding_status,onboarding_aviso,creditos_mensais"
-  const existing = await supabase.from("projetos").select(columns).eq("owner_id", userId).maybeSingle()
+  // A conta pode manter pesquisas antigas arquivadas. O onboarding sempre
+  // pertence ao único projeto ativo do usuário, garantido pelo índice parcial
+  // `projetos_one_active_per_owner_idx`.
+  const existing = await supabase.from("projetos").select(columns).eq("owner_id", userId).eq("ativo", true).maybeSingle()
   if (existing.error) throw new Error(existing.error.message)
   if (existing.data) return mapProject(existing.data as ProjectRow)
 
