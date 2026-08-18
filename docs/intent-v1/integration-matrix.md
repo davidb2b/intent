@@ -123,6 +123,15 @@ Homologação real da cascata em 18/08/2026:
 - custo real de US$ 0,034;
 - orçamento diário reservado antes dos Actors e registrado em tabela privada.
 
+## Autor e Watchlist
+
+A qualificação inicial do autor não usa um novo provedor. Ela agrega somente
+vínculos de engajamento já aceitos pelo filtro Brasil/ICP e cria uma sugestão
+de pessoa quando existem três engajadores distintos. O caso real homologado
+gerou uma sugestão a partir de três pessoas em dois posts, com custo externo
+zero. A coleta de posts próprios começa apenas depois da aprovação humana e
+será validada no bloco recorrente da Watchlist.
+
 ## Onboarding
 
 | Fonte | Primário | Fallback | Estado |

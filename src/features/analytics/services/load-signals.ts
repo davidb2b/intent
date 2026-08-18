@@ -1,4 +1,5 @@
 import { supabase } from "@/infrastructure/supabase/client"
+import { parseSourceMeta } from "../lib/source-meta"
 
 export type SignalSummary = {
   projectId: string | null
@@ -283,12 +284,11 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
   }
 
   return (sourcesResult.data ?? []).filter((source) => Boolean(source.nome?.trim())).map((source) => {
-    let meta: { posts?: number; comentarios?: number; reacoes?: number; razao_comentarios_reacoes?: number; pre_visualizacao_post?: string } = {}
-    try { meta = source.meta ? JSON.parse(source.meta) as typeof meta : {} } catch { meta = {} }
+    const meta = parseSourceMeta(source.meta)
     const observed = sourceStats.get(source.id)
     const hasObservedData = source.status === "monitorada" && Boolean(observed)
-    const people = observed?.people.size ?? 0
-    const icp = observed?.icp.size ?? 0
+    const people = hasObservedData ? observed!.people.size : meta.pessoas ?? 0
+    const icp = hasObservedData ? observed!.icp.size : meta.icp ?? 0
     return {
       id: source.id,
       linkedinUrl: source.linkedin_url,

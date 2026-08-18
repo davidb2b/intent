@@ -112,3 +112,12 @@ registrado separadamente e não deve aparecer para cliente comum.
   pendente de verificação, nunca presumida brasileira.
 - A expansão por post não pode furar a regra regional.
 
+## Watchlist
+
+- Um autor pessoa só vira sugestão depois de reunir três pessoas aderentes
+  distintas em seus posts.
+- A sugestão nasce como `candidata`; somente uma ação humana muda para
+  `monitorada`.
+- Descartes humanos são preservados e nunca revertidos pelo motor.
+- Vínculos pessoa–post usados na contagem são privados e não expõem fit nem a
+  mecânica da cascata.

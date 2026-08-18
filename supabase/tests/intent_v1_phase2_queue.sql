@@ -393,6 +393,11 @@ select public.intent_phase2_assert(
 );
 
 select public.intent_phase2_assert(
+  not has_table_privilege('authenticated', 'public.post_engajadores_privados', 'select'),
+  'accepted post-engager relationships remain server-only'
+);
+
+select public.intent_phase2_assert(
   not has_function_privilege(
     'authenticated',
     'public.intent_reserve_engine_budget(uuid,smallint,integer)',

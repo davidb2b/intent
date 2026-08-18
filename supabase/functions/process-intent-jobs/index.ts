@@ -23,9 +23,10 @@ import {
   type NormalizedPostEngagement,
 } from "../_shared/intent-post-engagement.ts"
 import { judgePublicSignal } from "../_shared/intent-signal-llm.ts"
-import { normalizeCompanyKey } from "../_shared/person-enrichment.ts"
-import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { normalizeCompanyKey, usablePersonName } from "../_shared/person-enrichment.ts"
+import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 import { engineBudgetUnits } from "../_shared/intent-engine-budget.ts"
+import { qualifiesAuthorForWatchlist } from "../_shared/intent-author-watchlist.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -805,6 +806,22 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
         await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: personId, icp_id: icp.id }, 40)
       }
 
+      const engagementDates = personEngagements
+        .flatMap((engagement) => engagement.occurredAt ? [engagement.occurredAt] : [])
+        .sort()
+      const { error: relationError } = await admin.from("post_engajadores_privados").upsert({
+        post_id: postId,
+        pessoa_id: personId,
+        icp_id: icp.id,
+        projeto_id: job.projeto_id,
+        comentou: personEngagements.some((engagement) => engagement.type === "comment"),
+        reagiu: personEngagements.some((engagement) => engagement.type === "reaction"),
+        primeiro_engajamento_em: engagementDates[0] ?? null,
+        ultimo_engajamento_em: engagementDates.at(-1) ?? null,
+        atualizado_em: new Date().toISOString(),
+      }, { onConflict: "post_id,pessoa_id,icp_id" })
+      if (relationError) throw new Error(`Falha ao preservar o vínculo público com o post: ${relationError.message}`)
+
       for (const engagement of personEngagements) {
         if (engagement.type !== "comment" || !engagement.evidence || !engagement.occurredAt) continue
         const source = sourceByEngagement.get(`${engagement.type}:${engagement.externalId}`)
@@ -853,6 +870,10 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
     }).eq("post_id", postId).eq("icp_id", icp.id).eq("projeto_id", job.projeto_id)
     if (completeError) throw new Error(`Falha ao concluir a expansão do post: ${completeError.message}`)
 
+    if (accepted > 0) {
+      await enqueue(admin, job.projeto_id, "investigar_autor", { post_id: postId, icp_id: icp.id }, 36)
+    }
+
     await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost, people: inserted })
     return {
       comments: engagements.filter((item) => item.type === "comment").length,
@@ -873,6 +894,109 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
       atualizado_em: new Date().toISOString(),
     }, { onConflict: "post_id,icp_id" })
     await finishExecution(admin, executionId, { status: "falhou", costUsd: totalCost, people: inserted, error: errorMessage(error) })
+    throw error
+  }
+}
+
+async function processAuthorInvestigationJob(admin: AdminClient, job: Job) {
+  const postId = typeof job.payload.post_id === "string" ? job.payload.post_id : ""
+  const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const executionId = await createExecution(admin, job.projeto_id, "cascata", {
+    job_id: job.id,
+    post_id: postId,
+    icp_id: icpId,
+    origem: "autor",
+  })
+
+  try {
+    const { data: triggerPost, error: triggerError } = await admin.from("posts")
+      .select("id, autor_nome, autor_url, texto")
+      .eq("id", postId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (triggerError || !triggerPost) throw new Error("O post de origem não foi encontrado para avaliar o autor.")
+
+    const rawAuthorUrl = typeof triggerPost.autor_url === "string" ? triggerPost.autor_url : ""
+    const authorSlug = normalizeProfileSlug(rawAuthorUrl)
+    const authorName = usablePersonName(triggerPost.autor_nome)
+    if (!authorSlug || !authorName || !rawAuthorUrl.includes("linkedin.com/in/")) {
+      await finishExecution(admin, executionId, { status: "concluida" })
+      return { suggested: false, reason: "author_identity_unavailable" }
+    }
+    const authorUrl = canonicalProfileUrl(rawAuthorUrl)
+
+    const { data: projectPosts, error: postsError } = await admin.from("posts")
+      .select("id, autor_url")
+      .eq("projeto_id", job.projeto_id)
+      .not("autor_url", "is", null)
+    if (postsError) throw new Error(`Falha ao reunir o histórico público do autor: ${postsError.message}`)
+    const authorPostIds = (projectPosts ?? [])
+      .filter((post) => typeof post.autor_url === "string" && normalizeProfileSlug(post.autor_url) === authorSlug)
+      .map((post) => post.id)
+    if (!authorPostIds.length) {
+      await finishExecution(admin, executionId, { status: "concluida" })
+      return { suggested: false, reason: "no_qualified_posts" }
+    }
+
+    const { data: relations, error: relationsError } = await admin.from("post_engajadores_privados")
+      .select("post_id, pessoa_id, comentou, reagiu")
+      .eq("projeto_id", job.projeto_id)
+      .eq("icp_id", icpId)
+      .in("post_id", authorPostIds)
+    if (relationsError) throw new Error(`Falha ao avaliar as conversas ligadas ao autor: ${relationsError.message}`)
+
+    const personIds = (relations ?? []).map((relation) => relation.pessoa_id)
+    if (!qualifiesAuthorForWatchlist(personIds)) {
+      await finishExecution(admin, executionId, { status: "concluida" })
+      return { suggested: false, people: new Set(personIds).size }
+    }
+
+    const meta = JSON.stringify({
+      posts: new Set((relations ?? []).map((relation) => relation.post_id)).size,
+      comentarios: (relations ?? []).filter((relation) => relation.comentou).length,
+      reacoes: (relations ?? []).filter((relation) => relation.reagiu).length,
+      pessoas: new Set(personIds).size,
+      icp: new Set(personIds).size,
+      pre_visualizacao_post: triggerPost.texto,
+      motivo: "Este perfil reúne conversas com pessoas alinhadas ao seu público.",
+    })
+
+    const { data: sources, error: sourcesError } = await admin.from("fontes")
+      .select("id, linkedin_url, status")
+      .eq("projeto_id", job.projeto_id)
+    if (sourcesError) throw new Error(`Falha ao verificar sugestões existentes: ${sourcesError.message}`)
+    const existing = (sources ?? []).find((source) => normalizeProfileSlug(source.linkedin_url) === authorSlug)
+    let sourceId: string
+    let status = existing?.status ?? "candidata"
+    if (existing) {
+      sourceId = existing.id
+      const { error: updateError } = await admin.from("fontes").update({
+        tipo_watchlist: "pessoa",
+        nome: authorName,
+        meta,
+        descoberta_em: "motor_intent",
+      }).eq("id", existing.id).eq("projeto_id", job.projeto_id)
+      if (updateError) throw new Error(`Falha ao atualizar a sugestão do autor: ${updateError.message}`)
+    } else {
+      const { data: source, error: insertError } = await admin.from("fontes").insert({
+        projeto_id: job.projeto_id,
+        tipo: "perfil",
+        tipo_watchlist: "pessoa",
+        linkedin_url: authorUrl,
+        nome: authorName,
+        meta,
+        status: "candidata",
+        descoberta_em: "motor_intent",
+      }).select("id").single()
+      if (insertError || !source) throw new Error(`Falha ao criar a sugestão do autor: ${insertError?.message ?? "registro ausente"}`)
+      sourceId = source.id
+      status = "candidata"
+    }
+
+    await finishExecution(admin, executionId, { status: "concluida" })
+    return { suggested: status !== "descartada", sourceId, status, people: new Set(personIds).size }
+  } catch (error) {
+    await finishExecution(admin, executionId, { status: "falhou", error: errorMessage(error) })
     throw error
   }
 }
@@ -1066,6 +1190,7 @@ async function processJob(admin: AdminClient, job: Job, secrets: { apollo: strin
   if (job.tipo === "julgar_sinal") return processJudgeSignalJob(admin, job, secrets.openai)
   if (job.tipo === "varrer_empresa") return processCompanyCascadeJob(admin, job, secrets.apollo)
   if (job.tipo === "varrer_post") return processPostCascadeJob(admin, job, { apollo: secrets.apollo, apify: secrets.apify })
+  if (job.tipo === "investigar_autor") return processAuthorInvestigationJob(admin, job)
   throw new Error("Este tipo de etapa ainda não pertence ao fluxo ativo da Fase 2.")
 }
 
@@ -1097,7 +1222,7 @@ Deno.serve(async (request) => {
     if (!owned) return json({ error: "Não encontramos esta empresa na sua conta." }, 404)
   }
 
-  const activeTypes = ["semear_radar", "vigiar_pessoa", "julgar_sinal", "varrer_empresa", "varrer_post"]
+  const activeTypes = ["semear_radar", "vigiar_pessoa", "julgar_sinal", "varrer_empresa", "varrer_post", "investigar_autor"]
   const requestedTypes = Array.isArray(body.jobTypes) ? body.jobTypes.filter((type) => activeTypes.includes(type)) : activeTypes
   const maxJobs = Math.max(1, Math.min(10, Math.trunc(Number(body.maxJobs ?? 5))))
   const processed: Array<Record<string, unknown>> = []

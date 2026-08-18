@@ -77,6 +77,24 @@ para descoberta, mas não viram sinal temporal inventado. A expansão é
 idempotente por post e versão de ICP, limita a avaliação a dez pessoas por
 post e prioriza quem comentou.
 
+## Autor e sugestão de Watchlist
+
+A terceira cascata controlada está concluída:
+
+```text
+post expandido
+  -> vínculo privado entre post e ICPs aceitos
+  -> histórico agregado pelo autor canônico
+  -> mínimo de 3 pessoas aderentes distintas
+  -> perfil sugerido na Watchlist
+  -> aprovação humana obrigatória para acompanhar
+```
+
+O vínculo inclui comentários e reações aceitas, permanece inacessível ao
+browser e não expõe fit, Actors ou a mecânica da cascata. Um autor descartado
+pelo usuário não é reativado pelo motor. A análise não chama provedores e tem
+custo externo zero.
+
 ## Homologação real
 
 A execução de produção usou um ICP ativo e concluiu toda a fila sem erro:
@@ -109,6 +127,14 @@ A cascata do post foi homologada em produção depois da proteção diária:
 - nenhum contato privado foi solicitado, persistido ou revelado;
 - a execução concluiu por US$ 0,034, gravado no livro interno de custos.
 
+A investigação do autor também foi homologada com dados existentes:
+
+- 28 autores possuíam evidência privada de engajamento aderente;
+- um autor atingiu o mínimo de três pessoas distintas em dois posts;
+- uma sugestão real foi criada na Watchlist em estado `candidata`;
+- nenhuma fonte foi ativada automaticamente;
+- nenhuma chamada externa, falha ou custo foi gerado.
+
 Resultados vazios não são convertidos em sinais. Pessoas sem atividade ficam no
 radar privado e não aparecem ao cliente.
 
@@ -126,9 +152,8 @@ radar privado e não aparecem ao cliente.
 O núcleo está homologado. Ainda pertencem à Fase 2, mas serão implementados em
 blocos separados para preservar controle de custo e isolamento de falhas:
 
-1. investigação controlada de autores e influenciadores;
-2. execução recorrente de watchlists;
-3. revelação de contato sob demanda, com consentimento de ação e débito
+1. execução recorrente de watchlists;
+2. revelação de contato sob demanda, com consentimento de ação e débito
    específico por tipo de contato.
 
 Esses blocos reutilizarão a fila e o livro de créditos já homologados. Nenhum

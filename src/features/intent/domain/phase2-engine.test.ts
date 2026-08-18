@@ -22,6 +22,10 @@ import {
 } from "../../../../supabase/functions/_shared/intent-post-engagement";
 import { validateSignalJudgment } from "../../../../supabase/functions/_shared/intent-signal-llm";
 import { engineBudgetUnits } from "../../../../supabase/functions/_shared/intent-engine-budget";
+import {
+  AUTHOR_WATCHLIST_MIN_ICP_ENGAGERS,
+  qualifiesAuthorForWatchlist,
+} from "../../../../supabase/functions/_shared/intent-author-watchlist";
 
 const buyer = {
   cargos: ["Diretor de Marketing", "Head of Marketing"],
@@ -42,6 +46,12 @@ describe("Phase 2 people-first contracts", () => {
     expect(engineBudgetUnits("varrer_empresa")).toBe(5);
     expect(engineBudgetUnits("varrer_post")).toBe(10);
     expect(engineBudgetUnits("julgar_sinal")).toBe(0);
+  });
+
+  it("suggests an author only after three distinct ICP engagers", () => {
+    expect(AUTHOR_WATCHLIST_MIN_ICP_ENGAGERS).toBe(3);
+    expect(qualifiesAuthorForWatchlist(["person-1", "person-2", "person-2"])).toBe(false);
+    expect(qualifiesAuthorForWatchlist(["person-1", "person-2", "person-3"])).toBe(true);
   });
 
   it("always applies Brazil to both person and company search", () => {
