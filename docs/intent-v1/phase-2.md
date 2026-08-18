@@ -33,6 +33,10 @@ Também foram entregues:
 - materialização da empresa somente depois da aprovação do sinal;
 - distinção entre ausência legítima de atividade, perfil indisponível e falha
   do provedor.
+- orçamento diário atômico de 160 pessoas por projeto, contabilizado por
+  tentativa antes de qualquer chamada externa;
+- pausa recuperável quando o saldo do plano termina e retomada automática
+  quando novos créditos ficam disponíveis.
 
 ## Cascata da empresa
 
@@ -51,6 +55,27 @@ empresa materializada por um sinal aprovado
 
 A expansão é idempotente por empresa e versão de ICP. Ela não consome créditos
 do produto, não busca contatos e não torna o radar interno visível.
+
+## Cascata do post
+
+A segunda cascata controlada também está concluída:
+
+```text
+post qualificado por um sinal aprovado
+  -> comentários e reações coletados em paralelo
+  -> identidade pública normalizada e deduplicada
+  -> enriquecimento regional sem contatos
+  -> Brasil literal, fit >= 60 e exclusões privadas
+  -> novo perfil interno em `vigiado`
+  -> comentário com evidência e data enfileirado para julgamento
+  -> novo ICP dispara vigília e futura cascata da empresa
+```
+
+Comentários e reações possuem Actors principais e fallbacks independentes.
+Resultado vazio válido não aciona fallback. Reações sem data continuam úteis
+para descoberta, mas não viram sinal temporal inventado. A expansão é
+idempotente por post e versão de ICP, limita a avaliação a dez pessoas por
+post e prioriza quem comentou.
 
 ## Homologação real
 
@@ -75,6 +100,15 @@ A homologação da cascata executou duas empresas reais em produção:
 - o saldo permaneceu em 15 créditos, confirmando custo zero para o cliente;
 - as identidades e o estado de expansão continuam restritos ao backend.
 
+A cascata do post foi homologada em produção depois da proteção diária:
+
+- 10 das 160 unidades do ciclo foram reservadas antes dos provedores;
+- 4 comentários e 10 reações reais foram normalizados;
+- 10 pessoas foram avaliadas e uma nova pessoa brasileira aderente foi aceita;
+- zero pessoas fora do Brasil, excluídas ou com fit abaixo de 60 permaneceram;
+- nenhum contato privado foi solicitado, persistido ou revelado;
+- a execução concluiu por US$ 0,034, gravado no livro interno de custos.
+
 Resultados vazios não são convertidos em sinais. Pessoas sem atividade ficam no
 radar privado e não aparecem ao cliente.
 
@@ -82,7 +116,8 @@ radar privado e não aparecem ao cliente.
 
 - testes unitários dos filtros Apollo, validação Brasil, fit, descarte de
   contatos, normalização dos Actors, deduplicação e julgamento estrito;
-- teste transacional da fila, lease, idempotência e livro de créditos;
+- teste transacional da fila, lease, idempotência, livro de créditos, teto
+  diário e retomada depois de renovação;
 - lint do banco remoto sem alertas de schema;
 - build, lint e suíte completa do front executados antes da publicação.
 
@@ -91,10 +126,9 @@ radar privado e não aparecem ao cliente.
 O núcleo está homologado. Ainda pertencem à Fase 2, mas serão implementados em
 blocos separados para preservar controle de custo e isolamento de falhas:
 
-1. cascata do post para descobrir outras pessoas que interagiram;
-2. investigação controlada de autores e influenciadores;
-3. execução recorrente de watchlists;
-4. revelação de contato sob demanda, com consentimento de ação e débito
+1. investigação controlada de autores e influenciadores;
+2. execução recorrente de watchlists;
+3. revelação de contato sob demanda, com consentimento de ação e débito
    específico por tipo de contato.
 
 Esses blocos reutilizarão a fila e o livro de créditos já homologados. Nenhum

@@ -37,6 +37,10 @@ export type FitAssessment = {
   reasons: string[]
 }
 
+export function isEligibleForRadar(fit: FitAssessment) {
+  return !fit.excluded && fit.score >= 60
+}
+
 export function buildPersonJudgmentPayload(personId: string, candidateIds: string[], watchJobId: string) {
   const uniqueCandidateIds = [...new Set(candidateIds.filter(Boolean))]
   if (!personId || !watchJobId || !uniqueCandidateIds.length) throw new Error("A avaliação precisa de pessoa, ciclo e atividades válidas.")

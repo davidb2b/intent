@@ -1,6 +1,6 @@
 # Intent v1 — plano vigente
 
-Status: Fases 0 e 1 encerradas; núcleo vertical e cascata da empresa da Fase 2 homologados em produção
+Status: Fases 0 e 1 encerradas; núcleo vertical e cascatas de empresa e post da Fase 2 homologados em produção
 
 Branch: `main`
 Fontes de verdade: SPEC Intent v1, motor people-first v2 e protótipo v7.3.
@@ -53,7 +53,7 @@ busca temática poderá existir como complemento, nunca como coração do motor.
 |---|---|---|---|
 | 0 | Contratos, arquitetura, integrações e estratégia de migração | Encerrada | migrations `0009`/`0010`, RLS, testes e banco remoto validados |
 | 1 | Onboarding site -> ICP editável/versionado | Encerrada | ICP real gerado, editado, versionado e ativado em produção |
-| 2 | Radar people-first, fila, julgamento, créditos e cascatas | Em andamento | núcleo e cascata da empresa homologados; cascata do post, watchlists e contatos ainda pendentes |
+| 2 | Radar people-first, fila, julgamento, créditos e cascatas | Em andamento | núcleo e cascatas de empresa/post homologados; autor, watchlists e contatos ainda pendentes |
 | 3 | Início, Pessoas, Contas, Watchlist, ICP e classificação | Não iniciada | protótipo v7.3 com dados reais e sem conceitos internos |
 | 4 | Hardening, observabilidade, segurança e homologação final | Não iniciada | smoke em produção, RLS, custos e recuperação de falhas |
 
@@ -70,6 +70,7 @@ busca temática poderá existir como complemento, nunca como coração do motor.
 
 ## Próximo gate
 
-O próximo bloco implementa a cascata do post. Ele precisa provar idempotência,
-limite de custo, isolamento por projeto, retry por item e publicação somente
-depois de fit, Brasil e evidência literal aprovados.
+O próximo bloco implementa a investigação controlada do autor do post. Ele
+precisa promover somente autores que atraíram três ou mais ICPs, criar uma
+sugestão de watchlist para aprovação humana e preservar idempotência,
+isolamento por projeto e o orçamento diário já homologado.

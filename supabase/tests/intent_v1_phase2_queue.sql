@@ -184,6 +184,186 @@ select public.intent_phase2_assert(
   'a completed company cascade is not re-enqueued for the same ICP'
 );
 
+select public.intent_enqueue_job(
+  '02000000-0000-0000-0000-000000000001',
+  'varrer_post',
+  '{"post_id":"72000000-0000-0000-0000-000000000001","icp_id":"42000000-0000-0000-0000-000000000001"}'::jsonb,
+  35::smallint,
+  3::smallint
+) as id
+into temporary table phase2_post_job;
+
+create temporary table phase2_post_claimed as
+select *
+from public.intent_claim_jobs(
+  array['varrer_post'],
+  '02000000-0000-0000-0000-000000000001',
+  1,
+  120
+);
+
+select public.intent_phase2_assert(
+  public.intent_complete_job(
+    (select id from phase2_post_claimed),
+    (select lease_token from phase2_post_claimed)
+  ),
+  'the post expansion can complete with its lease'
+);
+
+select public.intent_phase2_assert(
+  public.intent_enqueue_job(
+    '02000000-0000-0000-0000-000000000001',
+    'varrer_post',
+    '{"post_id":"72000000-0000-0000-0000-000000000001","icp_id":"42000000-0000-0000-0000-000000000001"}'::jsonb,
+    35::smallint,
+    3::smallint
+  ) = (select id from phase2_post_job),
+  'a completed post cascade is not re-enqueued for the same ICP'
+);
+
+update public.projetos
+   set orcamento_diario_perfis = 1
+ where id = '02000000-0000-0000-0000-000000000001';
+
+select public.intent_enqueue_job(
+  '02000000-0000-0000-0000-000000000001',
+  'vigiar_pessoa',
+  '{"pessoa_id":"82000000-0000-0000-0000-000000000001","icp_id":"42000000-0000-0000-0000-000000000001"}'::jsonb,
+  40::smallint,
+  3::smallint
+);
+
+create temporary table phase2_budget_claimed as
+select *
+from public.intent_claim_jobs(
+  array['vigiar_pessoa'],
+  '02000000-0000-0000-0000-000000000001',
+  1,
+  120
+);
+
+select public.intent_phase2_assert(
+  public.intent_reserve_engine_budget(
+    (select id from phase2_budget_claimed),
+    (select tentativas from phase2_budget_claimed),
+    1
+  ) = 'reservado',
+  'one engine unit is reserved for the active attempt'
+);
+
+select public.intent_phase2_assert(
+  public.intent_reserve_engine_budget(
+    (select id from phase2_budget_claimed),
+    (select tentativas from phase2_budget_claimed),
+    1
+  ) = 'reservado',
+  'repeating the same attempt does not consume the budget twice'
+);
+
+select public.intent_phase2_assert(
+  (
+    select budget.consumido = 1 and count(reservation.job_id) = 1
+      from public.orcamentos_motor_diarios budget
+      left join public.orcamento_motor_reservas reservation
+        on reservation.projeto_id = budget.projeto_id and reservation.dia = budget.dia
+     where budget.projeto_id = '02000000-0000-0000-0000-000000000001'
+     group by budget.consumido
+  ),
+  'daily budget and attempt ledger remain consistent'
+);
+
+select public.intent_phase2_assert(
+  public.intent_complete_job(
+    (select id from phase2_budget_claimed),
+    (select lease_token from phase2_budget_claimed)
+  ),
+  'the budgeted job completes normally'
+);
+
+select public.intent_enqueue_job(
+  '02000000-0000-0000-0000-000000000001',
+  'vigiar_pessoa',
+  '{"pessoa_id":"82000000-0000-0000-0000-000000000002","icp_id":"42000000-0000-0000-0000-000000000001"}'::jsonb,
+  40::smallint,
+  3::smallint
+);
+
+create temporary table phase2_daily_limit_claimed as
+select *
+from public.intent_claim_jobs(
+  array['vigiar_pessoa'],
+  '02000000-0000-0000-0000-000000000001',
+  1,
+  120
+);
+
+select public.intent_phase2_assert(
+  public.intent_reserve_engine_budget(
+    (select id from phase2_daily_limit_claimed),
+    (select tentativas from phase2_daily_limit_claimed),
+    1
+  ) = 'aguardando_orcamento',
+  'the next job waits without spending when the daily budget is full'
+);
+
+select public.intent_phase2_assert(
+  (
+    select status = 'pendente' and lease_token is null and executar_apos > now()
+      from public.jobs
+     where id = (select id from phase2_daily_limit_claimed)
+  ),
+  'a daily-limited job remains queued for the next cycle'
+);
+
+update public.contas_credito
+   set consumido = limite, reservado = 0
+ where projeto_id = '02000000-0000-0000-0000-000000000001';
+
+select public.intent_enqueue_job(
+  '02000000-0000-0000-0000-000000000001',
+  'varrer_empresa',
+  '{"empresa_id":"62000000-0000-0000-0000-000000000002","icp_id":"42000000-0000-0000-0000-000000000001"}'::jsonb,
+  30::smallint,
+  3::smallint
+);
+
+create temporary table phase2_no_credit_claimed as
+select *
+from public.intent_claim_jobs(
+  array['varrer_empresa'],
+  '02000000-0000-0000-0000-000000000001',
+  1,
+  120
+);
+
+select public.intent_phase2_assert(
+  public.intent_reserve_engine_budget(
+    (select id from phase2_no_credit_claimed),
+    (select tentativas from phase2_no_credit_claimed),
+    5
+  ) = 'aguardando_creditos',
+  'external work pauses before provider calls when product credits end'
+);
+
+select public.intent_phase2_assert(
+  (select status = 'aguardando_creditos' from public.jobs where id = (select id from phase2_no_credit_claimed)),
+  'the no-credit job remains recoverable'
+);
+
+update public.projetos
+   set creditos_mensais = 4
+ where id = '02000000-0000-0000-0000-000000000001';
+
+select public.intent_phase2_assert(
+  public.intent_resume_waiting_credit_jobs('02000000-0000-0000-0000-000000000001') = 1,
+  'waiting jobs resume after credits become available'
+);
+
+select public.intent_phase2_assert(
+  (select status = 'pendente' from public.jobs where id = (select id from phase2_no_credit_claimed)),
+  'the resumed job returns to the queue'
+);
+
 reset role;
 
 select public.intent_phase2_assert(
@@ -199,6 +379,31 @@ select public.intent_phase2_assert(
 select public.intent_phase2_assert(
   not has_table_privilege('authenticated', 'public.empresa_operacao_privada', 'select'),
   'company provider identity remains server-only'
+);
+
+select public.intent_phase2_assert(
+  not has_table_privilege('authenticated', 'public.post_operacao_privada', 'select'),
+  'qualified-post expansion remains server-only'
+);
+
+select public.intent_phase2_assert(
+  not has_table_privilege('authenticated', 'public.orcamentos_motor_diarios', 'select')
+  and not has_table_privilege('authenticated', 'public.orcamento_motor_reservas', 'select'),
+  'engine budget and attempt ledger remain server-only'
+);
+
+select public.intent_phase2_assert(
+  not has_function_privilege(
+    'authenticated',
+    'public.intent_reserve_engine_budget(uuid,smallint,integer)',
+    'execute'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.intent_resume_waiting_credit_jobs(uuid)',
+    'execute'
+  ),
+  'browser roles cannot reserve or resume engine capacity'
 );
 
 select public.intent_phase2_assert(

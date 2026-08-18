@@ -106,10 +106,22 @@ o fallback nem cria sinal artificial.
 
 | Operação | Primário | Fallback | Estado |
 |---|---|---|---|
-| Comentários do post | `harvestapi/linkedin-post-comments` | `apimaestro/linkedin-post-comments-replies-engagements-scraper-no-cookies` | Primário já usado pelo legado; revalidar para novo DTO |
-| Reações do post | `harvestapi/linkedin-post-reactions` | Nenhum aprovado | Shortlist; homologação pendente |
+| Comentários do post | `harvestapi/linkedin-post-comments` | `apimaestro/linkedin-post-comments-replies-engagements-scraper-no-cookies` | **Aprovado**; preserva autor, comentário, data e URL pública |
+| Reações do post | `harvestapi/linkedin-post-reactions` | `apimaestro/linkedin-post-reactions` | **Aprovado para descoberta**; ausência de data não vira sinal temporal |
 | Perfil detalhado | `harvestapi/linkedin-profile-scraper` | `apimaestro/linkedin-profile-detail` | Contrato legado disponível; preservar campos ausentes |
 | Posts do influenciador | `harvestapi/linkedin-profile-posts` | Nenhum aprovado | Candidato; não confundir posts próprios com atividade feita |
+
+Homologação real da cascata em 18/08/2026:
+
+- chamada limitada a dez resultados por tipo e até dez pessoas por post;
+- comentários priorizados sobre reações na seleção para enriquecimento;
+- Apollo `people/match` chamado somente com URL pública e com e-mail, telefone
+  e waterfalls desabilitados;
+- 4 comentários, 10 reações e 10 pessoas avaliadas no run controlado;
+- uma pessoa nova aceita após Brasil literal e fit mínimo; zero registros
+  inválidos e zero contatos persistidos;
+- custo real de US$ 0,034;
+- orçamento diário reservado antes dos Actors e registrado em tabela privada.
 
 ## Onboarding
 

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { runApifyActor, type ApifyRunResult } from "../_shared/apify-client.ts"
-import { searchApolloPeople, enrichApolloPerson, ApolloRequestError } from "../_shared/apollo-client.ts"
+import { searchApolloPeople, enrichApolloPerson, enrichApolloPersonByLinkedinUrl, ApolloRequestError } from "../_shared/apollo-client.ts"
 import {
   apolloSearchPersonIds,
   assessApolloFit,
@@ -8,6 +8,7 @@ import {
   buildPersonJudgmentPayload,
   buildApolloPeopleSearchInput,
   candidateBelongsToCompany,
+  isEligibleForRadar,
   normalizeEnrichedApolloPerson,
   personJudgmentCreditReference,
   stripApolloContactFields,
@@ -16,9 +17,15 @@ import {
   type FitAssessment,
 } from "../_shared/intent-phase2-domain.ts"
 import { dedupeActivities, normalizeProfileActivityItem, type NormalizedActivity } from "../_shared/intent-activity.ts"
+import {
+  dedupePostEngagements,
+  normalizePostEngagementItem,
+  type NormalizedPostEngagement,
+} from "../_shared/intent-post-engagement.ts"
 import { judgePublicSignal } from "../_shared/intent-signal-llm.ts"
 import { normalizeCompanyKey } from "../_shared/person-enrichment.ts"
 import { normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
+import { engineBudgetUnits } from "../_shared/intent-engine-budget.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,9 +37,20 @@ const PRIMARY_ACTORS = {
   reaction: "harvestapi/linkedin-profile-reactions",
 } as const
 const FALLBACK_ACTOR = "scraping_solutions/linkedin-profile-comments-reactions-scraper-no-cookies"
+const POST_ENGAGEMENT_ACTORS = {
+  comment: {
+    primary: "harvestapi/linkedin-post-comments",
+    fallback: "apimaestro/linkedin-post-comments-replies-engagements-scraper-no-cookies",
+  },
+  reaction: {
+    primary: "harvestapi/linkedin-post-reactions",
+    fallback: "apimaestro/linkedin-post-reactions",
+  },
+} as const
 const RAW_RETENTION_DAYS = 7
 const DEFAULT_SEED_SIZE = 5
 const DEFAULT_COMPANY_EXPANSION_SIZE = 5
+const DEFAULT_POST_ENGAGEMENT_SIZE = 10
 
 type AdminClient = ReturnType<typeof createClient>
 type Job = {
@@ -134,7 +152,7 @@ function safeCompanyCandidate(value: unknown) {
   return typeof company.name === "string" && company.name.trim() ? company : null
 }
 
-type RadarOrigin = "semente_apollo" | "cascata_empresa"
+type RadarOrigin = "semente_apollo" | "cascata_empresa" | "cascata_post"
 
 async function upsertRadarPerson(admin: AdminClient, input: {
   projectId: string
@@ -253,6 +271,7 @@ async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
       if (!candidate) continue
 
       const fit = assessApolloFit(candidate, icp.comprador as BuyerProfile)
+      if (!isEligibleForRadar(fit)) continue
       const { personId, inserted: wasInserted } = await upsertRadarPerson(admin, {
         projectId: job.projeto_id,
         candidate,
@@ -261,9 +280,7 @@ async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
       })
       if (wasInserted) inserted += 1
 
-      if (!fit.excluded && fit.score >= 60) {
-        await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: personId, icp_id: icp.id }, 40)
-      }
+      await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: personId, icp_id: icp.id }, 40)
     }
 
     await finishExecution(admin, executionId, { status: "concluida", people: inserted })
@@ -277,7 +294,13 @@ async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
 function emptyRunState(result: ApifyRunResult) {
   if (result.items.length > 0) return "activity_available" as const
   const logs = result.logMessages.join("\n").toLowerCase()
-  if (logs.includes("no valid source provided") || logs.includes("profile not found") || logs.includes("profile unavailable")) return "profile_unavailable" as const
+  if (
+    logs.includes("no valid source provided")
+    || logs.includes("profile not found")
+    || logs.includes("profile unavailable")
+    || logs.includes("post not found")
+    || logs.includes("post unavailable")
+  ) return "profile_unavailable" as const
   return "no_activity" as const
 }
 
@@ -315,6 +338,55 @@ async function activityForType(profileUrl: string, type: "comment" | "reaction",
       return [await collectFallbackActivity(profileUrl, type, token)]
     } catch (fallbackError) {
       throw new Error(`A atividade pública não pôde ser consultada pelos provedores disponíveis: ${errorMessage(primaryError)} ${errorMessage(fallbackError)}`)
+    }
+  }
+}
+
+async function collectPrimaryPostEngagement(postUrl: string, type: "comment" | "reaction", token: string) {
+  const input = type === "comment"
+    ? {
+      posts: [postUrl],
+      maxItems: DEFAULT_POST_ENGAGEMENT_SIZE,
+      postedLimit: "3months",
+      scrapeReplies: false,
+      profileScraperMode: "main",
+    }
+    : {
+      posts: [postUrl],
+      maxItems: DEFAULT_POST_ENGAGEMENT_SIZE,
+      profileScraperMode: "main",
+    }
+  const result = await runApifyActor(POST_ENGAGEMENT_ACTORS[type].primary, input, token)
+  return { result, state: emptyRunState(result), fallback: false, type }
+}
+
+async function collectFallbackPostEngagement(postUrl: string, type: "comment" | "reaction", token: string) {
+  const input = type === "comment"
+    ? { postIds: [postUrl] }
+    : { post_urls: [postUrl], page_number: 1, reaction_type: "ALL", limit: DEFAULT_POST_ENGAGEMENT_SIZE }
+  const result = await runApifyActor(POST_ENGAGEMENT_ACTORS[type].fallback, input, token)
+  const hasTypedError = result.items.some((item) => item && typeof item === "object" && (
+    (item as Record<string, unknown>).sourceType === "error"
+    || (item as Record<string, unknown>).type === "error"
+  ))
+  return {
+    result,
+    state: hasTypedError ? "profile_unavailable" as const : emptyRunState(result),
+    fallback: true,
+    type,
+  }
+}
+
+async function postEngagementForType(postUrl: string, type: "comment" | "reaction", token: string) {
+  try {
+    const primary = await collectPrimaryPostEngagement(postUrl, type, token)
+    if (primary.state !== "profile_unavailable") return [primary]
+    return [primary, await collectFallbackPostEngagement(postUrl, type, token)]
+  } catch (primaryError) {
+    try {
+      return [await collectFallbackPostEngagement(postUrl, type, token)]
+    } catch (fallbackError) {
+      throw new Error(`Os engajamentos do post não puderam ser consultados pelos provedores disponíveis: ${errorMessage(primaryError)} ${errorMessage(fallbackError)}`)
     }
   }
 }
@@ -544,6 +616,7 @@ async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey:
       if (!candidate || !candidateBelongsToCompany(candidate, companyIdentity)) continue
 
       const fit = assessApolloFit(candidate, icp.comprador as BuyerProfile)
+      if (!isEligibleForRadar(fit)) continue
       const radar = await upsertRadarPerson(admin, {
         projectId: job.projeto_id,
         candidate,
@@ -552,10 +625,8 @@ async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey:
         companyId,
       })
       if (radar.inserted) inserted += 1
-      if (!fit.excluded && fit.score >= 60) {
-        accepted += 1
-        await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: radar.personId, icp_id: icp.id }, 40)
-      }
+      accepted += 1
+      await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: radar.personId, icp_id: icp.id }, 40)
     }
 
     const completedAt = new Date().toISOString()
@@ -577,6 +648,231 @@ async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey:
       atualizado_em: new Date().toISOString(),
     }).eq("empresa_id", companyId).eq("projeto_id", job.projeto_id)
     await finishExecution(admin, executionId, { status: "falhou", people: inserted, error: errorMessage(error) })
+    throw error
+  }
+}
+
+async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { apollo: string; apify: string }) {
+  const postId = typeof job.payload.post_id === "string" ? job.payload.post_id : ""
+  const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const executionId = await createExecution(admin, job.projeto_id, "cascata", {
+    job_id: job.id,
+    post_id: postId,
+    icp_id: icpId,
+    origem: "post",
+  })
+  let totalCost = 0
+  let inserted = 0
+  let accepted = 0
+  let evaluated = 0
+
+  try {
+    const { data: post, error: postError } = await admin.from("posts")
+      .select("id, linkedin_url, texto")
+      .eq("id", postId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (postError || !post?.linkedin_url) throw new Error("O post qualificado não foi encontrado para expansão.")
+
+    const { data: icp, error: icpError } = await admin.from("icps")
+      .select("id, status, comprador")
+      .eq("id", icpId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (icpError || !icp || icp.status !== "ativo") throw new Error("O perfil ideal ativo não foi encontrado para esta expansão.")
+
+    const now = new Date().toISOString()
+    const { error: startError } = await admin.from("post_operacao_privada").upsert({
+      post_id: postId,
+      icp_id: icp.id,
+      projeto_id: job.projeto_id,
+      expansao_status: "rodando",
+      ultimo_erro: null,
+      atualizado_em: now,
+    }, { onConflict: "post_id,icp_id" })
+    if (startError) throw new Error(`Falha ao iniciar a expansão do post: ${startError.message}`)
+
+    const [commentRuns, reactionRuns] = await Promise.all([
+      postEngagementForType(post.linkedin_url, "comment", secrets.apify),
+      postEngagementForType(post.linkedin_url, "reaction", secrets.apify),
+    ])
+    const runs = [...commentRuns, ...reactionRuns]
+    const sourceByEngagement = new Map<string, { actor: string; runId: string }>()
+    const normalized: NormalizedPostEngagement[] = []
+    for (const run of runs) {
+      totalCost += run.result.costUsd
+      await recordProviderCost(admin, executionId, run.result, run.fallback ? "post_engagement_fallback" : "post_engagement_primary")
+      await auditPayload(admin, {
+        projectId: job.projeto_id,
+        jobId: job.id,
+        provider: "apify",
+        operation: run.result.actor,
+        runId: run.result.runId,
+        identity: `${postId}:${run.type}:${run.result.actor}`,
+        payload: { items: run.result.items, state: run.state },
+      })
+      for (const item of run.result.items) {
+        const engagement = normalizePostEngagementItem(item, run.type)
+        if (!engagement) continue
+        normalized.push(engagement)
+        sourceByEngagement.set(`${engagement.type}:${engagement.externalId}`, {
+          actor: run.result.actor,
+          runId: run.result.runId,
+        })
+      }
+    }
+
+    const engagements = dedupePostEngagements(normalized)
+    const engagementsBySlug = new Map<string, NormalizedPostEngagement[]>()
+    for (const engagement of engagements) {
+      const group = engagementsBySlug.get(engagement.profileSlug) ?? []
+      group.push(engagement)
+      engagementsBySlug.set(engagement.profileSlug, group)
+    }
+    const prioritizedPeople = [...engagementsBySlug.entries()]
+      .sort((first, second) => Number(second[1].some((item) => item.type === "comment")) - Number(first[1].some((item) => item.type === "comment")))
+      .slice(0, DEFAULT_POST_ENGAGEMENT_SIZE)
+    const slugs = prioritizedPeople.map(([slug]) => slug)
+
+    const existingPeople = new Map<string, { id: string; empresa_id: string | null }>()
+    if (slugs.length > 0) {
+      const { data: people, error: peopleError } = await admin.from("pessoas")
+        .select("id, slug, empresa_id")
+        .eq("projeto_id", job.projeto_id)
+        .in("slug", slugs)
+      if (peopleError) throw new Error(`Falha ao verificar pessoas já conhecidas no post: ${peopleError.message}`)
+      for (const person of people ?? []) existingPeople.set(person.slug, { id: person.id, empresa_id: person.empresa_id })
+    }
+
+    const operationByPerson = new Map<string, { fit: number | null; excluido: boolean; localizacao_status: string }>()
+    const existingPersonIds = [...existingPeople.values()].map((person) => person.id)
+    if (existingPersonIds.length > 0) {
+      const { data: operations, error: operationsError } = await admin.from("pessoa_operacao_privada")
+        .select("pessoa_id, fit, excluido, localizacao_status")
+        .eq("projeto_id", job.projeto_id)
+        .in("pessoa_id", existingPersonIds)
+      if (operationsError) throw new Error(`Falha ao verificar o radar privado: ${operationsError.message}`)
+      for (const operation of operations ?? []) operationByPerson.set(operation.pessoa_id, operation)
+    }
+
+    const pendingByPerson = new Map<string, string[]>()
+    for (const [slug, personEngagements] of prioritizedPeople) {
+      evaluated += 1
+      const existing = existingPeople.get(slug)
+      const existingOperation = existing ? operationByPerson.get(existing.id) : null
+      let personId: string | null = null
+      let companyId = existing?.empresa_id ?? null
+      let shouldStartWatch = false
+
+      if (
+        existing
+        && existingOperation?.localizacao_status === "brasil_confirmado"
+        && !existingOperation.excluido
+        && Number(existingOperation.fit ?? 0) >= 60
+      ) {
+        personId = existing.id
+      } else if (!existingOperation) {
+        const representative = personEngagements.find((item) => item.type === "comment") ?? personEngagements[0]
+        const enriched = await enrichApolloPersonByLinkedinUrl(representative.profileUrl, secrets.apollo)
+        await auditPayload(admin, {
+          projectId: job.projeto_id,
+          jobId: job.id,
+          provider: "apollo",
+          operation: "post_engager_regional_enrichment",
+          runId: enriched.requestId,
+          identity: representative.profileSlug,
+          payload: stripApolloContactFields(enriched.payload),
+        })
+        const candidate = normalizeEnrichedApolloPerson(enriched.payload)
+        if (!candidate) continue
+        const fit = assessApolloFit(candidate, icp.comprador as BuyerProfile)
+        if (!isEligibleForRadar(fit)) continue
+        const radar = await upsertRadarPerson(admin, {
+          projectId: job.projeto_id,
+          candidate,
+          fit,
+          origin: "cascata_post",
+        })
+        personId = radar.personId
+        companyId = null
+        shouldStartWatch = true
+        if (radar.inserted) inserted += 1
+      }
+
+      if (!personId) continue
+      accepted += 1
+      if (shouldStartWatch) {
+        await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: personId, icp_id: icp.id }, 40)
+      }
+
+      for (const engagement of personEngagements) {
+        if (engagement.type !== "comment" || !engagement.evidence || !engagement.occurredAt) continue
+        const source = sourceByEngagement.get(`${engagement.type}:${engagement.externalId}`)
+        const uniqueUrn = `intent:${await fingerprint(`comment:${engagement.externalId}`)}`
+        const { data: candidateSignal, error: signalError } = await admin.from("sinais_candidatos_privados").upsert({
+          projeto_id: job.projeto_id,
+          pessoa_id: personId,
+          empresa_id: companyId,
+          post_id: postId,
+          icp_id: icp.id,
+          tipo: "comentou_tema",
+          urn_unico: uniqueUrn,
+          evidencia: engagement.evidence,
+          contexto: post.texto,
+          post_url: post.linkedin_url,
+          ocorrido_em: engagement.occurredAt,
+          provider: source?.actor ?? "apify",
+          provider_run_id: source?.runId ?? null,
+          atualizado_em: new Date().toISOString(),
+        }, { onConflict: "projeto_id,urn_unico" }).select("id,status").single()
+        if (signalError || !candidateSignal) throw new Error(`Falha ao preparar comentário do post para julgamento: ${signalError?.message ?? "sinal ausente"}`)
+        if (candidateSignal.status === "pendente") {
+          const pending = pendingByPerson.get(personId) ?? []
+          pending.push(candidateSignal.id)
+          pendingByPerson.set(personId, pending)
+        }
+      }
+    }
+
+    for (const [personId, candidateIds] of pendingByPerson) {
+      await enqueue(admin, job.projeto_id, "julgar_sinal", buildPersonJudgmentPayload(personId, candidateIds, job.id), 20)
+    }
+
+    const completedAt = new Date().toISOString()
+    const { error: completeError } = await admin.from("post_operacao_privada").update({
+      expansao_status: "concluida",
+      comentarios_lidos: engagements.filter((item) => item.type === "comment").length,
+      reacoes_lidas: engagements.filter((item) => item.type === "reaction").length,
+      pessoas_avaliadas: evaluated,
+      pessoas_aceitas: accepted,
+      pessoas_novas: inserted,
+      fontes: runs.map((run) => ({ actor: run.result.actor, run_id: run.result.runId, fallback: run.fallback, state: run.state })),
+      expandido_em: completedAt,
+      ultimo_erro: null,
+      atualizado_em: completedAt,
+    }).eq("post_id", postId).eq("icp_id", icp.id).eq("projeto_id", job.projeto_id)
+    if (completeError) throw new Error(`Falha ao concluir a expansão do post: ${completeError.message}`)
+
+    await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost, people: inserted })
+    return {
+      comments: engagements.filter((item) => item.type === "comment").length,
+      reactions: engagements.filter((item) => item.type === "reaction").length,
+      evaluated,
+      accepted,
+      inserted,
+      judgmentsQueued: pendingByPerson.size,
+      costUsd: totalCost,
+    }
+  } catch (error) {
+    await admin.from("post_operacao_privada").upsert({
+      post_id: postId,
+      icp_id: icpId,
+      projeto_id: job.projeto_id,
+      expansao_status: "falhou",
+      ultimo_erro: errorMessage(error),
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: "post_id,icp_id" })
+    await finishExecution(admin, executionId, { status: "falhou", costUsd: totalCost, people: inserted, error: errorMessage(error) })
     throw error
   }
 }
@@ -752,6 +1048,10 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
         await enqueue(admin, job.projeto_id, "varrer_empresa", { empresa_id: companyId, icp_id: icp.id }, 30)
       }
     }
+    const qualifiedPostIds = [...new Set(pendingCandidates.flatMap((candidate) => typeof candidate.post_id === "string" ? [candidate.post_id] : []))]
+    for (const qualifiedPostId of qualifiedPostIds) {
+      await enqueue(admin, job.projeto_id, "varrer_post", { post_id: qualifiedPostId, icp_id: icp.id }, 35)
+    }
     await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost })
     return { candidates: pendingCandidates.length, status: strongestStatus, costUsd: totalCost }
   } catch (error) {
@@ -765,6 +1065,7 @@ async function processJob(admin: AdminClient, job: Job, secrets: { apollo: strin
   if (job.tipo === "vigiar_pessoa") return processWatchPersonJob(admin, job, secrets.apify)
   if (job.tipo === "julgar_sinal") return processJudgeSignalJob(admin, job, secrets.openai)
   if (job.tipo === "varrer_empresa") return processCompanyCascadeJob(admin, job, secrets.apollo)
+  if (job.tipo === "varrer_post") return processPostCascadeJob(admin, job, { apollo: secrets.apollo, apify: secrets.apify })
   throw new Error("Este tipo de etapa ainda não pertence ao fluxo ativo da Fase 2.")
 }
 
@@ -796,10 +1097,15 @@ Deno.serve(async (request) => {
     if (!owned) return json({ error: "Não encontramos esta empresa na sua conta." }, 404)
   }
 
-  const activeTypes = ["semear_radar", "vigiar_pessoa", "julgar_sinal", "varrer_empresa"]
+  const activeTypes = ["semear_radar", "vigiar_pessoa", "julgar_sinal", "varrer_empresa", "varrer_post"]
   const requestedTypes = Array.isArray(body.jobTypes) ? body.jobTypes.filter((type) => activeTypes.includes(type)) : activeTypes
   const maxJobs = Math.max(1, Math.min(10, Math.trunc(Number(body.maxJobs ?? 5))))
   const processed: Array<Record<string, unknown>> = []
+
+  const { error: resumeError } = await admin.rpc("intent_resume_waiting_credit_jobs", {
+    target_project_id: projectId,
+  })
+  if (resumeError) return json({ error: "Não foi possível preparar a retomada das análises." }, 500)
 
   for (let index = 0; index < maxJobs; index += 1) {
     const { data: jobs, error: claimError } = await admin.rpc("intent_claim_jobs", {
@@ -813,6 +1119,19 @@ Deno.serve(async (request) => {
     if (!job) break
 
     try {
+      const budgetUnits = engineBudgetUnits(job.tipo)
+      if (budgetUnits > 0) {
+        const { data: budgetStatus, error: budgetError } = await admin.rpc("intent_reserve_engine_budget", {
+          target_job_id: job.id,
+          target_attempt: job.tentativas,
+          target_units: budgetUnits,
+        })
+        if (budgetError) throw new Error(`Não foi possível confirmar o orçamento desta análise: ${budgetError.message}`)
+        if (budgetStatus !== "reservado") {
+          processed.push({ jobId: job.id, type: job.tipo, status: budgetStatus })
+          continue
+        }
+      }
       const result = await processJob(admin, job, { apollo, apify, openai })
       if (!(result && typeof result === "object" && "waitingForCredits" in result)) {
         const { data: completed } = await admin.rpc("intent_complete_job", { target_job_id: job.id, target_lease_token: job.lease_token })

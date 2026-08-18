@@ -81,3 +81,16 @@ export function enrichApolloPerson(
     run_waterfall_phone: false,
   }, apiKey)
 }
+
+export function enrichApolloPersonByLinkedinUrl(
+  linkedinUrl: string,
+  apiKey: string,
+): Promise<ApolloResponse> {
+  return postApollo("/api/v1/people/match", {
+    linkedin_url: linkedinUrl,
+    reveal_personal_emails: false,
+    reveal_phone_number: false,
+    run_waterfall_email: false,
+    run_waterfall_phone: false,
+  }, apiKey)
+}

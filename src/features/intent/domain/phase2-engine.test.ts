@@ -6,6 +6,7 @@ import {
   buildPersonJudgmentPayload,
   buildApolloPeopleSearchInput,
   candidateBelongsToCompany,
+  isEligibleForRadar,
   normalizeEnrichedApolloPerson,
   personJudgmentCreditReference,
   stripApolloContactFields,
@@ -14,7 +15,13 @@ import {
   dedupeActivities,
   normalizeProfileActivityItem,
 } from "../../../../supabase/functions/_shared/intent-activity";
+import {
+  dedupePostEngagements,
+  normalizePostEngagementItem,
+  postEngagementPersonSlugs,
+} from "../../../../supabase/functions/_shared/intent-post-engagement";
 import { validateSignalJudgment } from "../../../../supabase/functions/_shared/intent-signal-llm";
+import { engineBudgetUnits } from "../../../../supabase/functions/_shared/intent-engine-budget";
 
 const buyer = {
   cargos: ["Diretor de Marketing", "Head of Marketing"],
@@ -29,6 +36,14 @@ const buyer = {
 };
 
 describe("Phase 2 people-first contracts", () => {
+  it("caps every external discovery branch with explicit daily units", () => {
+    expect(engineBudgetUnits("semear_radar")).toBe(5);
+    expect(engineBudgetUnits("vigiar_pessoa")).toBe(1);
+    expect(engineBudgetUnits("varrer_empresa")).toBe(5);
+    expect(engineBudgetUnits("varrer_post")).toBe(10);
+    expect(engineBudgetUnits("julgar_sinal")).toBe(0);
+  });
+
   it("always applies Brazil to both person and company search", () => {
     expect(buildApolloPeopleSearchInput(buyer, 50)).toEqual(expect.objectContaining({
       person_locations: ["Brazil"],
@@ -77,6 +92,9 @@ describe("Phase 2 people-first contracts", () => {
       reasons: ["Brasil confirmado pelo enriquecimento regional", "cargo aderente", "senioridade aderente", "setor aderente", "porte aderente"],
     });
     expect(assessApolloFit({ ...candidate, company: { ...candidate.company!, name: "Concorrente Ltda" } }, buyer).excluded).toBe(true);
+    expect(isEligibleForRadar({ score: 60, excluded: false, reasons: [] })).toBe(true);
+    expect(isEligibleForRadar({ score: 59, excluded: false, reasons: [] })).toBe(false);
+    expect(isEligibleForRadar({ score: 100, excluded: true, reasons: [] })).toBe(false);
   });
 
   it("removes contact fields recursively before auditing Apollo payloads", () => {
@@ -173,6 +191,61 @@ describe("Phase 2 public activity normalization", () => {
       postUrl: "https://www.linkedin.com/posts/example_activity-123",
     }, "comment")!;
     expect(dedupeActivities([item, item])).toHaveLength(1);
+  });
+});
+
+describe("Phase 2 qualified post expansion", () => {
+  it("normalizes a Harvest comment with literal evidence and date", () => {
+    expect(normalizePostEngagementItem({
+      id: "comment-1",
+      commentary: "Estamos avaliando fornecedores para este projeto.",
+      createdAt: "2026-08-18T10:00:00Z",
+      actor: {
+        name: "Pessoa Brasileira",
+        linkedinUrl: "https://www.linkedin.com/in/pessoa-brasileira?trk=feed",
+        position: "Diretora de Marketing",
+      },
+    }, "comment")).toEqual({
+      type: "comment",
+      externalId: "comment-1",
+      profileUrl: "https://www.linkedin.com/in/pessoa-brasileira",
+      profileSlug: "pessoa-brasileira",
+      personName: "Pessoa Brasileira",
+      headline: "Diretora de Marketing",
+      evidence: "Estamos avaliando fornecedores para este projeto.",
+      occurredAt: "2026-08-18T10:00:00.000Z",
+      reactionType: null,
+    });
+  });
+
+  it("normalizes both primary and fallback reactor identities without inventing a date", () => {
+    const primary = normalizePostEngagementItem({
+      id: "reaction-1",
+      reactionType: "LIKE",
+      actor: { name: "Pessoa Um", linkedinUrl: "https://www.linkedin.com/in/pessoa-um" },
+    }, "reaction")!;
+    const fallback = normalizePostEngagementItem({
+      reaction_type: "PRAISE",
+      reactor: { urn: "reactor-2", name: "Pessoa Dois", profile_url: "https://www.linkedin.com/in/pessoa-dois" },
+    }, "reaction")!;
+    expect(primary.occurredAt).toBeNull();
+    expect(fallback.externalId).toBe("reactor-2:PRAISE");
+    expect(postEngagementPersonSlugs([primary, fallback, primary])).toEqual(["pessoa-um", "pessoa-dois"]);
+  });
+
+  it("rejects incomplete identities, replies and comments without literal dates", () => {
+    expect(normalizePostEngagementItem({ id: "x", commentary: "texto", actor: { name: "Pessoa" } }, "comment")).toBeNull();
+    expect(normalizePostEngagementItem({ id: "x", commentary: "texto", actor: { name: "Pessoa", linkedinUrl: "https://www.linkedin.com/in/pessoa" } }, "comment")).toBeNull();
+    expect(normalizePostEngagementItem({ comment_id: "x", comment_type: "reply", text: "texto", posted_at: { timestamp: 1 }, author: { name: "Pessoa", profile_url: "https://www.linkedin.com/in/pessoa" } }, "comment")).toBeNull();
+  });
+
+  it("deduplicates retried engagement items", () => {
+    const item = normalizePostEngagementItem({
+      id: "reaction-1",
+      reactionType: "LIKE",
+      actor: { name: "Pessoa", linkedinUrl: "https://www.linkedin.com/in/pessoa" },
+    }, "reaction")!;
+    expect(dedupePostEngagements([item, item])).toHaveLength(1);
   });
 });
 
