@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { runApifyActor, type ApifyRunResult } from "../_shared/apify-client.ts"
+import { buildGoogleMarketInput } from "../_shared/google-market-input.ts"
 import {
   buyerProfileSchema,
   buyingSignalsSchema,
@@ -216,14 +217,7 @@ Deno.serve(async (request) => {
         proxyConfiguration: { useApifyProxy: true },
       }, apifyToken)
       const label = companyLabel(site.hostname)
-      const googlePromise = searchItems ? Promise.resolve(null) : runApifyActor(GOOGLE_ACTOR, {
-        queries: `"${label}" site:linkedin.com/company\n${label} concorrentes Brasil`,
-        maxPagesPerQuery: 1,
-        resultsPerPage: 10,
-        countryCode: "br",
-        languageCode: "pt",
-        proxyConfiguration: { useApifyProxy: true },
-      }, apifyToken)
+      const googlePromise = searchItems ? Promise.resolve(null) : runApifyActor(GOOGLE_ACTOR, buildGoogleMarketInput(label), apifyToken)
       const [siteResult, googleResult] = await Promise.allSettled([sitePromise, googlePromise])
 
       if (!siteItems && siteResult.status === "fulfilled" && siteResult.value) {
