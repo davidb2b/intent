@@ -55,6 +55,7 @@ export type SignalPost = {
 
 export type SignalComment = {
   id: string
+  personId: string
   text: string
   publishedAt: string | null
   tone: string | null
@@ -79,6 +80,7 @@ export type SignalSource = {
   icp: number
   yield: number | null
   previewPost: string | null
+  kind: "pessoa" | "pagina" | null
 }
 
 export type SignalCompany = {
@@ -104,6 +106,10 @@ export type SignalPerson = {
   comments: number
   emailAvailable: boolean
   phoneAvailable: boolean
+  intentScore: number | null
+  intentStatus: string | null
+  lastSignalAt: string | null
+  createdAt: string | null
 }
 
 const emptySummary: SignalSummary = {
@@ -257,7 +263,7 @@ export async function loadDiscoveredPosts(projectId: string): Promise<SignalPost
 
 export async function loadSignalSources(projectId: string): Promise<SignalSource[]> {
   const [sourcesResult, postsResult, commentsResult, peopleResult] = await Promise.all([
-    supabase.from("fontes").select("id, linkedin_url, nome, status, meta").eq("projeto_id", projectId).neq("status", "descartada").order("status", { ascending: true }).order("criado_em", { ascending: false }),
+    supabase.from("fontes").select("id, linkedin_url, nome, status, meta, tipo_watchlist").eq("projeto_id", projectId).neq("status", "descartada").order("status", { ascending: true }).order("criado_em", { ascending: false }),
     supabase.from("posts").select("id, fonte_id, total_reacoes").eq("projeto_id", projectId),
     supabase.from("comentarios").select("post_id, pessoa_id").eq("projeto_id", projectId),
     supabase.from("pessoas").select("id, icp").eq("projeto_id", projectId),
@@ -304,6 +310,7 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
       icp,
       yield: hasObservedData && people > 0 ? Math.round((icp / people) * 100) : null,
       previewPost: meta.pre_visualizacao_post?.trim() || null,
+      kind: source.tipo_watchlist === "pessoa" || source.tipo_watchlist === "pagina" ? source.tipo_watchlist : null,
     }
   })
 }
@@ -329,7 +336,7 @@ export async function loadSignalCompanies(projectId: string): Promise<SignalComp
 
 export async function loadSignalPeople(projectId: string): Promise<SignalPerson[]> {
   const [{ data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
-    supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, email_disponivel, telefone_disponivel, empresa:empresas(nome)").eq("projeto_id", projectId).order("nome"),
+    supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, email_disponivel, telefone_disponivel, intencao, status, ultimo_sinal_em, criado_em, empresa:empresas(nome)").eq("projeto_id", projectId).order("nome"),
     supabase.from("comentarios").select("pessoa_id").eq("projeto_id", projectId),
   ])
   if (peopleError || commentsError) throw new Error(peopleError?.message ?? commentsError?.message ?? "Não foi possível carregar pessoas.")
@@ -337,14 +344,14 @@ export async function loadSignalPeople(projectId: string): Promise<SignalPerson[
   for (const comment of comments ?? []) commentsByPerson.set(comment.pessoa_id, (commentsByPerson.get(comment.pessoa_id) ?? 0) + 1)
   return (people ?? []).filter((person) => person.nome.trim().toLocaleLowerCase("pt-BR") !== "perfil sem nome").map((person) => {
     const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
-    return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, comments: commentsByPerson.get(person.id) ?? 0, emailAvailable: person.email_disponivel, phoneAvailable: person.telefone_disponivel }
+    return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, comments: commentsByPerson.get(person.id) ?? 0, emailAvailable: person.email_disponivel, phoneAvailable: person.telefone_disponivel, intentScore: person.intencao, intentStatus: person.status, lastSignalAt: person.ultimo_sinal_em, createdAt: person.criado_em }
   })
 }
 
 export async function loadSignalComments(projectId: string): Promise<SignalComment[]> {
   const { data, error } = await supabase
     .from("comentarios")
-    .select("id, texto, publicado_em, teor, teor_confianca, pessoa:pessoas!inner(nome, headline, linkedin_url, empresa:empresas(nome)), post:posts!inner(linkedin_url)")
+    .select("id, pessoa_id, texto, publicado_em, teor, teor_confianca, pessoa:pessoas!inner(nome, headline, linkedin_url, empresa:empresas(nome)), post:posts!inner(linkedin_url)")
     .eq("projeto_id", projectId)
     .order("coletado_em", { ascending: false })
     .limit(100)
@@ -356,6 +363,7 @@ export async function loadSignalComments(projectId: string): Promise<SignalComme
     const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
     return {
       id: comment.id,
+      personId: comment.pessoa_id,
       text: comment.texto,
       publishedAt: comment.publicado_em,
       tone: comment.teor,

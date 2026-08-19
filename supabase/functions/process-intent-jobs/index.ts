@@ -710,7 +710,11 @@ async function processWatchlistJob(admin: AdminClient, job: Job, apifyToken: str
     }, { onConflict: "fonte_id" })
     if (startError) throw new Error(`Falha ao preparar a atualização da Watchlist: ${startError.message}`)
 
-    const actorInput = buildMonitoredProfilePostsInput([source.linkedin_url], window)
+    const requestedMaxPosts = Number(job.payload.max_posts)
+    const maxPosts = Number.isInteger(requestedMaxPosts) && requestedMaxPosts >= 1
+      ? Math.min(requestedMaxPosts, 10)
+      : 10
+    const actorInput = buildMonitoredProfilePostsInput([source.linkedin_url], window, maxPosts)
     if (!actorInput.targetUrls.length) throw new Error("A fonte aprovada não possui uma URL pública válida.")
     const result = await runApifyActor(MONITORED_PROFILE_POSTS_ACTOR, actorInput, apifyToken)
     totalCost += result.costUsd

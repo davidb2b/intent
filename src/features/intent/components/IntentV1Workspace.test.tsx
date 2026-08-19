@@ -15,9 +15,10 @@ vi.mock("@/features/onboarding/services/onboarding-service", () => ({
 
 vi.mock("@/features/analytics/services/load-signals", () => ({
   loadSignalSummary: vi.fn().mockResolvedValue({ projectId: "project-1", monthlyCostUsd: 0.11 }),
-  loadSignalPeople: vi.fn().mockResolvedValue([{ id: "person-1", name: "Mariana Silva", role: "CTO", headline: null, companyName: "Acme cliente", linkedinUrl: "https://www.linkedin.com/in/mariana", seniority: "diretoria", icp: true, icpReason: null, comments: 2, emailAvailable: false, phoneAvailable: false }]),
+  loadSignalPeople: vi.fn().mockResolvedValue([{ id: "person-1", name: "Mariana Silva", role: "CTO", headline: null, companyName: "Acme cliente", linkedinUrl: "https://www.linkedin.com/in/mariana", seniority: "diretoria", icp: true, icpReason: null, comments: 2, emailAvailable: false, phoneAvailable: false, intentScore: 82, intentStatus: "lead", lastSignalAt: "2026-08-18", createdAt: "2026-08-18" }]),
   loadSignalCompanies: vi.fn().mockResolvedValue([{ id: "company-1", name: "Acme cliente", sector: "Tecnologia", size: "201-500", linkedinUrl: "https://www.linkedin.com/company/acme", people: 1, comments: 2 }]),
-  loadSignalSources: vi.fn().mockResolvedValue([{ id: "source-1", name: "Fonte aprovada", linkedinUrl: "https://www.linkedin.com/in/fonte", status: "monitorada", posts: 4, comments: 2, reactions: 3, ratio: 1, people: 1, icp: 1, yield: 1, previewPost: null }]),
+  loadSignalSources: vi.fn().mockResolvedValue([{ id: "source-1", name: "Fonte aprovada", linkedinUrl: "https://www.linkedin.com/in/fonte", status: "monitorada", posts: 4, comments: 2, reactions: 3, ratio: 1, people: 1, icp: 1, yield: 1, previewPost: null, kind: "pessoa" }]),
+  loadSignalComments: vi.fn().mockResolvedValue([{ id: "comment-1", personId: "person-1", text: "Quero entender melhor esta solução.", publishedAt: "2026-08-18", tone: "pergunta", personName: "Mariana Silva", personHeadline: "CTO", companyName: "Acme cliente", personUrl: "https://www.linkedin.com/in/mariana", postUrl: "https://www.linkedin.com/posts/mariana", confidence: 0.9 }]),
 }))
 
 vi.mock("@/features/intent/services/reveal-contact", () => ({
@@ -31,7 +32,7 @@ describe("IntentV1Workspace", () => {
     render(<IntentV1Workspace session={{ email: "gabriel@acme.com.br", userId: "user-1" }} />)
 
     expect(await screen.findByRole("heading", { name: "Início" })).toBeInTheDocument()
-    expect(screen.getByText("Onde sua próxima oportunidade está aparecendo")).toBeInTheDocument()
+    expect(screen.getByText("Quem merece sua atenção hoje")).toBeInTheDocument()
     expect(screen.queryByText("Termo monitorado")).not.toBeInTheDocument()
     expect(screen.queryByText("Configurar pesquisa")).not.toBeInTheDocument()
   })
