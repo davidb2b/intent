@@ -1,0 +1,23 @@
+.intent-v1-contact-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  border-radius: 12px;
+}
+
+.intent-v1-contact-confirm strong { display: block; font-size: 13px; }
+.intent-v1-contact-confirm p { margin: 4px 0 0; font-size: 12px; color: #4338ca; line-height: 1.45; }
+.intent-v1-contact-confirm > div:last-child, .intent-v1-contact-actions { display: flex; align-items: center; gap: 7px; }
+.intent-v1-contact-actions { margin-top: 8px; flex-wrap: wrap; }
+.intent-v1-contact-actions button { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: #4f46e5; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+.intent-v1-contact-actions span { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border-radius: 6px; background: #f0fdf4; color: #166534; font-size: 11px; font-weight: 650; word-break: break-all; }
+
+@media (max-width: 720px) {
+  .intent-v1-contact-confirm { align-items: flex-start; flex-direction: column; }
+  .intent-v1-contact-confirm > div:last-child { width: 100%; justify-content: flex-end; }
+}

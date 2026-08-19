@@ -114,8 +114,10 @@ empresa e busca no máximo dez posts. Fontes legadas sem tipo de Watchlist não
 entram nesse ciclo; também não existe ativação automática de candidatas. O
 estado, payload bruto, custo e próxima coleta ficam no backend, fora do browser.
 O agendamento verifica fontes de hora em hora e a fila é processada a cada
-minuto. A única homologação ainda pendente é observar uma execução paga, com
-uma fonte V1 aprovada por uma pessoa.
+minuto. Uma fonte V1 de pessoa foi aprovada e enfileirada para a homologação.
+Como o teto diário de 160 avaliações já havia sido consumido, o job foi
+reagendado automaticamente para o próximo ciclo, sem nova chamada nem custo
+externo. A observação da execução completa permanece como gate operacional.
 
 ## Homologação real
 
@@ -169,15 +171,31 @@ radar privado e não aparecem ao cliente.
 - lint do banco remoto sem alertas de schema;
 - build, lint e suíte completa do front executados antes da publicação.
 
-## Próximo bloco da Fase 2
+## Revelação de contato
 
-O núcleo e o ciclo estão publicados. Restam dois gates separados para preservar
-controle de custo e isolamento de falhas:
+O contato não é coletado durante descoberta, enriquecimento ou monitoramento.
+Ele só pode ser consultado a partir de uma ação explícita do usuário:
 
-1. aprovar uma fonte V1 e observar uma execução recorrente completa com dados
-   públicos reais;
-2. revelação de contato sob demanda, com consentimento de ação e débito
-   específico por tipo de contato.
+```text
+usuário confirma a consulta
+  -> ownership da pessoa e do projeto é validado
+  -> 1 crédito é reservado de forma atômica
+  -> Apollo é chamado apenas para o tipo solicitado
+  -> valor criptografado no backend e concessão auditada
+  -> crédito é consumido uma única vez e o campo volta apenas ao solicitante
+```
+
+Quando o provedor não disponibiliza o dado ou falha, a reserva é estornada. A
+mesma pessoa e o mesmo tipo não geram uma cobrança duplicada para o mesmo
+usuário. E-mail, telefone, payload do provedor, saldo e histórico privado não
+recebem grant de browser.
+
+## Gate restante da Fase 2
+
+O único gate operacional é observar, após a virada do orçamento diário, a
+execução paga completa da fonte V1 já aprovada: posts próprios, comentários e
+reações, pessoas, contas e deduplicação. Nenhuma proteção de custo foi reduzida
+para antecipar esse teste.
 
 Esses blocos reutilizarão a fila e o livro de créditos já homologados. Nenhum
 deles deve tornar o radar interno visível nem chamar provedores diretamente do

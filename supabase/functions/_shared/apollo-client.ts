@@ -94,3 +94,17 @@ export function enrichApolloPersonByLinkedinUrl(
     run_waterfall_phone: false,
   }, apiKey)
 }
+
+export function revealApolloContact(
+  apolloPersonId: string,
+  type: "email" | "telefone",
+  apiKey: string,
+): Promise<ApolloResponse> {
+  return postApollo("/api/v1/people/match", {
+    id: apolloPersonId,
+    reveal_personal_emails: type === "email",
+    reveal_phone_number: type === "telefone",
+    run_waterfall_email: false,
+    run_waterfall_phone: false,
+  }, apiKey)
+}

@@ -102,6 +102,8 @@ export type SignalPerson = {
   icpReason: string | null
   companyName: string | null
   comments: number
+  emailAvailable: boolean
+  phoneAvailable: boolean
 }
 
 const emptySummary: SignalSummary = {
@@ -327,7 +329,7 @@ export async function loadSignalCompanies(projectId: string): Promise<SignalComp
 
 export async function loadSignalPeople(projectId: string): Promise<SignalPerson[]> {
   const [{ data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
-    supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, empresa:empresas(nome)").eq("projeto_id", projectId).order("nome"),
+    supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, email_disponivel, telefone_disponivel, empresa:empresas(nome)").eq("projeto_id", projectId).order("nome"),
     supabase.from("comentarios").select("pessoa_id").eq("projeto_id", projectId),
   ])
   if (peopleError || commentsError) throw new Error(peopleError?.message ?? commentsError?.message ?? "Não foi possível carregar pessoas.")
@@ -335,7 +337,7 @@ export async function loadSignalPeople(projectId: string): Promise<SignalPerson[
   for (const comment of comments ?? []) commentsByPerson.set(comment.pessoa_id, (commentsByPerson.get(comment.pessoa_id) ?? 0) + 1)
   return (people ?? []).filter((person) => person.nome.trim().toLocaleLowerCase("pt-BR") !== "perfil sem nome").map((person) => {
     const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
-    return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, comments: commentsByPerson.get(person.id) ?? 0 }
+    return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, comments: commentsByPerson.get(person.id) ?? 0, emailAvailable: person.email_disponivel, phoneAvailable: person.telefone_disponivel }
   })
 }
 

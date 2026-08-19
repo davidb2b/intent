@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Building2, ChevronRight, CircleAlert, Eye, Home, LayoutList, LoaderCircle, LogOut, Target, Users } from "lucide-react"
+import { Building2, ChevronRight, CircleAlert, Eye, Home, LayoutList, LoaderCircle, LogOut, Mail, Phone, Target, Users } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { authService } from "@/features/auth/services/auth-service"
@@ -7,8 +7,10 @@ import { loadSignalCompanies, loadSignalPeople, loadSignalSources, loadSignalSum
 import { loadOnboardingWorkspace } from "@/features/onboarding/services/onboarding-service"
 import type { IcpRecord, OnboardingWorkspace } from "@/features/onboarding/domain/onboarding"
 import { productErrorMessage } from "@/lib/product-messages"
+import { revealContact, type RevealContactType } from "@/features/intent/services/reveal-contact"
 
 import "./intent-v1-workspace.css"
+import "./intent-v1-contact.css"
 
 type WorkspaceView = "inicio" | "pessoas" | "contas" | "watchlist" | "icp"
 type Session = { email: string; userId: string }
@@ -42,6 +44,9 @@ export function IntentV1Workspace({ session }: { session: Session }) {
   const [sources, setSources] = useState<SignalSource[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [revealRequest, setRevealRequest] = useState<{ person: SignalPerson; type: RevealContactType } | null>(null)
+  const [revealing, setRevealing] = useState(false)
+  const [revealedContact, setRevealedContact] = useState<{ personId: string; type: RevealContactType; value: string } | null>(null)
 
   useEffect(() => {
     let active = true
@@ -74,6 +79,21 @@ export function IntentV1Workspace({ session }: { session: Session }) {
   const monitoredSources = useMemo(() => sources.filter((source) => source.status === "monitorada"), [sources])
   const candidates = useMemo(() => sources.filter((source) => source.status === "candidata"), [sources])
   const visiblePeople = useMemo(() => people.filter((person) => person.icp !== false), [people])
+
+  async function confirmContactReveal() {
+    if (!revealRequest || !workspace) return
+    setRevealing(true)
+    setError("")
+    try {
+      const result = await revealContact({ projectId: workspace.project.id, personId: revealRequest.person.id, type: revealRequest.type })
+      setRevealedContact({ personId: revealRequest.person.id, type: revealRequest.type, value: result.contact })
+      setRevealRequest(null)
+    } catch (caught) {
+      setError(productErrorMessage(caught, "Não foi possível consultar o contato agora. Nenhum crédito foi consumido."))
+    } finally {
+      setRevealing(false)
+    }
+  }
 
   if (loading) return <main className="intent-v1-loading"><LoaderCircle className="intent-spin" size={22} />Preparando sua operação…</main>
 
@@ -110,7 +130,7 @@ export function IntentV1Workspace({ session }: { session: Session }) {
         </>}
       </section>}
 
-      {view === "pessoas" && <section className="intent-v1-content"><SectionHeading title="Pessoas" subtitle="Só aparecem perfis que passaram pelo filtro do perfil ideal e têm dados públicos organizados." /><div className="intent-v1-panel intent-v1-list">{visiblePeople.map((person) => <PersonRow detailed key={person.id} person={person} />)}{visiblePeople.length === 0 && <Empty text="Nenhuma pessoa qualificada foi encontrada ainda. O radar começa a aparecer após a ativação do ICP." />}</div></section>}
+      {view === "pessoas" && <section className="intent-v1-content"><SectionHeading title="Pessoas" subtitle="Só aparecem perfis que passaram pelo filtro do perfil ideal e têm dados públicos organizados." />{revealRequest && <section className="intent-v1-contact-confirm" aria-live="polite"><div><strong>Consultar {revealRequest.type === "email" ? "e-mail" : "telefone"} de {revealRequest.person.name}?</strong><p>Esta consulta usa 1 crédito somente se um contato for disponibilizado. O dado é protegido e fica visível apenas para você.</p></div><div><Button disabled={revealing} onClick={() => setRevealRequest(null)} size="sm" variant="outline">Cancelar</Button><Button disabled={revealing} onClick={() => void confirmContactReveal()} size="sm">{revealing ? <><LoaderCircle className="intent-spin" size={14} />Consultando…</> : "Confirmar consulta"}</Button></div></section>}<div className="intent-v1-panel intent-v1-list">{visiblePeople.map((person) => <PersonRow detailed key={person.id} onReveal={(type) => setRevealRequest({ person, type })} revealedContact={revealedContact?.personId === person.id ? revealedContact : null} person={person} />)}{visiblePeople.length === 0 && <Empty text="Nenhuma pessoa qualificada foi encontrada ainda. O radar começa a aparecer após a ativação do ICP." />}</div></section>}
 
       {view === "contas" && <section className="intent-v1-content"><SectionHeading title="Contas" subtitle="Empresas associadas às pessoas e sinais reais já identificados." /><div className="intent-v1-panel intent-v1-list">{companies.map((company) => <CompanyRow company={company} detailed key={company.id} />)}{companies.length === 0 && <Empty text="Nenhuma conta foi identificada ainda." />}</div></section>}
 
@@ -123,6 +143,6 @@ export function IntentV1Workspace({ session }: { session: Session }) {
 
 function SectionHeading({ title, subtitle }: { title: string; subtitle: string }) { return <div className="intent-v1-section-heading"><h2>{title}</h2><p>{subtitle}</p></div> }
 function Empty({ text }: { text: string }) { return <div className="intent-v1-empty"><LayoutList size={20} /><p>{text}</p></div> }
-function PersonRow({ person, detailed = false }: { person: SignalPerson; detailed?: boolean }) { return <article className="intent-v1-row"><span className="intent-v1-avatar">{initials(person.name)}</span><div><strong>{person.name}</strong><p>{personSubline(person)}</p>{detailed && <a href={person.linkedinUrl} rel="noreferrer" target="_blank">Ver perfil público</a>}</div><aside><b>{person.comments}</b><small>{person.comments === 1 ? "sinal" : "sinais"}</small></aside></article> }
+function PersonRow({ person, detailed = false, onReveal, revealedContact }: { person: SignalPerson; detailed?: boolean; onReveal?: (type: RevealContactType) => void; revealedContact?: { type: RevealContactType; value: string } | null }) { return <article className="intent-v1-row"><span className="intent-v1-avatar">{initials(person.name)}</span><div><strong>{person.name}</strong><p>{personSubline(person)}</p>{detailed && <a href={person.linkedinUrl} rel="noreferrer" target="_blank">Ver perfil público</a>}{detailed && onReveal && <div className="intent-v1-contact-actions">{revealedContact ? <span>{revealedContact.value}</span> : <><button onClick={() => onReveal("email")} type="button"><Mail size={13} />Consultar e-mail</button><button onClick={() => onReveal("telefone")} type="button"><Phone size={13} />Consultar telefone</button></>}</div>}</div><aside><b>{person.comments}</b><small>{person.comments === 1 ? "sinal" : "sinais"}</small></aside></article> }
 function CompanyRow({ company, detailed = false }: { company: SignalCompany; detailed?: boolean }) { return <article className="intent-v1-row"><span className="intent-v1-avatar is-company"><Building2 size={17} /></span><div><strong>{company.name}</strong><p>{[company.sector, company.size].filter(Boolean).join(" · ") || "Conta identificada"}</p>{detailed && company.linkedinUrl && <a href={company.linkedinUrl} rel="noreferrer" target="_blank">Ver página pública</a>}</div><aside><b>{company.people}</b><small>{company.people === 1 ? "pessoa" : "pessoas"}</small></aside></article> }
 function SourceRow({ source }: { source: SignalSource }) { return <article className="intent-v1-source"><div><strong>{source.name ?? "Fonte pública"}</strong><p>{source.posts} posts · {source.comments} interações públicas</p></div><span className={source.status === "monitorada" ? "is-active" : ""}>{source.status === "monitorada" ? "Acompanhando" : "Pendente"}</span></article> }

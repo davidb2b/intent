@@ -15,9 +15,13 @@ vi.mock("@/features/onboarding/services/onboarding-service", () => ({
 
 vi.mock("@/features/analytics/services/load-signals", () => ({
   loadSignalSummary: vi.fn().mockResolvedValue({ projectId: "project-1", monthlyCostUsd: 0.11 }),
-  loadSignalPeople: vi.fn().mockResolvedValue([{ id: "person-1", name: "Mariana Silva", role: "CTO", headline: null, companyName: "Acme cliente", linkedinUrl: "https://www.linkedin.com/in/mariana", seniority: "diretoria", icp: true, icpReason: null, comments: 2 }]),
+  loadSignalPeople: vi.fn().mockResolvedValue([{ id: "person-1", name: "Mariana Silva", role: "CTO", headline: null, companyName: "Acme cliente", linkedinUrl: "https://www.linkedin.com/in/mariana", seniority: "diretoria", icp: true, icpReason: null, comments: 2, emailAvailable: false, phoneAvailable: false }]),
   loadSignalCompanies: vi.fn().mockResolvedValue([{ id: "company-1", name: "Acme cliente", sector: "Tecnologia", size: "201-500", linkedinUrl: "https://www.linkedin.com/company/acme", people: 1, comments: 2 }]),
   loadSignalSources: vi.fn().mockResolvedValue([{ id: "source-1", name: "Fonte aprovada", linkedinUrl: "https://www.linkedin.com/in/fonte", status: "monitorada", posts: 4, comments: 2, reactions: 3, ratio: 1, people: 1, icp: 1, yield: 1, previewPost: null }]),
+}))
+
+vi.mock("@/features/intent/services/reveal-contact", () => ({
+  revealContact: vi.fn().mockResolvedValue({ status: "revealed", cached: false, type: "email", contact: "mariana@acme.com.br" }),
 }))
 
 describe("IntentV1Workspace", () => {
@@ -43,5 +47,16 @@ describe("IntentV1Workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /Watchlist/ }))
     expect(screen.getByRole("heading", { level: 1, name: "Watchlist" })).toBeInTheDocument()
     expect(screen.getByText("Fonte aprovada")).toBeInTheDocument()
+  })
+
+  it("asks for visible confirmation before consulting a contact", async () => {
+    render(<IntentV1Workspace session={{ email: "gabriel@acme.com.br", userId: "user-1" }} />)
+    await screen.findByRole("heading", { name: "Início" })
+
+    fireEvent.click(screen.getByRole("button", { name: /Pessoas/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Consultar e-mail" }))
+    expect(screen.getByText("Consultar e-mail de Mariana Silva?")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar consulta" }))
+    expect(await screen.findByText("mariana@acme.com.br")).toBeInTheDocument()
   })
 })
