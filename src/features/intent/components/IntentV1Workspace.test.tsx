@@ -58,5 +58,6 @@ describe("IntentV1Workspace", () => {
     expect(screen.getByText("Consultar e-mail de Mariana Silva?")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Confirmar consulta" }))
     expect(await screen.findByText("mariana@acme.com.br")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Consultar telefone" })).toBeInTheDocument()
   })
 })
