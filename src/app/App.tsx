@@ -37,6 +37,7 @@ import { authService } from "@/features/auth/services/auth-service"
 import { OnboardingFlow } from "@/features/onboarding/OnboardingFlow"
 import { IntentAuthScreen } from "@/features/onboarding/components/IntentAuthScreen"
 import { loadOnboardingWorkspace } from "@/features/onboarding/services/onboarding-service"
+import { IntentV1Workspace } from "@/features/intent/components/IntentV1Workspace"
 import { saveResearch } from "@/features/research/services/save-research"
 import { authErrorMessage, productErrorMessage, productStatusMessage } from "@/lib/product-messages"
 import "./App.css"
@@ -635,11 +636,13 @@ function App() {
   }
 
   const isIntentSetupRoute = window.location.pathname === "/onboarding" || window.location.pathname === "/icp"
+  const legacySession: AuthSession | null = session
   if (isIntentSetupRoute && !authReady) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Validando sua sessão…</span></div>
   if (isIntentSetupRoute && !session) return <IntentAuthScreen />
   if (isIntentSetupRoute && session) return <OnboardingFlow session={session} />
   if (!authReady) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Validando sua sessão…</span></div>
   if (!session && window.location.pathname !== "/reset-password") return <IntentAuthScreen />
+  if (session) return <IntentV1Workspace session={session} />
 
   return (
     <div className="signal-shell">
@@ -690,7 +693,7 @@ function App() {
           </div>
           <div className="topbar-actions">
             <Button className="settings-button" onClick={() => setSettingsOpen(true)} variant="outline"><Settings2 size={16} /> Configurar pesquisa</Button>
-            {session ? <><span className="session-label">{session.email}</span><Button onClick={handleLogout} variant="outline">Sair</Button></> : <Button onClick={() => { setAuthMode("signin"); setAuthOpen(true) }} variant="outline">Entrar</Button>}
+            {legacySession ? <><span className="session-label">{legacySession.email}</span><Button onClick={handleLogout} variant="outline">Sair</Button></> : <Button onClick={() => { setAuthMode("signin"); setAuthOpen(true) }} variant="outline">Entrar</Button>}
           </div>
         </header>
 
