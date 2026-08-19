@@ -638,6 +638,8 @@ function App() {
   if (isIntentSetupRoute && !authReady) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Validando sua sessão…</span></div>
   if (isIntentSetupRoute && !session) return <IntentAuthScreen />
   if (isIntentSetupRoute && session) return <OnboardingFlow session={session} />
+  if (!authReady) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Validando sua sessão…</span></div>
+  if (!session && window.location.pathname !== "/reset-password") return <IntentAuthScreen />
 
   return (
     <div className="signal-shell">

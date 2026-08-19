@@ -7,65 +7,29 @@ import App from "./app/App"
 describe("Intent foundation", () => {
   afterEach(() => cleanup())
 
-  it("starts with an honest empty state instead of fabricated metrics", async () => {
+  it("shows the V1 access screen instead of the legacy research shell when signed out", async () => {
     render(<App />)
 
-    expect(await screen.findByText("Sua próxima oportunidade começa com um tema")).toBeInTheDocument()
-    expect(screen.getByText("Pronto para começar")).toBeInTheDocument()
-    expect(screen.queryByText("42")).not.toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "Bem-vindo ao Intent" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Entrar no Intent" })).toBeInTheDocument()
+    expect(screen.queryByText("Sua próxima oportunidade começa com um tema")).not.toBeInTheDocument()
   })
 
-  it("navigates between the five product areas", async () => {
-    render(<App />)
-    await screen.findByText("Sua próxima oportunidade começa com um tema")
-
-    fireEvent.click(screen.getByRole("button", { name: "Posts" }))
-
-    expect(screen.getByText("Nenhum post disponível")).toBeInTheDocument()
-    expect(screen.getByText("Posts públicos encontrados para o tema monitorado.")).toBeInTheDocument()
-  })
-
-  it("uses real application routes for the product areas", () => {
-    window.history.replaceState({}, "", "/overview")
+  it("does not expose legacy navigation or research controls before authentication", async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Posts" }))
-
-    expect(window.location.pathname).toBe("/posts")
-  })
-
-  it("opens the correct product area from a direct route", async () => {
-    window.history.replaceState({}, "", "/people")
-
-    render(<App />)
-
-    expect(await screen.findByText("Nenhuma pessoa identificada")).toBeInTheDocument()
-  })
-
-  it("requires both a keyword and an authenticated session before collecting", async () => {
-    render(<App />)
-    await screen.findByRole("button", { name: "Entrar" })
-
-    expect(screen.getByRole("button", { name: /Atualizar agora/ })).toBeDisabled()
-    fireEvent.click(screen.getByRole("button", { name: /Configurar pesquisa/ }))
-    fireEvent.change(screen.getByLabelText("Palavra-chave principal"), {
-      target: { value: "cost breakdown" },
-    })
-    expect(screen.getByRole("button", { name: /Começar pesquisa/ })).toBeEnabled()
-    fireEvent.click(screen.getByRole("button", { name: /Começar pesquisa/ }))
-
-    expect(screen.getAllByText("cost breakdown").length).toBe(2)
-    expect(screen.getAllByRole("button", { name: /Atualizar agora/ })[0]).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Entrar" })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "Bem-vindo ao Intent" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Atualizar agora/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Posts" })).not.toBeInTheDocument()
   })
 
   it("offers password recovery and password visibility controls", async () => {
     render(<App />)
-    await screen.findByRole("button", { name: "Entrar" })
-    fireEvent.click(screen.getByRole("button", { name: "Entrar" }))
-    fireEvent.click(screen.getByRole("button", { name: "Esqueci a senha" }))
+    await screen.findByRole("button", { name: "Entrar no Intent" })
+    expect(screen.getByRole("button", { name: "Mostrar senha" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Esqueci minha senha" }))
 
-    expect(screen.getByRole("heading", { name: "Recuperar senha" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Recupere seu acesso" })).toBeInTheDocument()
     expect(screen.queryByLabelText("Senha")).not.toBeInTheDocument()
   })
 })
