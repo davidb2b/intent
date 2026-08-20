@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
 import { ApolloRequestError, revealApolloContact } from "../_shared/apollo-client.ts"
 import { decryptContact, encryptContact, extractApolloContact, type ContactType } from "../_shared/contact-reveal.ts"
+import { contactRevealCredits } from "../_shared/contact-reveal-cost.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,7 +58,7 @@ Deno.serve(async (request) => {
     target_person_id: person.id,
     target_user_id: user.id,
     target_type: body.type,
-    target_amount: 1,
+    target_amount: contactRevealCredits(body.type),
   }).single()
   if (startError || !started) return json({ error: startError?.message ?? "Não foi possível preparar a consulta de contato." }, 409)
 

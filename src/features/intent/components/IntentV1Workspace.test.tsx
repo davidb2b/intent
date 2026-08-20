@@ -14,11 +14,18 @@ vi.mock("@/features/onboarding/services/onboarding-service", () => ({
 }))
 
 vi.mock("@/features/analytics/services/load-signals", () => ({
-  loadSignalSummary: vi.fn().mockResolvedValue({ projectId: "project-1", monthlyCostUsd: 0.11 }),
+  loadSignalSummary: vi.fn().mockResolvedValue({
+    projectId: "project-1",
+    monthlyCostUsd: 0.11,
+    creditsUsed: 12,
+    creditsReserved: 0,
+    creditsLimit: 500,
+    executionHistory: [],
+  }),
   loadSignalPeople: vi.fn().mockResolvedValue([{ id: "person-1", name: "Mariana Silva", role: "CTO", headline: null, companyName: "Acme cliente", linkedinUrl: "https://www.linkedin.com/in/mariana", seniority: "diretoria", icp: true, icpReason: null, comments: 2, signalCount: 2, signalTypes: ["comentou_tema"], priorityScore: 84, priorityBucket: "alta", priorityLabel: "Prioridade alta", emailAvailable: false, phoneAvailable: false, intentScore: 82, intentStatus: "lead", lastSignalAt: "2026-08-18", createdAt: "2026-08-18" }]),
-  loadSignalCompanies: vi.fn().mockResolvedValue([{ id: "company-1", name: "Acme cliente", sector: "Tecnologia", size: "201-500", linkedinUrl: "https://www.linkedin.com/company/acme", people: 1, comments: 2 }]),
+  loadSignalCompanies: vi.fn().mockResolvedValue([{ id: "company-1", name: "Acme cliente", sector: "Tecnologia", size: "201-500", linkedinUrl: "https://www.linkedin.com/company/acme", people: 1, comments: 2, level: "aquecendo" }]),
   loadSignalSources: vi.fn().mockResolvedValue([{ id: "source-1", name: "Fonte aprovada", linkedinUrl: "https://www.linkedin.com/in/fonte", status: "candidata", posts: 4, comments: 2, reactions: 3, ratio: 1, people: 1, icp: 1, yield: 1, previewPost: null, kind: "pessoa" }]),
-  loadSignalComments: vi.fn().mockResolvedValue([{ id: "comment-1", personId: "person-1", text: "Quero entender melhor esta solução.", publishedAt: "2026-08-18", tone: "pergunta", personName: "Mariana Silva", personHeadline: "CTO", companyName: "Acme cliente", personUrl: "https://www.linkedin.com/in/mariana", postUrl: "https://www.linkedin.com/posts/mariana", confidence: 0.9 }]),
+  loadIntentSignalEvidence: vi.fn().mockResolvedValue([{ id: "comment-1", personId: "person-1", text: "Quero entender melhor esta solução.", publishedAt: "2026-08-18", tone: "pergunta", personName: "Mariana Silva", personHeadline: "CTO", companyName: "Acme cliente", personUrl: "https://www.linkedin.com/in/mariana", postUrl: "https://www.linkedin.com/posts/mariana", confidence: 0.9, signalType: "comentou_tema", rule: "Busca ativa" }]),
 }))
 
 vi.mock("@/features/intent/services/reveal-contact", () => ({
@@ -41,6 +48,10 @@ vi.mock("@/features/collection/services/update-source-status", () => ({
 
 vi.mock("@/features/people/services/mark-person-client", () => ({
   markPersonAsClient: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock("@/features/intent/services/send-person-to-crm", () => ({
+  sendPersonToCrm: vi.fn().mockResolvedValue({ status: "delivered" }),
 }))
 
 describe("IntentV1Workspace", () => {
@@ -89,7 +100,7 @@ describe("IntentV1Workspace", () => {
     expect(screen.getByRole("complementary", { name: "Detalhes de Mariana Silva" })).toBeInTheDocument()
     expect(screen.getAllByText("Quero entender melhor esta solução.").length).toBeGreaterThanOrEqual(2)
     fireEvent.click(screen.getByRole("button", { name: "Marcar como cliente" }))
-    expect(await screen.findByText("Cliente")).toBeInTheDocument()
+    expect((await screen.findAllByText("Cliente")).length).toBeGreaterThanOrEqual(1)
   })
 
   it("approves a watchlist source through the real status service", async () => {
@@ -115,13 +126,12 @@ describe("IntentV1Workspace", () => {
     expect(screen.getByText("91% de intenção")).toBeInTheDocument()
   })
 
-  it("shows only registered executions in costs", async () => {
+  it("keeps provider costs outside the customer workspace and shows plan credits", async () => {
     render(<IntentV1Workspace session={{ email: "gabriel@acme.com.br", userId: "user-1" }} />)
     await screen.findByRole("heading", { name: "Início" })
 
-    fireEvent.click(screen.getByRole("button", { name: /Custos/ }))
-    expect(screen.getByRole("heading", { level: 1, name: "Custos" })).toBeInTheDocument()
-    expect(screen.getByText("Ainda não há execuções registradas para esta operação.")).toBeInTheDocument()
-    expect(screen.queryByText("US$ 12,40")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Custos/ })).not.toBeInTheDocument()
+    expect(screen.getByText("12 / 500")).toBeInTheDocument()
+    expect(screen.queryByText(/US\$/)).not.toBeInTheDocument()
   })
 })

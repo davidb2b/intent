@@ -27,6 +27,7 @@ import { normalizeCompanyKey, usablePersonName } from "../_shared/person-enrichm
 import { canonicalProfileUrl, normalizeProfileSlug, profileUsername } from "../_shared/profile-identity.ts"
 import { engineBudgetUnits } from "../_shared/intent-engine-budget.ts"
 import { qualifiesAuthorForWatchlist } from "../_shared/intent-author-watchlist.ts"
+import { signalTypeFromPublicActivity } from "../_shared/intent-signal-type.ts"
 import {
   buildMonitoredProfilePostsInput,
   MONITORED_PROFILE_POSTS_ACTOR,
@@ -54,7 +55,8 @@ const POST_ENGAGEMENT_ACTORS = {
   },
 } as const
 const RAW_RETENTION_DAYS = 7
-const DEFAULT_SEED_SIZE = 5
+const DEFAULT_SEED_SIZE = 500
+const SEED_PAGE_SIZE = 10
 const DEFAULT_COMPANY_EXPANSION_SIZE = 5
 const DEFAULT_POST_ENGAGEMENT_SIZE = 10
 
@@ -241,15 +243,25 @@ async function upsertRadarPerson(admin: AdminClient, input: {
 
 async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
   const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
-  const executionId = await createExecution(admin, job.projeto_id, "semente", { job_id: job.id, icp_id: icpId })
+  const page = Math.max(1, Math.trunc(Number(job.payload.pagina ?? 1)))
+  const executionId = await createExecution(admin, job.projeto_id, "semente", { job_id: job.id, icp_id: icpId, pagina: page })
   let inserted = 0
   try {
-    const { data: icp, error: icpError } = await admin.from("icps")
-      .select("id, status, comprador")
-      .eq("id", icpId).eq("projeto_id", job.projeto_id).maybeSingle()
+    const [{ data: icp, error: icpError }, { data: project, error: projectError }] = await Promise.all([
+      admin.from("icps").select("id, status, comprador").eq("id", icpId).eq("projeto_id", job.projeto_id).maybeSingle(),
+      admin.from("projetos").select("tamanho_semente_inicial").eq("id", job.projeto_id).maybeSingle(),
+    ])
     if (icpError || !icp || icp.status !== "ativo") throw new Error("O perfil ideal ativo não foi encontrado para esta descoberta.")
+    if (projectError || !project) throw new Error("Não foi possível ler o limite de descoberta deste projeto.")
 
-    const searchInput = buildApolloPeopleSearchInput(icp.comprador as BuyerProfile, DEFAULT_SEED_SIZE)
+    const configuredSeedSize = Math.max(1, Math.min(5000, Math.trunc(Number(project.tamanho_semente_inicial ?? DEFAULT_SEED_SIZE))))
+    const pageCount = Math.ceil(configuredSeedSize / SEED_PAGE_SIZE)
+    if (page > pageCount) {
+      await finishExecution(admin, executionId, { status: "concluida" })
+      return { inserted: 0, searched: 0, page, completed: true }
+    }
+
+    const searchInput = { ...buildApolloPeopleSearchInput(icp.comprador as BuyerProfile, SEED_PAGE_SIZE), page }
     const search = await searchApolloPeople(searchInput, apolloKey)
     await auditPayload(admin, {
       projectId: job.projeto_id,
@@ -261,7 +273,7 @@ async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
       payload: stripApolloContactFields(search.payload),
     })
 
-    const ids = apolloSearchPersonIds(search.payload).slice(0, DEFAULT_SEED_SIZE)
+    const ids = apolloSearchPersonIds(search.payload).slice(0, SEED_PAGE_SIZE)
     for (const apolloId of ids) {
       const enriched = await enrichApolloPerson(apolloId, apolloKey)
       const candidate = normalizeEnrichedApolloPerson(enriched.payload)
@@ -289,8 +301,13 @@ async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
       await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: personId, icp_id: icp.id }, 40)
     }
 
+    const hasNextPage = ids.length === SEED_PAGE_SIZE && page < pageCount
+    if (hasNextPage) {
+      await enqueue(admin, job.projeto_id, "semear_radar", { icp_id: icp.id, pagina: page + 1 }, 45)
+    }
+
     await finishExecution(admin, executionId, { status: "concluida", people: inserted })
-    return { inserted, searched: ids.length }
+    return { inserted, searched: ids.length, page, remainingPages: hasNextPage ? pageCount - page : 0 }
   } catch (error) {
     await finishExecution(admin, executionId, { status: "falhou", people: inserted, error: errorMessage(error) })
     throw error
@@ -461,7 +478,7 @@ async function processWatchPersonJob(admin: AdminClient, job: Job, apifyToken: s
         empresa_id: person.empresa_id,
         post_id: post.id,
         icp_id: icpId,
-        tipo: activity.type === "comment" ? "comentou_tema" : "atividade_fraca",
+        tipo: signalTypeFromPublicActivity({ kind: activity.type, evidence: activity.evidence }),
         urn_unico: uniqueUrn,
         evidencia: activity.evidence,
         contexto: activity.context,
@@ -1001,7 +1018,7 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
           empresa_id: companyId,
           post_id: postId,
           icp_id: icp.id,
-          tipo: "comentou_tema",
+          tipo: signalTypeFromPublicActivity({ kind: "comment", evidence: engagement.evidence }),
           urn_unico: uniqueUrn,
           evidencia: engagement.evidence,
           contexto: post.texto,
@@ -1256,7 +1273,6 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
     const rules = signalRules(icp.sinais_de_compra)
     let companyId: string | null = null
     let companyResolved = false
-    let strongestStatus = "sinal_fraco"
 
     for (const candidate of pendingCandidates) {
       const result = await judgePublicSignal({
@@ -1299,17 +1315,6 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
       }, { onConflict: "sinal_id" })
       if (auditError) throw new Error(`Falha ao registrar auditoria do julgamento: ${auditError.message}`)
 
-      const personStatus = result.judgment.nota >= 80 ? "lead" : "sinal_fraco"
-      if (personStatus === "lead") strongestStatus = "lead"
-      const { data: currentPerson } = await admin.from("pessoas").select("intencao, status, ultimo_sinal_em").eq("id", candidate.pessoa_id).maybeSingle()
-      const currentIntent = Number(currentPerson?.intencao ?? -1)
-      const preserveClient = currentPerson?.status === "cliente"
-      await admin.from("pessoas").update({
-        status: preserveClient ? "cliente" : result.judgment.nota >= currentIntent ? personStatus : currentPerson?.status,
-        intencao: Math.max(currentIntent, result.judgment.nota),
-        ultimo_sinal_em: !currentPerson?.ultimo_sinal_em || new Date(candidate.ocorrido_em) > new Date(currentPerson.ultimo_sinal_em) ? candidate.ocorrido_em : currentPerson.ultimo_sinal_em,
-      }).eq("id", candidate.pessoa_id)
-
       await admin.from("sinais_candidatos_privados").update({
         status: "aprovado",
         empresa_id: companyId,
@@ -1330,6 +1335,9 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
 
     const { error: settleError } = await admin.rpc("intent_settle_job_credits", { target_job_id: job.id, target_reference: creditReference, target_consume: true })
     if (settleError) throw new Error(`Falha ao confirmar consumo de crédito: ${settleError.message}`)
+    const { data: intentRows, error: intentError } = await admin.rpc("intent_recalculate_person_intent", { target_person_id: personId })
+    if (intentError) throw new Error(`Falha ao atualizar a prioridade da pessoa: ${intentError.message}`)
+    const nextStatus = Array.isArray(intentRows) && typeof intentRows[0]?.status === "string" ? intentRows[0].status : "sinal_fraco"
     if (companyId) {
       await refreshCompanyLevel(admin, job.projeto_id, companyId)
       const { data: expandableCompany } = await admin.from("empresa_operacao_privada")
@@ -1346,7 +1354,7 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
       await enqueue(admin, job.projeto_id, "varrer_post", { post_id: qualifiedPostId, icp_id: icp.id }, 35)
     }
     await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost })
-    return { candidates: pendingCandidates.length, status: strongestStatus, costUsd: totalCost }
+    return { candidates: pendingCandidates.length, status: nextStatus, costUsd: totalCost }
   } catch (error) {
     await finishExecution(admin, executionId, { status: "falhou", costUsd: totalCost, error: errorMessage(error) })
     throw error

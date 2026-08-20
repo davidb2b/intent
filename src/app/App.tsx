@@ -467,7 +467,7 @@ function App() {
     let stopWatching: (() => void) | null = null
     try {
       const saved = await saveResearch({ ownerId: session.userId, keyword, positiveContext, negativeContext })
-      setSignalSummary((summary) => summary ? { ...summary, projectId: saved.projectId, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext } : { projectId: saved.projectId, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext, lastExecutionOrigin: null, monthlyCostUsd: 0, estimatedNextCostUsd: 0, monitoredSources: 0, executionHistory: [] })
+      setSignalSummary((summary) => summary ? { ...summary, projectId: saved.projectId, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext } : { projectId: saved.projectId, posts: 0, comments: 0, people: 0, companies: 0, lastExecutionAt: null, keyword: saved.keyword, positiveContext: saved.positiveContext, negativeContext: saved.negativeContext, lastExecutionOrigin: null, monthlyCostUsd: 0, estimatedNextCostUsd: 0, monitoredSources: 0, creditsUsed: 0, creditsReserved: 0, creditsLimit: 0, executionHistory: [] })
       setCollectionMessage("Pesquisa salva. Agora estamos encontrando as conversas e os perfis mais relevantes para este tema…")
       stopWatching = watchCollectionProgress(saved.projectId)
       const discovery = await discoverSources(saved.projectId, [saved.keyword])

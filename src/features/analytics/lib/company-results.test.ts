@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest"
 import { filterCompanyResults, getCompanySectors } from "./company-results"
 
 const companies = [
-  { id: "1", name: "Árvore Tecnologia", sector: "Tecnologia", size: "51-200", linkedinUrl: null, people: 2, comments: 4 },
-  { id: "2", name: "Banco do Brasil", sector: "Serviços financeiros", size: "10.001+", linkedinUrl: null, people: 5, comments: 3 },
-  { id: "3", name: "Nuvem Saúde", sector: "Tecnologia", size: null, linkedinUrl: null, people: 1, comments: 6 },
+  { id: "1", name: "Árvore Tecnologia", sector: "Tecnologia", size: "51-200", linkedinUrl: null, people: 2, comments: 4, level: "em_movimento" as const },
+  { id: "2", name: "Banco do Brasil", sector: "Serviços financeiros", size: "10.001+", linkedinUrl: null, people: 5, comments: 3, level: "em_movimento" as const },
+  { id: "3", name: "Nuvem Saúde", sector: "Tecnologia", size: null, linkedinUrl: null, people: 1, comments: 6, level: "aquecendo" as const },
 ]
 
 describe("company result controls", () => {
