@@ -1,4 +1,4 @@
-const TECHNICAL_LANGUAGE = /\b(?:actor|apify|backend|back-end|buyer_profile|buying_signals|company_profile|crawler|dataset|digest|edge function|fetch|function|icpid|json|jwt|llm|migration|non-2xx|onboarding|openai|payload|pgcrypto|pgrst|postgres|postgrest|projectid|provider|rls|rpc|schema|secret|sql|supabase)\b|company page|firmografia|status\s+[45]\d\d|does not exist|failed to send|network request|row returned|constraint|relation\s+.+\s+does not exist|column\s+.+\s+does not exist|duplicate key|invalid input syntax|violates|row-level security|null value in column|timeout|timed out/i
+const TECHNICAL_LANGUAGE = /\b(?:actor|apify|backend|back-end|buyer_profile|buying_signals|company_profile|crawler|dataset|digest|edge function|fetch|function|função|icpid|json|jwt|llm|migration|non-2xx|onboarding|openai|payload|pgcrypto|pgrst|postgres|postgrest|projectid|provider|rls|rpc|schema|secret|sql|supabase)\b|company page|firmografia|status\s+[45]\d\d|does not exist|failed to send|network request|row returned|constraint|relation\s+.+\s+does not exist|column\s+.+\s+does not exist|duplicate key|invalid input syntax|violates|row-level security|null value in column|timeout|timed out/i
 
 function text(value: unknown): string {
   if (value instanceof Error) return value.message.trim()
@@ -9,26 +9,50 @@ export function productErrorMessage(value: unknown, fallback: string): string {
   const message = text(value)
   if (!message) return fallback
 
+  if (/invalid jwt|jwt expired|token.*expir|unauthorized|not authenticated|auth session missing|status\s*401/i.test(message)) {
+    return "Sua sessão expirou. Entre novamente para continuar com segurança."
+  }
+  if (/permission denied|forbidden|not allowed|row-level security|rls|status\s*403/i.test(message)) {
+    return "Seu acesso não permite concluir esta ação. Se isso parecer incorreto, fale com o responsável pela conta."
+  }
+  if (/already running|execução.*andamento|concurrent|conflict|status\s*409/i.test(message)) {
+    return "Uma atualização já está em andamento. Você pode continuar usando seus resultados enquanto ela termina."
+  }
+  if (/crm.*(?:não foi configurad|ainda não foi configurad|não configurad)/i.test(message)) {
+    return "O envio ao CRM ainda não está disponível nesta conta. Fale com o responsável pela operação para conectar o destino."
+  }
+  if (/saldo.*não é suficiente|insufficient credits/i.test(message)) {
+    return "Seu saldo não é suficiente para esta consulta. Nenhum crédito foi consumido."
+  }
+  if (/nenhum contato.*disponibilizado|contato protegido.*não está disponível|referência segura.*contato/i.test(message)) {
+    return "Não encontramos um contato confirmado para este perfil. Nenhum crédito foi consumido."
+  }
+  if (/missing.*(?:key|secret|config)|not configured|não configurad[oa]|status\s*503/i.test(message)) {
+    return "Este recurso está temporariamente indisponível. Seus dados foram preservados; tente novamente mais tarde."
+  }
   if (/prova social.*não foi encontrada literalmente|social proof.*not found/i.test(message)) {
     return "Uma informação não pôde ser confirmada na fonte original. Revise o perfil antes de continuar."
   }
   if (/Brasil é obrigatório|regi(?:ão|ões).*(?:Brasil|Brazil).*obrigat/i.test(message)) {
     return "Para manter a pesquisa alinhada ao mercado brasileiro, inclua Brasil na região do perfil ideal."
   }
+  if (/not found|não encontrad[oa]|status\s*404/i.test(message)) {
+    return "Esta informação não está mais disponível. Atualize a página para carregar os dados mais recentes."
+  }
   if (/limite.*(?:diário|crédito)|crédito.*insuficiente|quota|rate limit|too many requests/i.test(message)) {
-    return "O limite disponível para esta análise foi atingido. Seus dados estão preservados; tente novamente quando o saldo for renovado."
+    return "O limite disponível para esta análise foi atingido. Seus resultados continuam salvos; tente novamente quando o saldo for renovado."
   }
   if (/tempo.*(?:esgot|limite)|timeout|timed out|demorou mais/i.test(message)) {
     return "Esta etapa levou mais tempo que o esperado. Seus dados estão seguros; aguarde alguns instantes e tente novamente."
   }
   if (/network|fetch|conexão|failed to send|indisponível|temporar/i.test(message)) {
-    return "Não conseguimos acessar uma das fontes neste momento. Seus dados estão seguros; tente novamente em alguns instantes."
+    return "Não conseguimos acessar as informações neste momento. Seus resultados continuam salvos; tente novamente em alguns instantes."
   }
   if (/schema|json|resposta.*inválid|não retornou|organizar as informações|evidência não encontrada/i.test(message)) {
     return "Não foi possível confirmar todas as informações com segurança. Nada foi publicado; revise os dados e tente novamente."
   }
   if (/digest|does not exist|constraint|row returned|projectid|icpid|rpc|postgres|sql|migration/i.test(message)) {
-    return "Encontramos uma instabilidade ao concluir esta etapa. Nenhuma alteração foi perdida; tente novamente em alguns instantes."
+    return "Não conseguimos concluir esta etapa. Nenhuma alteração foi perdida; tente novamente em alguns instantes."
   }
   if (TECHNICAL_LANGUAGE.test(message)) return fallback
   return message

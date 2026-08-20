@@ -1,8 +1,8 @@
 # Intent v1 — plano vigente
 
-Status: Fases 0 e 1 encerradas; núcleo, cascatas e ciclo recorrente da Watchlist da Fase 2 publicados em produção
+Status: Fases 0 a 3 implementadas; Fase 4 em homologação
 
-Branch: `main`
+Branch de produção: `main`
 Fontes de verdade: SPEC Intent v1, motor people-first v2 e protótipo v7.3.
 
 ## Objetivo do produto
@@ -53,9 +53,9 @@ busca temática poderá existir como complemento, nunca como coração do motor.
 |---|---|---|---|
 | 0 | Contratos, arquitetura, integrações e estratégia de migração | Encerrada | migrations `0009`/`0010`, RLS, testes e banco remoto validados |
 | 1 | Onboarding site -> ICP editável/versionado | Encerrada | ICP real gerado, editado, versionado e ativado em produção |
-| 2 | Radar people-first, fila, julgamento, créditos e cascatas | Em andamento | núcleo, cascatas e ciclo da Watchlist publicados; falta uma execução paga observada e a revelação de contato |
-| 3 | Início, Pessoas, Contas, Watchlist, ICP e classificação | Não iniciada | protótipo v7.3 com dados reais e sem conceitos internos |
-| 4 | Hardening, observabilidade, segurança e homologação final | Não iniciada | smoke em produção, RLS, custos e recuperação de falhas |
+| 2 | Radar people-first, fila, julgamento, créditos e cascatas | Implementada, aguardando gate operacional | observar um ciclo recorrente completo em produção sem duplicação |
+| 3 | Início, Pessoas, Contas, Watchlist, ICP e classificação | Implementada | telas alinhadas ao protótipo com dados reais e ações protegidas |
+| 4 | Hardening, observabilidade, segurança e homologação final | Em homologação | validar preview autenticado, contato real, recuperação de falhas e aceite do David |
 
 ## Documentos desta fase
 
@@ -67,11 +67,12 @@ busca temática poderá existir como complemento, nunca como coração do motor.
 - [`llm-contracts.md`](llm-contracts.md): schemas estritos, modelos e custo.
 - [`private-data-rls.md`](private-data-rls.md): dados privados, grants e RLS.
 - [`migration-strategy.md`](migration-strategy.md): evolução sem perda de dados.
+- [`client-homologation.md`](client-homologation.md): roteiro de uso e aceite do cliente.
 
 ## Próximo gate
 
-O próximo gate é uma execução real completa de uma fonte V1 aprovada na
-Watchlist. A aprovação continua humana e explícita: o ciclo já publicado coleta
-somente posts próprios, encaminha somente posts inéditos para a cascata
-existente e mantém dedupe, isolamento por projeto e orçamento diário. Depois
-disso, o último bloco funcional da Fase 2 é a revelação de contato sob demanda.
+O próximo gate é a homologação do preview pelo David. Durante esse teste devem
+ser confirmados um ciclo recorrente completo de uma fonte aprovada, uma consulta
+real de contato e a ausência de duplicação. O envio ao CRM depende da URL e da
+credencial do destino do cliente; enquanto não houver conexão, a interface
+explica a indisponibilidade sem expor detalhes internos.

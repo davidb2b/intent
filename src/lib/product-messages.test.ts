@@ -5,7 +5,7 @@ import { authErrorMessage, onboardingNotice, productErrorMessage, productStatusM
 describe("product messages", () => {
   it("never exposes infrastructure details", () => {
     expect(productErrorMessage("function digest(text, unknown) does not exist", "Não conseguimos concluir a etapa.")).toBe(
-      "Encontramos uma instabilidade ao concluir esta etapa. Nenhuma alteração foi perdida; tente novamente em alguns instantes.",
+      "Não conseguimos concluir esta etapa. Nenhuma alteração foi perdida; tente novamente em alguns instantes.",
     )
     expect(productErrorMessage("O Actor apify/google-search-scraper não iniciou (400).", "Não conseguimos concluir a análise.")).toBe(
       "Não conseguimos concluir a análise.",
@@ -14,7 +14,31 @@ describe("product messages", () => {
       "Não conseguimos concluir a análise.",
     )
     expect(productErrorMessage("duplicate key value violates unique constraint", "Não conseguimos salvar sua alteração.")).toBe(
-      "Encontramos uma instabilidade ao concluir esta etapa. Nenhuma alteração foi perdida; tente novamente em alguns instantes.",
+      "Não conseguimos concluir esta etapa. Nenhuma alteração foi perdida; tente novamente em alguns instantes.",
+    )
+  })
+
+  it("turns access and availability failures into clear next steps", () => {
+    expect(productErrorMessage("Invalid JWT: token expired", "Não conseguimos carregar.")).toBe(
+      "Sua sessão expirou. Entre novamente para continuar com segurança.",
+    )
+    expect(productErrorMessage("new row violates row-level security policy", "Não conseguimos salvar.")).toBe(
+      "Seu acesso não permite concluir esta ação. Se isso parecer incorreto, fale com o responsável pela conta.",
+    )
+    expect(productErrorMessage("Execution already running", "Não conseguimos atualizar.")).toBe(
+      "Uma atualização já está em andamento. Você pode continuar usando seus resultados enquanto ela termina.",
+    )
+    expect(productErrorMessage("OPENAI_API_KEY is not configured", "Não conseguimos avaliar.")).toBe(
+      "Este recurso está temporariamente indisponível. Seus dados foram preservados; tente novamente mais tarde.",
+    )
+  })
+
+  it("explains CRM configuration and contact availability in product language", () => {
+    expect(productErrorMessage("A integração com o CRM ainda não foi configurada para esta conta.", "Não conseguimos enviar.")).toBe(
+      "O envio ao CRM ainda não está disponível nesta conta. Fale com o responsável pela operação para conectar o destino.",
+    )
+    expect(productErrorMessage("Nenhum contato foi disponibilizado para este perfil. Nenhum crédito foi consumido.", "Não conseguimos consultar.")).toBe(
+      "Não encontramos um contato confirmado para este perfil. Nenhum crédito foi consumido.",
     )
   })
 

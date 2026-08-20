@@ -7,7 +7,6 @@ import {
   Clock3,
   FileText,
   LayoutDashboard,
-  LoaderCircle,
   MessageCircle,
   Play,
   Settings2,
@@ -17,6 +16,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
 import { discoverSources } from "@/features/collection/services/discover-sources"
 import { discoveryFeedback } from "@/features/collection/lib/discovery-feedback"
 import { recommendedSourceIds } from "@/features/collection/lib/recommended-sources"
@@ -637,10 +637,10 @@ function App() {
 
   const isIntentSetupRoute = window.location.pathname === "/onboarding" || window.location.pathname === "/icp"
   const legacySession: AuthSession | null = session
-  if (isIntentSetupRoute && !authReady) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Validando sua sessão…</span></div>
+  if (isIntentSetupRoute && !authReady) return <div aria-live="polite" className="intent-fullscreen-loading"><Spinner label="Validando sua sessão" /><span>Validando sua sessão…</span></div>
   if (isIntentSetupRoute && !session) return <IntentAuthScreen />
   if (isIntentSetupRoute && session) return <OnboardingFlow session={session} />
-  if (!authReady) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Validando sua sessão…</span></div>
+  if (!authReady) return <div aria-live="polite" className="intent-fullscreen-loading"><Spinner label="Validando sua sessão" /><span>Validando sua sessão…</span></div>
   if (!session && window.location.pathname !== "/reset-password") return <IntentAuthScreen />
   if (session) return <IntentV1Workspace session={session} />
 
@@ -714,7 +714,7 @@ function App() {
 
         <section className="collection-bar" aria-label="Status da atualização">
           <div aria-live="polite" className={`collection-status collection-${collectionState}`}>
-            {collectionState === "running" ? <LoaderCircle aria-hidden="true" className="collection-spinner" size={14} /> : <span className="status-dot" />}
+            {collectionState === "running" ? <Spinner className="collection-spinner" label="Atualização em andamento" /> : <span className="status-dot" />}
             {collectionState === "running"
               ? productStatusMessage(collectionProgress?.message, collectionAction === "discover" || collectionAction === "settings" ? "Encontrando conversas brasileiras" : "Atualizando conteúdos e sinais")
               : isInitialDataLoading ? "Preparando seus resultados"
@@ -724,10 +724,10 @@ function App() {
           <div className="collection-meta"><span className="cost-label">Próxima estimativa</span> {isInitialDataLoading ? "—" : formatCurrency(signalSummary?.estimatedNextCostUsd ?? 0)}</div>
           <div className="collection-actions">
             <Button className="discover-button" variant="outline" disabled={isInitialDataLoading || !keyword.trim() || !session || collectionState === "running"} onClick={handleDiscover}>
-              {collectionAction === "discover" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Encontrando conversas…</> : "Encontrar conversas"}
+              {collectionAction === "discover" ? <><Spinner className="button-spinner" label="Encontrando conversas" /> Encontrando conversas…</> : "Encontrar conversas"}
             </Button>
             <Button className="collect-button" disabled={isInitialDataLoading || !keyword.trim() || !session || collectionState === "running"} onClick={handleCollect}>
-              {collectionAction === "monitor" ? <LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> : <Play size={14} />} {collectionAction === "monitor" ? "Atualizando…" : "Atualizar agora"}
+              {collectionAction === "monitor" ? <Spinner className="button-spinner" label="Atualizando resultados" /> : <Play size={14} />} {collectionAction === "monitor" ? "Atualizando…" : "Atualizar agora"}
             </Button>
           </div>
           {collectionState === "running" && <div className="collection-progress" aria-label={`Progresso da atualização: ${collectionProgress?.progress ?? 0}%`}><span style={{ width: `${collectionProgress?.progress ?? 0}%` }} /></div>}
@@ -802,7 +802,7 @@ function App() {
                   <div className="post-detail-actions"><Button type="button" size="sm" variant={selectedPost.curationStatus === "aprovado" ? "default" : "outline"} onClick={() => void handleCuration(selectedPost.id, "aprovado")}>Aprovar post</Button><Button type="button" size="sm" variant={selectedPost.curationStatus === "descartado" ? "destructive" : "outline"} onClick={() => void handleCuration(selectedPost.id, "descartado")}>Descartar post</Button>{selectedPost.linkedinUrl && <a href={selectedPost.linkedinUrl} target="_blank" rel="noreferrer">Abrir no LinkedIn</a>}</div>
                 </article>
               })()}
-            </div> : <section className="signal-panel sources-panel"><div className="panel-heading source-panel-heading"><div><p className="eyebrow">Perfis acompanhados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} ativos · {signalSources.filter((source) => source.status === "candidata").length} sugeridos</h2><p>Veja quais perfis geram conversas relevantes e pessoas alinhadas ao seu perfil ideal.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalSources.length} perfis</span>{signalSources.some((source) => source.status === "candidata") && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [])}>{collectionAction === "monitor" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Atualizando…</> : `Acompanhar ${selectedSourceIds.size > 0 ? `seleção (${selectedSourceIds.size})` : `recomendados (${recommendedSources().length})`}`}</Button>}</div></div>{signalSources.length > 0 ? <div className="source-list">{orderedSources.map((source) => <article className={`source-row ${selectedSourceIds.has(source.id) ? "is-selected" : ""}`} key={source.id}><div className="source-selection">{source.status === "candidata" && <input aria-label={`Selecionar ${source.name ?? "perfil"}`} checked={selectedSourceIds.has(source.id)} type="checkbox" onChange={() => toggleSourceSelection(source.id)} />}<div><strong>{source.name}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span>{source.previewPost && <p>“{shorten(source.previewPost, 170)}”</p>}</div></div><div className="source-metrics"><span>{source.posts} posts no período</span><span>{source.comments} comentários</span><span>{source.people} pessoas</span><span>{source.icp} aderentes</span><span>{source.yield === null ? "— aguardando atualização" : `${source.yield}% de aproveitamento`}</span></div><span className={`curation-status source-${source.status}`}>{source.status === "candidata" ? "Sugerido" : source.status === "monitorada" ? "Em acompanhamento" : "Removido"}</span><div className="source-actions">{source.status === "candidata" && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [source.id])}>Acompanhar perfil</Button>}{source.status !== "descartada" && source.status !== "monitorada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Remover</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhum perfil em acompanhamento</strong><span>Use “Encontrar conversas” para descobrir posts e perfis brasileiros para este tema.</span></div>}</section>}
+            </div> : <section className="signal-panel sources-panel"><div className="panel-heading source-panel-heading"><div><p className="eyebrow">Perfis acompanhados</p><h2>{signalSources.filter((source) => source.status === "monitorada").length} ativos · {signalSources.filter((source) => source.status === "candidata").length} sugeridos</h2><p>Veja quais perfis geram conversas relevantes e pessoas alinhadas ao seu perfil ideal.</p></div><div className="panel-heading-actions"><span className="signal-tag">{signalSources.length} perfis</span>{signalSources.some((source) => source.status === "candidata") && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [])}>{collectionAction === "monitor" ? <><Spinner className="button-spinner" label="Atualizando perfis acompanhados" /> Atualizando…</> : `Acompanhar ${selectedSourceIds.size > 0 ? `seleção (${selectedSourceIds.size})` : `recomendados (${recommendedSources().length})`}`}</Button>}</div></div>{signalSources.length > 0 ? <div className="source-list">{orderedSources.map((source) => <article className={`source-row ${selectedSourceIds.has(source.id) ? "is-selected" : ""}`} key={source.id}><div className="source-selection">{source.status === "candidata" && <input aria-label={`Selecionar ${source.name ?? "perfil"}`} checked={selectedSourceIds.has(source.id)} type="checkbox" onChange={() => toggleSourceSelection(source.id)} />}<div><strong>{source.name}</strong><span>{displayLinkedInUrl(source.linkedinUrl)}</span>{source.previewPost && <p>“{shorten(source.previewPost, 170)}”</p>}</div></div><div className="source-metrics"><span>{source.posts} posts no período</span><span>{source.comments} comentários</span><span>{source.people} pessoas</span><span>{source.icp} aderentes</span><span>{source.yield === null ? "— aguardando atualização" : `${source.yield}% de aproveitamento`}</span></div><span className={`curation-status source-${source.status}`}>{source.status === "candidata" ? "Sugerido" : source.status === "monitorada" ? "Em acompanhamento" : "Removido"}</span><div className="source-actions">{source.status === "candidata" && <Button type="button" size="sm" disabled={collectionState === "running"} onClick={() => void monitorSources(signalSummary.projectId!, [source.id])}>Acompanhar perfil</Button>}{source.status !== "descartada" && source.status !== "monitorada" && <Button type="button" size="sm" variant="outline" onClick={() => void handleSourceStatus(source.id, "descartada")}>Remover</Button>}</div></article>)}</div> : <div className="filtered-empty"><strong>Nenhum perfil em acompanhamento</strong><span>Use “Encontrar conversas” para descobrir posts e perfis brasileiros para este tema.</span></div>}</section>}
           </div> : activeView === "comments" && session && signalComments.length > 0 ? <section className="signal-panel">
             <div className="comment-toolbar">
               <div className="comment-filters" role="group" aria-label="Filtrar comentários">
@@ -856,7 +856,7 @@ function App() {
               <textarea id="negative-context" onChange={(event) => setNegativeContext(event.target.value)} placeholder="consumer spending, publicidade" value={negativeContext} />
               <div className="modal-actions">
                 <Button onClick={() => setSettingsOpen(false)} type="button" variant="ghost">Cancelar</Button>
-                <Button disabled={!keyword.trim() || collectionState === "running"} type="submit">{collectionAction === "settings" ? <><LoaderCircle aria-hidden="true" className="button-spinner" size={14} /> Encontrando conversas…</> : "Começar pesquisa"}</Button>
+                <Button disabled={!keyword.trim() || collectionState === "running"} type="submit">{collectionAction === "settings" ? <><Spinner className="button-spinner" label="Iniciando sua pesquisa" /> Encontrando conversas…</> : "Começar pesquisa"}</Button>
               </div>
             </form>
             {session && signalSummary?.projectId && <section className="settings-history" aria-labelledby="settings-history-title">

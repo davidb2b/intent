@@ -2,6 +2,8 @@ import { ArrowRight, Globe2 } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
+import { productErrorMessage } from "@/lib/product-messages"
 import { normalizePublicSiteUrl } from "../domain/onboarding"
 
 export function OnboardingStart({ initialUrl, busy, onStart }: { initialUrl?: string | null; busy: boolean; onStart: (url: string) => Promise<void> }) {
@@ -13,7 +15,7 @@ export function OnboardingStart({ initialUrl, busy, onStart }: { initialUrl?: st
       setError("")
       await onStart(normalizePublicSiteUrl(site))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível iniciar a análise.")
+      setError(productErrorMessage(caught, "Não conseguimos iniciar a análise agora. Revise o endereço informado e tente novamente."))
     }
   }
   return <main className="intent-onboarding-main">
@@ -23,7 +25,7 @@ export function OnboardingStart({ initialUrl, busy, onStart }: { initialUrl?: st
       <p>Em poucos minutos, reunimos informações públicas para criar o perfil de cliente ideal, identificar quem compra e reconhecer os sinais que merecem atenção. Você revisa tudo antes de ativar.</p>
       <form className="intent-url-box" onSubmit={submit}>
         <Input aria-label="Site da empresa" autoComplete="url" disabled={busy} placeholder="https://empresa.com.br" value={site} onChange={(event) => setSite(event.target.value)} />
-        <Button disabled={busy || !site.trim()} type="submit">{busy ? "Preparando análise…" : "Criar perfil ideal"}<ArrowRight size={16} /></Button>
+        <Button disabled={busy || !site.trim()} type="submit">{busy ? <><Spinner label="Preparando a análise" />Preparando análise…</> : <>Criar perfil ideal<ArrowRight size={16} /></>}</Button>
       </form>
       {error && <p className="intent-inline-error" role="alert">{error}</p>}
       <p className="intent-trust-note">Usamos somente informações públicas. Você mantém o controle da revisão e do consumo de créditos em todas as etapas.</p>
