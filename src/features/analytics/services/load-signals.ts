@@ -89,6 +89,20 @@ export type SignalSource = {
   kind: "pessoa" | "pagina" | null
 }
 
+export function inferWatchlistKind(linkedinUrl: string, storedKind: SignalSource["kind"]): SignalSource["kind"] {
+  if (storedKind) return storedKind
+
+  try {
+    const pathname = new URL(linkedinUrl).pathname.toLocaleLowerCase("pt-BR")
+    if (pathname.startsWith("/company/") || pathname.startsWith("/school/")) return "pagina"
+    if (pathname.startsWith("/in/")) return "pessoa"
+  } catch {
+    return null
+  }
+
+  return null
+}
+
 export type SignalCompany = {
   id: string
   name: string
@@ -330,7 +344,10 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
       icp,
       yield: hasObservedData && people > 0 ? Math.round((icp / people) * 100) : null,
       previewPost: meta.pre_visualizacao_post?.trim() || null,
-      kind: source.tipo_watchlist === "pessoa" || source.tipo_watchlist === "pagina" ? source.tipo_watchlist : null,
+      kind: inferWatchlistKind(
+        source.linkedin_url,
+        source.tipo_watchlist === "pessoa" || source.tipo_watchlist === "pagina" ? source.tipo_watchlist : null,
+      ),
     }
   })
 }
