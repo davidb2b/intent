@@ -108,7 +108,8 @@ describe("IntentV1Workspace", () => {
     await screen.findByRole("heading", { name: "Início" })
 
     fireEvent.click(screen.getByRole("button", { name: /Watchlist/ }))
-    fireEvent.click(screen.getByRole("button", { name: "Acompanhar" }))
+    expect(screen.getByText("Sugestão")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Aprovar" }))
     expect(await screen.findByText("Acompanhando")).toBeInTheDocument()
   })
 
