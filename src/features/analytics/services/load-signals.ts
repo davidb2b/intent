@@ -143,7 +143,7 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
   const projectId = project.id
   const [posts, comments, people, companies, executions, term, sources] = await Promise.all([
     supabase.from("posts").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
-    supabase.from("comentarios").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
+    supabase.from("sinais").select("id", { count: "exact", head: true }).eq("projeto_id", projectId).eq("tipo", "comentou_tema"),
     supabase.from("pessoas").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("empresas").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("execucoes").select("id, tipo, status, parametros, posts_lidos, comentarios_lidos, pessoas_novas, custo_usd, erro, etapa_atual, progresso, mensagem_progresso, iniciada_em, concluida_em").eq("projeto_id", projectId).order("iniciada_em", { ascending: false }).limit(20),
@@ -265,7 +265,7 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
   const [sourcesResult, postsResult, commentsResult, peopleResult] = await Promise.all([
     supabase.from("fontes").select("id, linkedin_url, nome, status, meta, tipo_watchlist").eq("projeto_id", projectId).neq("status", "descartada").order("status", { ascending: true }).order("criado_em", { ascending: false }),
     supabase.from("posts").select("id, fonte_id, total_reacoes").eq("projeto_id", projectId),
-    supabase.from("comentarios").select("post_id, pessoa_id").eq("projeto_id", projectId),
+    supabase.from("sinais").select("post_id, pessoa_id").eq("projeto_id", projectId).eq("tipo", "comentou_tema"),
     supabase.from("pessoas").select("id, icp").eq("projeto_id", projectId),
   ])
   const firstError = [sourcesResult, postsResult, commentsResult, peopleResult].find((result) => result.error)?.error
@@ -319,7 +319,7 @@ export async function loadSignalCompanies(projectId: string): Promise<SignalComp
   const [{ data: companies, error: companyError }, { data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
     supabase.from("empresas").select("id, nome, setor, porte, linkedin_url").eq("projeto_id", projectId).order("nome"),
     supabase.from("pessoas").select("id, empresa_id").eq("projeto_id", projectId),
-    supabase.from("comentarios").select("pessoa_id").eq("projeto_id", projectId),
+    supabase.from("sinais").select("pessoa_id").eq("projeto_id", projectId).eq("tipo", "comentou_tema"),
   ])
   const firstError = [companyError, peopleError, commentsError].find(Boolean)
   if (firstError) throw new Error(firstError.message)
@@ -337,7 +337,7 @@ export async function loadSignalCompanies(projectId: string): Promise<SignalComp
 export async function loadSignalPeople(projectId: string): Promise<SignalPerson[]> {
   const [{ data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
     supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, email_disponivel, telefone_disponivel, intencao, status, ultimo_sinal_em, criado_em, empresa:empresas(nome)").eq("projeto_id", projectId).order("nome"),
-    supabase.from("comentarios").select("pessoa_id").eq("projeto_id", projectId),
+    supabase.from("sinais").select("pessoa_id").eq("projeto_id", projectId).eq("tipo", "comentou_tema"),
   ])
   if (peopleError || commentsError) throw new Error(peopleError?.message ?? commentsError?.message ?? "Não foi possível carregar pessoas.")
   const commentsByPerson = new Map<string, number>()
@@ -349,15 +349,24 @@ export async function loadSignalPeople(projectId: string): Promise<SignalPerson[
 }
 
 export async function loadSignalComments(projectId: string): Promise<SignalComment[]> {
-  const { data, error } = await supabase
+  const [{ data: legacyComments, error: legacyError }, { data: signalComments, error: signalError }] = await Promise.all([
+    supabase
     .from("comentarios")
     .select("id, pessoa_id, texto, publicado_em, teor, teor_confianca, pessoa:pessoas!inner(nome, headline, linkedin_url, empresa:empresas(nome)), post:posts!inner(linkedin_url)")
     .eq("projeto_id", projectId)
     .order("coletado_em", { ascending: false })
-    .limit(100)
+    .limit(100),
+    supabase
+      .from("sinais")
+      .select("id, pessoa_id, evidencia, ocorrido_em, pessoa:pessoas!inner(nome, headline, linkedin_url, empresa:empresas(nome)), post:posts(linkedin_url)")
+      .eq("projeto_id", projectId)
+      .eq("tipo", "comentou_tema")
+      .order("capturado_em", { ascending: false })
+      .limit(100),
+  ])
 
-  if (error) throw new Error(error.message)
-  return (data ?? []).map((comment) => {
+  if (legacyError || signalError) throw new Error(legacyError?.message ?? signalError?.message ?? "Não foi possível carregar as evidências públicas.")
+  const legacy = (legacyComments ?? []).map((comment) => {
     const person = Array.isArray(comment.pessoa) ? comment.pessoa[0] : comment.pessoa
     const post = Array.isArray(comment.post) ? comment.post[0] : comment.post
     const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
@@ -375,4 +384,23 @@ export async function loadSignalComments(projectId: string): Promise<SignalComme
       confidence: comment.teor_confianca,
     }
   })
+  const signals = (signalComments ?? []).map((signal) => {
+    const person = Array.isArray(signal.pessoa) ? signal.pessoa[0] : signal.pessoa
+    const post = Array.isArray(signal.post) ? signal.post[0] : signal.post
+    const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
+    return {
+      id: `signal:${signal.id}`,
+      personId: signal.pessoa_id,
+      text: signal.evidencia,
+      publishedAt: signal.ocorrido_em,
+      tone: "comentou_tema",
+      personName: person.nome,
+      personHeadline: person.headline,
+      companyName: company?.nome ?? null,
+      personUrl: person.linkedin_url,
+      postUrl: post?.linkedin_url ?? "",
+      confidence: null,
+    }
+  })
+  return [...legacy, ...signals].sort((first, second) => (second.publishedAt ?? "").localeCompare(first.publishedAt ?? "")).slice(0, 100)
 }
