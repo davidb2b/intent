@@ -1,5 +1,6 @@
 import { supabase } from "@/infrastructure/supabase/client"
 import { parseSourceMeta } from "../lib/source-meta"
+import { calculateSignalPriority } from "@/features/intent/domain/signal-priority"
 
 export type SignalSummary = {
   projectId: string | null
@@ -104,6 +105,11 @@ export type SignalPerson = {
   icpReason: string | null
   companyName: string | null
   comments: number
+  signalCount: number
+  signalTypes: string[]
+  priorityScore: number
+  priorityBucket: "alta" | "acompanhar"
+  priorityLabel: "Prioridade alta" | "Em acompanhamento"
   emailAvailable: boolean
   phoneAvailable: boolean
   intentScore: number | null
@@ -319,7 +325,7 @@ export async function loadSignalCompanies(projectId: string): Promise<SignalComp
   const [{ data: companies, error: companyError }, { data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
     supabase.from("empresas").select("id, nome, setor, porte, linkedin_url").eq("projeto_id", projectId).order("nome"),
     supabase.from("pessoas").select("id, empresa_id").eq("projeto_id", projectId),
-    supabase.from("sinais").select("pessoa_id").eq("projeto_id", projectId).eq("tipo", "comentou_tema"),
+    supabase.from("sinais").select("pessoa_id").eq("projeto_id", projectId),
   ])
   const firstError = [companyError, peopleError, commentsError].find(Boolean)
   if (firstError) throw new Error(firstError.message)
@@ -335,16 +341,23 @@ export async function loadSignalCompanies(projectId: string): Promise<SignalComp
 }
 
 export async function loadSignalPeople(projectId: string): Promise<SignalPerson[]> {
-  const [{ data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
+  const [{ data: people, error: peopleError }, { data: signals, error: signalsError }] = await Promise.all([
     supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, email_disponivel, telefone_disponivel, intencao, status, ultimo_sinal_em, criado_em, empresa:empresas(nome)").eq("projeto_id", projectId).order("nome"),
-    supabase.from("sinais").select("pessoa_id").eq("projeto_id", projectId).eq("tipo", "comentou_tema"),
+    supabase.from("sinais").select("pessoa_id, tipo, nota, ocorrido_em").eq("projeto_id", projectId),
   ])
-  if (peopleError || commentsError) throw new Error(peopleError?.message ?? commentsError?.message ?? "Não foi possível carregar pessoas.")
-  const commentsByPerson = new Map<string, number>()
-  for (const comment of comments ?? []) commentsByPerson.set(comment.pessoa_id, (commentsByPerson.get(comment.pessoa_id) ?? 0) + 1)
+  if (peopleError || signalsError) throw new Error(peopleError?.message ?? signalsError?.message ?? "Não foi possível carregar pessoas.")
+  const signalsByPerson = new Map<string, Array<{ type: string; score: number | null; occurredAt: string | null }>>()
+  for (const signal of signals ?? []) {
+    const personSignals = signalsByPerson.get(signal.pessoa_id) ?? []
+    personSignals.push({ type: signal.tipo, score: signal.nota, occurredAt: signal.ocorrido_em })
+    signalsByPerson.set(signal.pessoa_id, personSignals)
+  }
   return (people ?? []).filter((person) => person.nome.trim().toLocaleLowerCase("pt-BR") !== "perfil sem nome").map((person) => {
     const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
-    return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, comments: commentsByPerson.get(person.id) ?? 0, emailAvailable: person.email_disponivel, phoneAvailable: person.telefone_disponivel, intentScore: person.intencao, intentStatus: person.status, lastSignalAt: person.ultimo_sinal_em, createdAt: person.criado_em }
+    const personSignals = signalsByPerson.get(person.id) ?? []
+    const priority = calculateSignalPriority({ currentIntent: person.intencao, status: person.status, signals: personSignals })
+    const comments = personSignals.filter((signal) => signal.type === "comentou_tema").length
+    return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, comments, signalCount: priority.signalCount, signalTypes: priority.signalTypes, priorityScore: priority.score, priorityBucket: priority.bucket, priorityLabel: priority.label, emailAvailable: person.email_disponivel, phoneAvailable: person.telefone_disponivel, intentScore: person.intencao, intentStatus: person.status, lastSignalAt: person.ultimo_sinal_em, createdAt: person.criado_em }
   })
 }
 
