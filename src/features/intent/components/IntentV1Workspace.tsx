@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
-import { Building2, CheckCircle2, ChevronRight, CircleAlert, Eye, FlaskConical, Home, LayoutList, LogOut, Mail, Phone, Target, Users } from "lucide-react"
+import { Building2, CheckCircle2, ChevronRight, CircleAlert, FlaskConical, LayoutList, LogOut, Mail, Phone } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { authService } from "@/features/auth/services/auth-service"
@@ -12,16 +12,16 @@ import { updateSourceStatus } from "@/features/collection/services/update-source
 import { markPersonAsClient } from "@/features/people/services/mark-person-client"
 import { previewSignal, type PreviewSignalResult } from "@/features/classification/services/preview-signal"
 import { sendPersonToCrm } from "@/features/intent/services/send-person-to-crm"
+import { IntentV1Sidebar, type IntentSidebarView } from "./IntentV1Sidebar"
 import "./intent-v1-workspace.css"
 import "./intent-v1-contact.css"
 
-type WorkspaceView = "inicio" | "pessoas" | "contas" | "watchlist" | "icp" | "sim"
+type WorkspaceView = IntentSidebarView
 type Session = { email: string; userId: string }
-const primaryItems: Array<{ id: Exclude<WorkspaceView, "icp">; label: string; icon: typeof Home }> = [{ id: "inicio", label: "Início", icon: Home }, { id: "pessoas", label: "Pessoas", icon: Users }, { id: "contas", label: "Contas", icon: Building2 }, { id: "watchlist", label: "Watchlist", icon: Eye }]
 
-function initials(value: string) { return value.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "IN" }
 function personSubline(person: SignalPerson) { return [person.role ?? person.headline, person.companyName].filter(Boolean).join(" · ") || "Perfil público identificado" }
 function personDrawerSubline(person: SignalPerson) { return [person.role ?? person.headline, person.companyName, person.companySize, person.companySector].filter(Boolean).join(" · ") || "Perfil público identificado" }
+function initials(value: string) { return value.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "IN" }
 function personStatusRank(status: string | null) { return status === "lead" ? 0 : status === "sinal_fraco" ? 1 : status === "cliente" ? 2 : status === "fora_icp" ? 3 : 4 }
 function IcpStatus({ icp }: { icp: IcpRecord | null | undefined }) { return <span className={`intent-v1-status ${icp?.status === "ativo" ? "is-active" : ""}`}>{icp?.status === "ativo" ? `ICP v${icp.version} ativo` : "ICP em revisão"}</span> }
 
@@ -150,15 +150,7 @@ export function IntentV1Workspace({ session }: { session: Session }) {
   const creditsUsed = (summary?.creditsUsed ?? 0) + (summary?.creditsReserved ?? 0)
 
   return <div className="intent-v1-shell">
-    <aside className="intent-v1-sidebar">
-      <button className="intent-v1-brand" onClick={() => setView("inicio")} type="button"><span>In</span>Intent</button>
-      <div className="intent-v1-company"><span>{initials(projectName)}</span><div><strong>{projectName}</strong><small>{workspace?.project.domain ?? "Seu workspace"}</small></div></div>
-      <p>Workspace</p>
-      <nav aria-label="Navegação principal">{primaryItems.map(({ id, label, icon: Icon }) => <button className={view === id ? "is-active" : ""} key={id} onClick={() => setView(id)} type="button"><Icon size={16} /><span>{label}</span>{id === "pessoas" && peopleWithSignals.length > 0 ? <small>{peopleWithSignals.length}</small> : id === "contas" && companies.length > 0 ? <small>{companies.length}</small> : id === "watchlist" && watchPages.length + watchPeople.length > 0 ? <small>{watchPages.length + watchPeople.length}</small> : null}</button>)}</nav>
-      <p>Configuração</p>
-      <nav aria-label="Configuração"><button className={view === "icp" ? "is-active" : ""} onClick={() => setView("icp")} type="button"><Target size={16} /><span>ICP</span><small>v{activeIcp?.version ?? workspace?.latestIcp?.version ?? 1}</small></button><button className={view === "sim" ? "is-active" : ""} onClick={() => setView("sim")} type="button"><FlaskConical size={16} /><span>Testar classificação</span></button></nav>
-      <footer><div className="intent-v1-credit"><span>Uso do plano</span><strong>{creditsUsed.toLocaleString("pt-BR")} / {creditLimit.toLocaleString("pt-BR")}</strong><i><b style={{ width: `${creditLimit > 0 ? Math.min(100, Math.round((creditsUsed / creditLimit) * 100)) : 0}%` }} /></i><small>{creditLimit > 0 ? "créditos usados neste ciclo" : "Plano em configuração"}</small></div><div className="intent-v1-ready"><b />Dados protegidos</div><IcpStatus icp={activeIcp ?? workspace?.latestIcp} /></footer>
-    </aside>
+    <IntentV1Sidebar active={activeIcp?.status === "ativo"} activeView={view} companiesCount={companies.length} creditsUsed={creditsUsed} onNavigate={setView} peopleCount={peopleWithSignals.length} project={workspace?.project ?? { id: "", name: projectName, domain: null, monthlyCredits: creditLimit, siteUrl: null, onboardingStatus: "nao_iniciado", onboardingWarning: null }} version={activeIcp?.version ?? workspace?.latestIcp?.version ?? 1} watchlistCount={watchPages.length + watchPeople.length} />
     <main className="intent-v1-main">
       {view !== "pessoas" && view !== "contas" && view !== "watchlist" && view !== "sim" && <header className="intent-v1-header"><div><p>Intent <ChevronRight size={13} /> {pageTitle}</p><h1>{pageTitle}</h1></div><div><span className="intent-v1-email">{session.email}</span><Button onClick={() => void authService.signOut()} size="sm" variant="outline"><LogOut size={15} />Sair</Button></div></header>}
       {error && <div className="intent-v1-error" role="alert"><CircleAlert size={16} />{error}</div>}

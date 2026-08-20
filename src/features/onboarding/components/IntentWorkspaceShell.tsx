@@ -1,18 +1,21 @@
-import { Target } from "lucide-react"
+import { ChevronRight, LogOut } from "lucide-react"
 import type { ReactNode } from "react"
+import { Button } from "@/components/ui/button"
+import { IntentV1Sidebar, type IntentSidebarView } from "@/features/intent/components/IntentV1Sidebar"
 import type { IntentProject } from "../domain/onboarding"
+import "@/features/intent/components/intent-v1-workspace.css"
 
-export function IntentWorkspaceShell({ project, version, active, children }: { project: IntentProject; version: number; active: boolean; children: ReactNode }) {
-  const initials = project.name.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "IN"
-  const creditsUsed = version > 0 ? 12 : 0
-  return <div className="intent-workspace-shell">
-    <aside className="intent-workspace-sidebar">
-      <a className="intent-sidebar-brand" href="/overview"><span>In</span>Intent</a>
-      <div className="intent-workspace-identity"><span>{initials}</span><div><strong>{project.name}</strong><small>{project.domain ?? "Sua empresa"}</small></div></div>
-      <p className="intent-sidebar-section">Configuração</p>
-      <nav><button className="is-active" type="button"><Target size={15} />Perfil ideal<small>v{version}</small></button></nav>
-      <footer><div><span>Créditos do plano</span><strong>{creditsUsed.toLocaleString("pt-BR")} / {project.monthlyCredits.toLocaleString("pt-BR")} usados</strong><i><b style={{ width: `${Math.min(100, (creditsUsed / Math.max(project.monthlyCredits, 1)) * 100)}%` }} /></i></div><p className={active ? "is-active" : ""}><span />Perfil ideal {active ? `v${version} ativo` : "em revisão"}</p></footer>
-    </aside>
-    <div className="intent-workspace-content">{children}</div>
+type Props = { project: IntentProject; version: number; active: boolean; email?: string; onSignOut?: () => void; children: ReactNode }
+
+const destinations: Record<Exclude<IntentSidebarView, "icp">, string> = { inicio: "/overview", pessoas: "/people", contas: "/companies", watchlist: "/watchlist", sim: "/classification" }
+
+export function IntentWorkspaceShell({ project, version, active, email, onSignOut, children }: Props) {
+  const navigate = (view: IntentSidebarView) => { if (view !== "icp") window.location.assign(destinations[view]) }
+  return <div className="intent-v1-shell">
+    <IntentV1Sidebar active={active} activeView="icp" onNavigate={navigate} project={project} version={version} />
+    <main className="intent-v1-main intent-onboarding-v1-main">
+      {email && <header className="intent-v1-header"><div><p>Intent <ChevronRight size={13} /> Perfil ideal</p></div><div><span className="intent-v1-email">{email}</span>{onSignOut && <Button onClick={onSignOut} size="sm" variant="outline"><LogOut size={15} />Sair</Button>}</div></header>}
+      {children}
+    </main>
   </div>
 }

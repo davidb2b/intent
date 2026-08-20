@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useState } from "react"
-import { LogOut } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { authService } from "@/features/auth/services/auth-service"
 import { productErrorMessage } from "@/lib/product-messages"
@@ -9,6 +7,7 @@ import { activateIcp, generateIcp, loadOnboardingExecution, loadOnboardingWorksp
 import { IcpEditor } from "./components/IcpEditor"
 import { OnboardingProgress } from "./components/OnboardingProgress"
 import { OnboardingStart } from "./components/OnboardingStart"
+import { IntentWorkspaceShell } from "./components/IntentWorkspaceShell"
 import "./onboarding.css"
 
 type Session = { email: string; userId: string }
@@ -77,15 +76,14 @@ export function OnboardingFlow({ session }: { session: Session }) {
 
   if (!workspace && !error) return <div aria-live="polite" className="intent-fullscreen-loading"><Spinner label="Preparando sua experiência" /><span>Preparando sua experiência…</span></div>
 
-  const editorVisible = Boolean(workspace?.latestIcp && !isRunning)
-  const body = workspace && isRunning ? <OnboardingProgress domain={workspace.project.domain ?? new URL(workspace.project.siteUrl ?? "https://intent.local").hostname} execution={execution} />
-    : workspace?.latestIcp ? <IcpEditor busy={busy === "starting" ? null : busy} initialIcp={workspace.latestIcp} onActivate={activate} onRegenerate={regenerate} onSave={save} warning={workspace.project.onboardingWarning} />
-    : workspace ? <OnboardingStart busy={busy === "starting"} initialUrl={workspace.project.siteUrl} onStart={(siteUrl) => start(siteUrl)} />
-    : <main className="intent-onboarding-main"><div className="intent-pipeline-error"><strong>Não conseguimos preparar sua conta</strong><p>{error}</p></div></main>
+  if (!workspace) return <main className="intent-onboarding-main"><div className="intent-pipeline-error"><strong>Não conseguimos preparar sua conta</strong><p>{error}</p></div></main>
 
-  return <div className="intent-onboarding-shell">
-    {!editorVisible && <header className="intent-lite-topbar"><a className="intent-brand" href="/overview"><span>In</span>Intent</a><div><span>{session.email}</span><Button onClick={() => void authService.signOut()} size="sm" variant="ghost"><LogOut size={14} />Sair</Button></div></header>}
-    {error && !isRunning && <div className="intent-global-error" role="alert">{error}</div>}
+  const body = isRunning ? <OnboardingProgress domain={workspace.project.domain ?? new URL(workspace.project.siteUrl ?? "https://intent.local").hostname} execution={execution} />
+    : workspace.latestIcp ? <IcpEditor busy={busy} initialIcp={workspace.latestIcp} onActivate={activate} onRegenerate={regenerate} onSave={save} warning={workspace.project.onboardingWarning} />
+    : <OnboardingStart busy={false} initialUrl={workspace.project.siteUrl} onStart={(siteUrl) => start(siteUrl)} />
+
+  return <IntentWorkspaceShell active={workspace.activeIcp?.status === "ativo"} email={session.email} onSignOut={() => void authService.signOut()} project={workspace.project} version={workspace.activeIcp?.version ?? workspace.latestIcp?.version ?? 1}>
+    {error && !isRunning && <div className="intent-v1-error" role="alert">{error}</div>}
     {body}
-  </div>
+  </IntentWorkspaceShell>
 }

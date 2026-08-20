@@ -52,7 +52,7 @@ export function IcpEditor({ initialIcp, warning, busy, onSave, onActivate, onReg
 
   const firmography = icp.company.firmografia
   const reviewNotice = onboardingNotice(warning)
-  return <main className="intent-icp-main">
+  return <section className="intent-icp-main">
     <div className="intent-icp-container">
       <header className="intent-page-heading">
         <div><h1>Perfil de cliente ideal</h1><p>Defina quem tem maior potencial de compra e quais comportamentos indicam o momento certo para uma abordagem.</p></div>
@@ -105,5 +105,5 @@ export function IcpEditor({ initialIcp, warning, busy, onSave, onActivate, onReg
 
       {editable && <div className="intent-save-bar"><div><strong>{dirty ? "Você tem alterações para salvar" : "Todas as alterações estão salvas"}</strong><span>Estas definições começam a orientar as prioridades depois da ativação.</span></div><Button disabled={!dirty || Boolean(busy)} onClick={save} variant="outline">{busy === "saving" ? <Spinner label="Salvando alterações" /> : <Save size={15} />}{busy === "saving" ? "Salvando…" : "Salvar alterações"}</Button></div>}
     </div>
-  </main>
+  </section>
 }
