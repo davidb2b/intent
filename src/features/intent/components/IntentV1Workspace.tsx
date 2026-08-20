@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
 import { Building2, CheckCircle2, ChevronRight, CircleAlert, Eye, FlaskConical, Home, LayoutList, LoaderCircle, LogOut, Mail, Phone, Target, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { authService } from "@/features/auth/services/auth-service"
@@ -20,7 +20,8 @@ const primaryItems: Array<{ id: Exclude<WorkspaceView, "icp">; label: string; ic
 
 function initials(value: string) { return value.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "IN" }
 function personSubline(person: SignalPerson) { return [person.role ?? person.headline, person.companyName].filter(Boolean).join(" · ") || "Perfil público identificado" }
-function dateLabel(value: string | null) { if (!value) return "Sem data disponível"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "Sem data disponível" : new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(date) }
+function personDrawerSubline(person: SignalPerson) { return [person.role ?? person.headline, person.companyName, person.companySize, person.companySector].filter(Boolean).join(" · ") || "Perfil público identificado" }
+function personStatusRank(status: string | null) { return status === "lead" ? 0 : status === "sinal_fraco" ? 1 : status === "cliente" ? 2 : status === "fora_icp" ? 3 : 4 }
 function IcpStatus({ icp }: { icp: IcpRecord | null | undefined }) { return <span className={`intent-v1-status ${icp?.status === "ativo" ? "is-active" : ""}`}>{icp?.status === "ativo" ? `ICP v${icp.version} ativo` : "ICP em revisão"}</span> }
 
 export function IntentV1Workspace({ session }: { session: Session }) {
@@ -44,6 +45,7 @@ export function IntentV1Workspace({ session }: { session: Session }) {
   const [sourceBusy, setSourceBusy] = useState<string | null>(null)
   const [markingClient, setMarkingClient] = useState(false)
   const [sendingToCrm, setSendingToCrm] = useState(false)
+  const [notice, setNotice] = useState("")
 
   useEffect(() => {
     let active = true
@@ -61,12 +63,26 @@ export function IntentV1Workspace({ session }: { session: Session }) {
     return () => { active = false }
   }, [session.userId])
 
+  useEffect(() => {
+    if (!selectedPerson) return
+    const previousOverflow = document.body.style.overflow
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedPerson(null)
+    }
+    document.body.style.overflow = "hidden"
+    window.addEventListener("keydown", closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener("keydown", closeOnEscape)
+    }
+  }, [selectedPerson])
+
   const activeIcp = workspace?.activeIcp
   const visiblePeople = useMemo(() => people.filter((person) => ["lead", "sinal_fraco", "cliente", "fora_icp"].includes(person.intentStatus ?? "")), [people])
   const peopleWithSignals = useMemo(() => visiblePeople.filter((person) => (person.signalCount ?? person.comments) > 0), [visiblePeople])
-  const strongPeople = useMemo(() => peopleWithSignals.filter((person) => person.intentStatus === "lead" || ((person.intentScore ?? 0) >= 80 && person.intentStatus !== "cliente")), [peopleWithSignals])
+  const strongPeople = useMemo(() => peopleWithSignals.filter((person) => person.intentStatus === "lead"), [peopleWithSignals])
   const weakPeople = useMemo(() => peopleWithSignals.filter((person) => person.intentStatus === "sinal_fraco"), [peopleWithSignals])
-  const clientPeople = useMemo(() => visiblePeople.filter((person) => person.intentStatus === "cliente"), [visiblePeople])
+  const clientPeople = useMemo(() => peopleWithSignals.filter((person) => person.intentStatus === "cliente"), [peopleWithSignals])
   const peopleByPriority = useMemo(() => [...peopleWithSignals].filter((person) => person.intentStatus !== "fora_icp").sort((a, b) => (b.priorityScore ?? b.intentScore ?? 0) - (a.priorityScore ?? a.intentScore ?? 0) || (b.signalCount ?? b.comments) - (a.signalCount ?? a.comments)), [peopleWithSignals])
   const candidates = useMemo(() => sources.filter((source) => source.status === "candidata"), [sources])
   const watchPages = useMemo(() => sources.filter((source) => source.kind === "pagina"), [sources])
@@ -80,12 +96,12 @@ export function IntentV1Workspace({ session }: { session: Session }) {
     return latest
   }, [comments])
   const newThisWeek = useMemo(() => { const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000; return visiblePeople.filter((person) => person.createdAt && new Date(person.createdAt).getTime() >= cutoff).length }, [visiblePeople])
-  const selectedPeople = bucket === "forte" ? strongPeople : bucket === "fraco" ? weakPeople : bucket === "clientes" ? clientPeople : visiblePeople
+  const selectedPeople = useMemo(() => [...(bucket === "forte" ? strongPeople : bucket === "fraco" ? weakPeople : bucket === "clientes" ? clientPeople : peopleWithSignals)].sort((first, second) => personStatusRank(first.intentStatus) - personStatusRank(second.intentStatus) || (second.intentScore ?? second.priorityScore ?? 0) - (first.intentScore ?? first.priorityScore ?? 0) || first.name.localeCompare(second.name, "pt-BR")), [bucket, clientPeople, peopleWithSignals, strongPeople, weakPeople])
 
   async function confirmContactReveal() {
     if (!revealRequest || !workspace) return
-    setRevealing(true); setError("")
-    try { const result = await revealContact({ projectId: workspace.project.id, personId: revealRequest.person.id, type: revealRequest.type }); setRevealedContacts((current) => ({ ...current, [revealRequest.person.id]: { ...current[revealRequest.person.id], [revealRequest.type]: result.contact } })); setRevealRequest(null) }
+    setRevealing(true); setError(""); setNotice("")
+    try { const result = await revealContact({ projectId: workspace.project.id, personId: revealRequest.person.id, type: revealRequest.type }); setRevealedContacts((current) => ({ ...current, [revealRequest.person.id]: { ...current[revealRequest.person.id], [revealRequest.type]: result.contact } })); setNotice(`${revealRequest.type === "email" ? "E-mail" : "Telefone"} disponibilizado com segurança.`); setRevealRequest(null) }
     catch (caught) { setError(productErrorMessage(caught, "Não foi possível consultar o contato agora. Nenhum crédito foi consumido.")) }
     finally { setRevealing(false) }
   }
@@ -107,20 +123,21 @@ export function IntentV1Workspace({ session }: { session: Session }) {
   }
 
   async function confirmClient(person: SignalPerson) {
-    setMarkingClient(true); setError("")
+    setMarkingClient(true); setError(""); setNotice("")
     try {
       await markPersonAsClient(person.id)
       const nextPerson: SignalPerson = { ...person, intentStatus: "cliente", priorityBucket: "alta", priorityLabel: "Cliente" }
       setPeople((current) => current.map((item) => item.id === person.id ? nextPerson : item))
-      setSelectedPerson(nextPerson)
+      setSelectedPerson(null)
+      setNotice(`${person.name} foi marcada como cliente e saiu da fila de abordagem.`)
     } catch (caught) { setError(productErrorMessage(caught, "Não foi possível salvar esta pessoa como cliente agora.")) }
     finally { setMarkingClient(false) }
   }
 
   async function sendSelectedPersonToCrm(person: SignalPerson) {
     if (!workspace) return
-    setSendingToCrm(true); setError("")
-    try { await sendPersonToCrm({ projectId: workspace.project.id, personId: person.id }) }
+    setSendingToCrm(true); setError(""); setNotice("")
+    try { await sendPersonToCrm({ projectId: workspace.project.id, personId: person.id }); setNotice(`${person.name} foi enviada ao CRM.`) }
     catch (caught) { setError(productErrorMessage(caught, "Não foi possível enviar esta pessoa ao CRM agora.")) }
     finally { setSendingToCrm(false) }
   }
@@ -144,13 +161,14 @@ export function IntentV1Workspace({ session }: { session: Session }) {
     <main className="intent-v1-main">
       <header className="intent-v1-header"><div><p>Intent <ChevronRight size={13} /> {pageTitle}</p><h1>{pageTitle}</h1></div><div><span className="intent-v1-email">{session.email}</span><Button onClick={() => void authService.signOut()} size="sm" variant="outline"><LogOut size={15} />Sair</Button></div></header>
       {error && <div className="intent-v1-error" role="alert"><CircleAlert size={16} />{error}</div>}
+      {notice && !selectedPerson && <div className="intent-v1-notice" role="status"><CheckCircle2 size={16} />{notice}</div>}
       {view === "inicio" && <section className="intent-v1-content"><div className="intent-v1-intro"><div><h2>Quem merece sua atenção hoje</h2><p>Pessoas e empresas priorizadas pelas evidências mais recentes.</p></div><IcpStatus icp={activeIcp} /></div>{!activeIcp ? <div className="intent-v1-callout"><div><strong>Seu perfil ideal ainda precisa de revisão</strong><span>Ative o ICP para o Intent priorizar as conversas certas.</span></div><Button onClick={() => setView("icp")}>Revisar ICP</Button></div> : <><div className="intent-v1-kpis"><Kpi label="Intenção forte" value={strongPeople.length} detail="Pessoas com sinais priorizados" /><Kpi label="Sinal fraco" value={weakPeople.length} detail="Pessoas para acompanhar" /><Kpi label="Contas em movimento" value={companies.filter((company) => company.level === "em_movimento").length} detail="Duas ou mais pessoas com sinal" /><Kpi label="Novas esta semana" value={newThisWeek} detail="Perfis recém-identificados" /></div><div className="intent-v1-grid"><section className="intent-v1-panel"><header><div><h3>Fila de hoje</h3><p>Prioridade baseada nos sinais mais relevantes.</p></div><Button onClick={() => setView("pessoas")} size="sm" variant="outline">Ver pessoas</Button></header><div className="intent-v1-list">{peopleByPriority.slice(0, 5).map((person) => <PersonRow evidence={commentsByPerson.get(person.id)} key={person.id} person={person} />)}{peopleByPriority.length === 0 && <Empty text="Os primeiros sinais aparecerão aqui quando pessoas aderentes ao ICP interagirem publicamente." />}</div></section><div className="intent-v1-home-side"><section className="intent-v1-panel"><header><div><h3>Contas em movimento</h3><p>Empresas com duas ou mais pessoas sinalizadas.</p></div><Button onClick={() => setView("contas")} size="sm" variant="outline">Ver contas</Button></header>{companies.filter((company) => company.level === "em_movimento").slice(0, 4).map((company) => <CompanyRow company={company} key={company.id} />)}{companies.every((company) => company.level !== "em_movimento") && <Empty text="As contas em movimento aparecem quando duas pessoas da mesma empresa têm sinais públicos." />}</section><section className="intent-v1-panel"><header><div><h3>Sugestões da Watchlist</h3><p>Fontes públicas esperando uma decisão.</p></div><Button onClick={() => setView("watchlist")} size="sm" variant="outline">Abrir</Button></header>{candidates.slice(0, 3).map((source) => <SourceRow key={source.id} source={source} />)}{candidates.length === 0 && <Empty text="Não há sugestões pendentes no momento." />}</section></div></div></>}</section>}
-      {view === "pessoas" && <section className="intent-v1-content"><SectionHeading title="Pessoas" subtitle="Perfis organizados por intenção, sinal público e aderência ao perfil ideal." />{revealRequest && <section className="intent-v1-contact-confirm" aria-live="polite"><div><strong>Consultar {revealRequest.type === "email" ? "e-mail" : "telefone"} de {revealRequest.person.name}?</strong><p>Esta consulta usa {revealRequest.type === "email" ? "1" : "10"} crédito{revealRequest.type === "email" ? "" : "s"} somente se um contato for disponibilizado. O dado é protegido e fica visível apenas para você.</p></div><div><Button disabled={revealing} onClick={() => setRevealRequest(null)} size="sm" variant="outline">Cancelar</Button><Button disabled={revealing} onClick={() => void confirmContactReveal()} size="sm">{revealing ? <><LoaderCircle className="intent-spin" size={14} />Consultando…</> : "Confirmar consulta"}</Button></div></section>}<div className="intent-v1-buckets"><Bucket active={bucket === "forte"} label="Intenção forte" onClick={() => setBucket("forte")} count={strongPeople.length} /><Bucket active={bucket === "fraco"} label="Sinal fraco" onClick={() => setBucket("fraco")} count={weakPeople.length} /><Bucket active={bucket === "clientes"} label="Clientes" onClick={() => setBucket("clientes")} count={clientPeople.length} /><Bucket active={bucket === "todos"} label="Todas" onClick={() => setBucket("todos")} count={visiblePeople.length} /></div><section className="intent-v1-panel intent-v1-table-wrap"><PeopleTable commentsByPerson={commentsByPerson} onReveal={(person, type) => setRevealRequest({ person, type })} onSelect={setSelectedPerson} people={selectedPeople} revealedContacts={revealedContacts} />{selectedPeople.length === 0 && <Empty text="Nenhuma pessoa com sinal público foi encontrada neste filtro." />}</section></section>}
+      {view === "pessoas" && <section className="intent-v1-content"><SectionHeading action={<IcpStatus icp={activeIcp ?? workspace?.latestIcp} />} title="Pessoas" subtitle="Só aparece aqui quem passou pela régua do ICP e deu algum sinal público. Intenção forte é para abordar agora; sinal fraco é para acompanhar — é de lá que saem os próximos leads. Quem ainda não se movimentou segue sendo acompanhado até dar o primeiro sinal." /><div className="intent-v1-buckets"><Bucket active={bucket === "forte"} label="🔥 Intenção forte" onClick={() => setBucket("forte")} count={strongPeople.length} /><Bucket active={bucket === "fraco"} label="Sinal fraco" onClick={() => setBucket("fraco")} count={weakPeople.length} /><Bucket active={bucket === "clientes"} label="Clientes" onClick={() => setBucket("clientes")} count={clientPeople.length} /><Bucket active={bucket === "todos"} label="Todas" onClick={() => setBucket("todos")} count={peopleWithSignals.length} /></div><section className="intent-v1-panel intent-v1-table-wrap"><PeopleTable commentsByPerson={commentsByPerson} onSelect={(person) => { setError(""); setNotice(""); setRevealRequest(null); setSelectedPerson(person) }} people={selectedPeople} />{selectedPeople.length === 0 && <Empty text="Nenhuma pessoa com sinal público foi encontrada neste filtro." />}</section><p className="intent-v1-table-help">Ordenado por prioridade. Selecione uma pessoa para ver a evidência completa, consultar contato ou marcar como cliente.</p></section>}
       {view === "contas" && <section className="intent-v1-content"><SectionHeading title="Contas" subtitle="Empresas associadas a pessoas e interações públicas já observadas." /><section className="intent-v1-panel intent-v1-table-wrap"><CompaniesTable companies={companies} />{companies.length === 0 && <Empty text="Nenhuma conta foi identificada ainda." />}</section></section>}
       {view === "watchlist" && <section className="intent-v1-content"><SectionHeading title="Watchlist" subtitle="Fontes públicas separadas por tipo, com origem e status de acompanhamento preservados." /><div className="intent-v1-watch-columns"><SourcePanel onStatusChange={changeSourceStatus} busyId={sourceBusy} title="Páginas" subtitle="Empresas e páginas públicas acompanhadas ou sugeridas." sources={watchPages} /><SourcePanel onStatusChange={changeSourceStatus} busyId={sourceBusy} title="Pessoas" subtitle="Perfis públicos acompanhados ou aguardando sua decisão." sources={watchPeople} /></div>{watchPages.length + watchPeople.length === 0 && <section className="intent-v1-panel"><Empty text="A Watchlist será preenchida conforme fontes públicas forem aprovadas." /></section>}</section>}
       {view === "icp" && <section className="intent-v1-content"><SectionHeading title="Perfil ideal" subtitle="A régua que define quem entra no radar e quais sinais merecem prioridade." /><section className="intent-v1-panel intent-v1-icp"><div><IcpStatus icp={workspace?.latestIcp} /><h3>{workspace?.latestIcp?.companySummary ?? "Seu ICP será criado a partir do site da sua empresa."}</h3><p>{workspace?.latestIcp?.status === "ativo" ? "Este perfil está ativo e orienta toda a operação." : "Revise os critérios antes de iniciar o radar."}</p></div><Button onClick={() => { window.history.pushState({}, "", "/icp"); window.dispatchEvent(new PopStateEvent("popstate")) }}>{workspace?.latestIcp ? "Editar ICP" : "Criar ICP"}</Button></section></section>}
       {view === "sim" && <ClassificationTester input={previewInput} busy={previewBusy} result={previewResult} onChange={(field, value) => setPreviewInput((current) => ({ ...current, [field]: value }))} onSubmit={submitPreview} />}
-      {selectedPerson && <PersonDrawer comments={comments} markingClient={markingClient} sendingToCrm={sendingToCrm} onClose={() => setSelectedPerson(null)} onMarkClient={() => void confirmClient(selectedPerson)} onReveal={(type) => setRevealRequest({ person: selectedPerson, type })} onSendToCrm={() => void sendSelectedPersonToCrm(selectedPerson)} person={selectedPerson} />}
+      {selectedPerson && <PersonDrawer comments={comments} error={error} markingClient={markingClient} notice={notice} onCancelReveal={() => setRevealRequest(null)} onClose={() => { setRevealRequest(null); setSelectedPerson(null) }} onConfirmReveal={() => void confirmContactReveal()} onMarkClient={() => void confirmClient(selectedPerson)} onReveal={(type) => { setError(""); setNotice(""); setRevealRequest({ person: selectedPerson, type }) }} onSendToCrm={() => void sendSelectedPersonToCrm(selectedPerson)} person={selectedPerson} revealing={revealing} revealRequest={revealRequest?.person.id === selectedPerson.id ? revealRequest.type : null} revealedContacts={revealedContacts[selectedPerson.id]} sendingToCrm={sendingToCrm} />}
     </main>
   </div>
 }
@@ -161,14 +179,14 @@ function ClassificationTester({ input, busy, result, onChange, onSubmit }: { inp
   return <section className="intent-v1-content"><SectionHeading title="Testar classificação" subtitle="Cole uma evidência pública e veja como o perfil ideal ativo interpreta o sinal. O teste não salva uma pessoa nem publica um sinal." /><form className="intent-v1-panel intent-v1-classifier" onSubmit={onSubmit}><div className="intent-v1-form-grid"><label>Nome da pessoa<input value={input.personName} onChange={(event) => onChange("personName", event.target.value)} placeholder="Opcional" /></label><label>Cargo<input value={input.role} onChange={(event) => onChange("role", event.target.value)} placeholder="Ex.: CTO" /></label><label>Empresa e porte<input value={input.company} onChange={(event) => onChange("company", event.target.value)} placeholder="Ex.: Empresa · 1000+" /></label></div><label>Evidência pública<textarea required value={input.evidence} onChange={(event) => onChange("evidence", event.target.value)} placeholder="Cole aqui o comentário ou atividade pública que deseja avaliar." /></label><div className="intent-v1-classifier-actions"><small>A avaliação segue a mesma régua do seu perfil ideal ativo.</small><Button disabled={busy || !input.evidence.trim()} type="submit">{busy ? <><LoaderCircle className="intent-spin" size={15} />Avaliando…</> : <><FlaskConical size={15} />Classificar evidência</>}</Button></div></form>{result && <section className="intent-v1-panel intent-v1-verdict" aria-live="polite"><div className="intent-v1-verdict-heading"><div><span className={`intent-v1-verdict-status is-${result.status}`}>{statusLabel[result.status]}</span><h3>{result.judgment.score}% de intenção</h3></div><span><CheckCircle2 size={18} />Avaliação concluída</span></div><div className="intent-v1-verdict-grid"><div><strong>Regra identificada</strong><span>{result.judgment.rule === "nenhuma" ? "Nenhuma regra ativa" : result.judgment.rule}</span></div><div><strong>Evidência literal</strong><span>Trecho preservado abaixo</span></div></div><blockquote>{result.judgment.evidence}</blockquote><small>Esta prévia não foi salva. O sinal só entra no radar quando vier de uma coleta pública aprovada.</small></section>}</section>
 }
 function Bucket({ active, label, count, onClick }: { active: boolean; label: string; count: number; onClick: () => void }) { return <button className={active ? "is-active" : ""} onClick={onClick} type="button">{label}<small>{count}</small></button> }
-function SectionHeading({ title, subtitle }: { title: string; subtitle: string }) { return <div className="intent-v1-section-heading"><h2>{title}</h2><p>{subtitle}</p></div> }
+function SectionHeading({ title, subtitle, action }: { title: string; subtitle: string; action?: ReactNode }) { return <div className="intent-v1-section-heading"><div><h2>{title}</h2><p>{subtitle}</p></div>{action}</div> }
 function Empty({ text }: { text: string }) { return <div className="intent-v1-empty"><LayoutList size={20} /><p>{text}</p></div> }
 function PersonRow({ person, evidence }: { person: SignalPerson; evidence?: SignalComment }) { return <article className="intent-v1-row"><span className="intent-v1-avatar">{initials(person.name)}</span><div><strong>{person.name}</strong><p>{personSubline(person)}</p>{evidence && <q>{evidence.text}</q>}</div><aside><b>{person.priorityScore ?? person.intentScore ?? person.comments}</b><small>{person.priorityLabel ?? (person.intentScore === null ? "sinais" : "prioridade")}</small></aside></article> }
 function CompanyRow({ company }: { company: SignalCompany }) { return <article className="intent-v1-row"><span className="intent-v1-avatar is-company"><Building2 size={17} /></span><div><strong>{company.name}</strong><p>{[company.sector, company.size].filter(Boolean).join(" · ") || "Conta identificada"}</p></div><aside><b>{company.people}</b><small>{company.people === 1 ? "pessoa" : "pessoas"}</small></aside></article> }
 function SourceRow({ source, busyId = null, onStatusChange }: { source: SignalSource; busyId?: string | null; onStatusChange?: (source: SignalSource, status: "monitorada" | "descartada") => void }) { const pending = source.status === "candidata"; return <article className="intent-v1-source"><div><strong>{source.name ?? "Fonte pública"}</strong><p>{source.posts} posts · {source.comments} interações públicas</p></div><div className="intent-v1-source-actions">{pending && onStatusChange ? <><span>Sugestão</span><Button disabled={busyId === source.id} onClick={() => onStatusChange(source, "monitorada")} size="sm">{busyId === source.id ? <><LoaderCircle className="intent-spin" size={13} />Aprovando…</> : "Aprovar"}</Button><Button disabled={busyId === source.id} onClick={() => onStatusChange(source, "descartada")} size="sm" variant="outline">Descartar</Button></> : <span className={source.status === "monitorada" ? "is-active" : ""}>{source.status === "monitorada" ? "Acompanhando" : "Sugestão"}</span>}</div></article> }
 function SourcePanel({ title, subtitle, sources, busyId, onStatusChange }: { title: string; subtitle: string; sources: SignalSource[]; busyId: string | null; onStatusChange: (source: SignalSource, status: "monitorada" | "descartada") => void }) { return <section className="intent-v1-panel"><header><div><h3>{title}</h3><p>{subtitle}</p></div><span className="intent-v1-count">{sources.length}</span></header>{sources.map((source) => <SourceRow busyId={busyId} key={source.id} onStatusChange={onStatusChange} source={source} />)}{sources.length === 0 && <Empty text="Nenhuma fonte deste tipo foi aprovada ainda." />}</section> }
 function statusLabel(status: string | null) {
-  if (status === "lead") return "Intenção forte"
+  if (status === "lead") return "Lead"
   if (status === "sinal_fraco") return "Sinal fraco"
   if (status === "cliente") return "Cliente"
   if (status === "fora_icp") return "Fora do ICP"
@@ -177,30 +195,47 @@ function statusLabel(status: string | null) {
 
 function signalLabel(type: string | undefined) {
   return {
-    comentou_tema: "Comentou sobre o tema",
-    pediu_indicacao: "Pediu indicação",
-    mudou_cargo: "Mudou de cargo",
-    engajou_concorrente: "Engajou com concorrente",
-    engajou_influenciador: "Engajou com influenciador",
-    compartilhou_tema: "Compartilhou o tema",
-    atividade_fraca: "Atividade pública",
-  }[type ?? ""] ?? "Sinal público"
+    comentou_tema: "💬 Comentou em post sobre tema do ICP",
+    pediu_indicacao: "🙋 Pediu indicação de fornecedor",
+    mudou_cargo: "🔄 Mudou de cargo",
+    engajou_concorrente: "🥊 Engajou com concorrente da watchlist",
+    engajou_influenciador: "👁️ Engajou com perfil da watchlist",
+    compartilhou_tema: "🔁 Compartilhou conteúdo sobre tema do ICP",
+    atividade_fraca: "👀 Reagiu a posts sobre temas do ICP",
+  }[type ?? ""] ?? "👀 Sinal público capturado"
 }
 
-function PeopleTable({ people, commentsByPerson, onReveal, onSelect, revealedContacts }: { people: SignalPerson[]; commentsByPerson: Map<string, SignalComment>; onReveal: (person: SignalPerson, type: RevealContactType) => void; onSelect: (person: SignalPerson) => void; revealedContacts: Record<string, Partial<Record<RevealContactType, string>>> }) {
-  return <table className="intent-v1-table"><thead><tr><th>Pessoa</th><th>Status</th><th>Intenção</th><th>Sinal · evidência</th><th>Contato</th></tr></thead><tbody>{people.map((person) => {
+function statusClass(status: string | null) {
+  if (status === "lead") return "is-lead"
+  if (status === "sinal_fraco") return "is-weak"
+  if (status === "cliente") return "is-client"
+  if (status === "fora_icp") return "is-out"
+  return ""
+}
+
+function PeopleTable({ people, commentsByPerson, onSelect }: { people: SignalPerson[]; commentsByPerson: Map<string, SignalComment>; onSelect: (person: SignalPerson) => void }) {
+  function openFromKeyboard(event: KeyboardEvent<HTMLTableRowElement>, person: SignalPerson) {
+    if (event.key !== "Enter" && event.key !== " ") return
+    event.preventDefault()
+    onSelect(person)
+  }
+
+  return <table className="intent-v1-table intent-v1-people-table"><thead><tr><th>Pessoa</th><th>Status</th><th>Intenção</th><th>Sinal · evidência</th></tr></thead><tbody>{people.map((person) => {
     const evidence = commentsByPerson.get(person.id)
-    const contacts = revealedContacts[person.id]
-    const signalCount = person.signalCount ?? person.comments
     const displayScore = person.intentScore ?? person.priorityScore
-    return <tr key={person.id}><td><div className="intent-v1-person-cell"><span className="intent-v1-avatar">{initials(person.name)}</span><div><strong>{person.name}</strong><small>{personSubline(person)}</small><button className="intent-v1-detail-link" onClick={() => onSelect(person)} type="button">Ver detalhes</button></div></div></td><td><span className="intent-v1-person-status">{statusLabel(person.intentStatus)}</span></td><td><span className={`intent-v1-intent ${person.intentStatus === "lead" || person.intentStatus === "cliente" || (person.intentScore ?? 0) >= 80 ? "is-strong" : ""}`}>{displayScore ?? "—"}{displayScore !== null && displayScore !== undefined && "%"}</span><small>{signalCount} {signalCount === 1 ? "sinal" : "sinais"}</small></td><td>{evidence ? <><span className="intent-v1-signal-pill">{signalLabel(evidence.signalType ?? evidence.tone ?? undefined)}</span><q>{evidence.text}</q><small>{dateLabel(evidence.publishedAt)}</small></> : <small>Sem evidência textual disponível</small>}</td><td><div className="intent-v1-contact-actions">{contacts?.email ? <span>{contacts.email}</span> : <button aria-label="Consultar e-mail" onClick={() => onReveal(person, "email")} type="button"><Mail size={13} />E-mail</button>}{contacts?.telefone ? <span>{contacts.telefone}</span> : <button aria-label="Consultar telefone" onClick={() => onReveal(person, "telefone")} type="button"><Phone size={13} />Telefone</button>}</div></td></tr>
+    return <tr aria-label={`Abrir detalhes de ${person.name}`} className="intent-v1-person-row" key={person.id} onClick={() => onSelect(person)} onKeyDown={(event) => openFromKeyboard(event, person)} tabIndex={0}><td><div className="intent-v1-person-cell"><span className="intent-v1-avatar">{initials(person.name)}</span><div><strong>{person.name}</strong><small>{personDrawerSubline(person)}</small></div></div></td><td><span className={`intent-v1-person-status ${statusClass(person.intentStatus)}`}>{statusLabel(person.intentStatus)}</span></td><td><span className={`intent-v1-intent ${person.intentStatus === "lead" ? "is-strong" : ""}`}>⚡ {displayScore ?? "—"}</span></td><td>{evidence ? <><span className="intent-v1-signal-pill">{signalLabel(evidence.signalType ?? evidence.tone ?? undefined)}</span><q>{evidence.text}</q></> : <small>Sem evidência textual disponível</small>}</td></tr>
   })}</tbody></table>
 }
 
-function PersonDrawer({ person, comments, markingClient, sendingToCrm, onClose, onMarkClient, onReveal, onSendToCrm }: { person: SignalPerson; comments: SignalComment[]; markingClient: boolean; sendingToCrm: boolean; onClose: () => void; onMarkClient: () => void; onReveal: (type: RevealContactType) => void; onSendToCrm: () => void }) {
+function PersonDrawer({ person, comments, error, notice, markingClient, sendingToCrm, revealing, revealRequest, revealedContacts, onCancelReveal, onClose, onConfirmReveal, onMarkClient, onReveal, onSendToCrm }: { person: SignalPerson; comments: SignalComment[]; error: string; notice: string; markingClient: boolean; sendingToCrm: boolean; revealing: boolean; revealRequest: RevealContactType | null; revealedContacts?: Partial<Record<RevealContactType, string>>; onCancelReveal: () => void; onClose: () => void; onConfirmReveal: () => void; onMarkClient: () => void; onReveal: (type: RevealContactType) => void; onSendToCrm: () => void }) {
   const evidence = comments.filter((comment) => comment.personId === person.id).sort((a, b) => new Date(b.publishedAt ?? 0).getTime() - new Date(a.publishedAt ?? 0).getTime())[0]
-  const fitReason = person.icpReason ?? (person.icp === false ? "Este perfil não confirmou aderência ao perfil ideal." : "Este perfil passou pela régua do perfil ideal ativo.")
-  const ruleLabel = evidence?.rule && evidence.rule !== "nenhuma" ? ` · Regra: ${evidence.rule}` : " · Regra não registrada neste sinal"
-  return <div className="intent-v1-drawer-layer" role="presentation"><button aria-label="Fechar detalhes" className="intent-v1-drawer-backdrop" onClick={onClose} type="button" /><aside aria-label={`Detalhes de ${person.name}`} className="intent-v1-drawer"><header><div><span className="intent-v1-avatar">{initials(person.name)}</span><div><h2>{person.name}</h2><p>{personSubline(person)}</p></div></div><button aria-label="Fechar detalhes" className="intent-v1-drawer-close" onClick={onClose} type="button">×</button></header><div className="intent-v1-drawer-body"><div className="intent-v1-drawer-score"><span>Intenção observada</span><strong>{person.intentScore ?? person.priorityScore ?? 0}%</strong><small>{statusLabel(person.intentStatus)}</small></div><section><h3>Por que é ICP</h3><p>{fitReason}</p></section><section><h3>Sinal capturado</h3>{evidence ? <><span className="intent-v1-signal-pill">{signalLabel(evidence.signalType ?? evidence.tone ?? undefined)}</span><blockquote>{evidence.text}</blockquote><small>{dateLabel(evidence.publishedAt)}{ruleLabel}</small></> : <p>Nenhuma evidência textual foi registrada para este perfil.</p>}</section><section><h3>Próximas ações</h3><div className="intent-v1-drawer-actions">{person.linkedinUrl && <a href={person.linkedinUrl} rel="noreferrer" target="_blank">Abrir perfil público</a>}{person.emailAvailable ? <button onClick={() => onReveal("email")} type="button"><Mail size={14} />Consultar e-mail</button> : null}{person.phoneAvailable ? <button onClick={() => onReveal("telefone")} type="button"><Phone size={14} />Consultar telefone</button> : null}<Button disabled={sendingToCrm} onClick={onSendToCrm} size="sm" variant="outline">{sendingToCrm ? <><LoaderCircle className="intent-spin" size={14} />Enviando…</> : "Enviar ao CRM"}</Button>{person.intentStatus !== "cliente" && <Button disabled={markingClient} onClick={onMarkClient} size="sm">{markingClient ? <><LoaderCircle className="intent-spin" size={14} />Salvando…</> : "Marcar como cliente"}</Button>}</div></section></div></aside></div>
+  const fitDetails = [person.role && `cargo (${person.role})`, person.companySector && `setor (${person.companySector})`, person.companySize && `porte (${person.companySize})`].filter(Boolean).join(", ")
+  const fitReason = person.icpReason ?? (person.icp === false ? "Este perfil não confirmou aderência ao perfil ideal ativo." : `Este perfil passou pela régua do perfil ideal ativo${fitDetails ? `. Dados públicos considerados: ${fitDetails}` : ""}.`)
+  const ruleLabel = evidence?.rule && evidence.rule !== "nenhuma" ? evidence.rule : "Nenhuma regra específica foi registrada neste sinal"
+  const score = person.intentScore ?? person.priorityScore ?? 0
+  const strength = person.intentStatus === "lead" || score >= 80 ? "forte" : "fraca"
+  const revealLabel = revealRequest === "email" ? "e-mail" : "telefone"
+  const revealCredits = revealRequest === "email" ? 1 : 10
+  return <div className="intent-v1-drawer-layer" role="presentation"><button aria-label="Fechar detalhes" className="intent-v1-drawer-backdrop" onClick={onClose} type="button" /><aside aria-label={`Detalhes de ${person.name}`} aria-modal="true" className="intent-v1-drawer" role="dialog"><header><div><div className="intent-v1-drawer-name"><h2>{person.name}</h2><span className={`intent-v1-person-status ${statusClass(person.intentStatus)}`}>{statusLabel(person.intentStatus)}</span></div><p>{personDrawerSubline(person)}</p></div><button aria-label="Fechar detalhes" className="intent-v1-drawer-close" onClick={onClose} type="button">×</button></header><div className="intent-v1-drawer-body">{error && <div className="intent-v1-error" role="alert"><CircleAlert size={16} />{error}</div>}{notice && <div className="intent-v1-notice" role="status"><CheckCircle2 size={16} />{notice}</div>}<div className="intent-v1-drawer-score"><span>Intenção · {strength}</span><strong>⚡ {score}</strong></div><p className="intent-v1-drawer-explainer">Todo mundo aqui já passou pelo filtro do seu ICP. <strong>Sinal</strong> é o que aconteceu, <strong>evidência</strong> é a prova literal e <strong>intenção</strong> é a nota dada ao conjunto, usando suas dores e gatilhos como régua.</p><section className="intent-v1-drawer-block"><h3>Por que {person.icp === false ? "está fora do ICP" : "é ICP"}</h3><p>{fitReason}</p></section><section className="intent-v1-drawer-block"><h3>Sinal capturado</h3>{evidence ? <><span className="intent-v1-signal-pill">{signalLabel(evidence.signalType ?? evidence.tone ?? undefined)}</span><blockquote>{evidence.text}</blockquote><p>Por que essa nota de intenção, <strong>{ruleLabel}</strong></p></> : <p>Nenhuma evidência textual foi registrada para este perfil.</p>}</section><section className="intent-v1-drawer-block"><h3>Contato</h3>{revealRequest && <div className="intent-v1-drawer-confirm" aria-live="polite"><strong>Revelar {revealLabel} de {person.name}?</strong><p>A consulta usa {revealCredits} crédito{revealCredits === 1 ? "" : "s"} somente se um contato for disponibilizado.</p><div><Button disabled={revealing} onClick={onCancelReveal} size="sm" variant="outline">Cancelar</Button><Button disabled={revealing} onClick={onConfirmReveal} size="sm">{revealing ? <><LoaderCircle className="intent-spin" size={14} />Consultando…</> : "Confirmar consulta"}</Button></div></div>}<div className="intent-v1-drawer-actions intent-v1-contact-reveal">{revealedContacts?.email ? <span className="intent-v1-revealed-contact">{revealedContacts.email} ✓</span> : <button onClick={() => onReveal("email")} type="button"><Mail size={14} />Revelar e-mail · 1 crédito</button>}{revealedContacts?.telefone ? <span className="intent-v1-revealed-contact">{revealedContacts.telefone} ✓</span> : <button onClick={() => onReveal("telefone")} type="button"><Phone size={14} />Revelar telefone · 10 créditos</button>}</div><div className="intent-v1-drawer-actions intent-v1-primary-actions">{person.linkedinUrl && <a className="is-primary" href={person.linkedinUrl} rel="noreferrer" target="_blank">Abrir no LinkedIn</a>}<Button disabled={sendingToCrm} onClick={onSendToCrm} size="sm" variant="outline">{sendingToCrm ? <><LoaderCircle className="intent-spin" size={14} />Enviando…</> : "Enviar pro CRM"}</Button>{person.intentStatus !== "cliente" && <Button disabled={markingClient} onClick={onMarkClient} size="sm" variant="outline">{markingClient ? <><LoaderCircle className="intent-spin" size={14} />Salvando…</> : "Marcar como cliente"}</Button>}</div><small>Cliente marcado sai da fila de abordagem e entra na exclusão automática.</small></section></div></aside></div>
 }
 function CompaniesTable({ companies }: { companies: SignalCompany[] }) { return <table className="intent-v1-table"><thead><tr><th>Empresa</th><th>Pessoas</th><th>Sinais</th><th>Nível</th></tr></thead><tbody>{companies.map((company) => <tr key={company.id}><td><div className="intent-v1-person-cell"><span className="intent-v1-avatar is-company"><Building2 size={16} /></span><div><strong>{company.name}</strong><small>{[company.sector, company.size].filter(Boolean).join(" · ") || "Conta identificada"}</small></div></div></td><td>{company.people}</td><td>{company.comments}</td><td><span className={`intent-v1-level ${company.level === "em_movimento" ? "is-moving" : ""}`}>{company.level === "em_movimento" ? "Em movimento" : company.level === "aquecendo" ? "Aquecendo" : "Fria"}</span></td></tr>)}</tbody></table> }

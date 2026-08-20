@@ -124,6 +124,8 @@ export type SignalPerson = {
   icp: boolean | null
   icpReason: string | null
   companyName: string | null
+  companySector: string | null
+  companySize: string | null
   comments: number
   signalCount: number
   signalTypes: string[]
@@ -383,7 +385,7 @@ export async function loadSignalCompanies(projectId: string): Promise<SignalComp
 
 export async function loadSignalPeople(projectId: string): Promise<SignalPerson[]> {
   const [{ data: people, error: peopleError }, { data: signals, error: signalsError }] = await Promise.all([
-    supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, email_disponivel, telefone_disponivel, intencao, status, ultimo_sinal_em, criado_em, empresa:empresas(nome)").eq("projeto_id", projectId).order("nome"),
+    supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, email_disponivel, telefone_disponivel, intencao, status, ultimo_sinal_em, criado_em, empresa:empresas(nome, setor, porte)").eq("projeto_id", projectId).order("nome"),
     supabase.from("sinais").select("pessoa_id, tipo, nota, ocorrido_em").eq("projeto_id", projectId),
   ])
   if (peopleError || signalsError) throw new Error(peopleError?.message ?? signalsError?.message ?? "Não foi possível carregar pessoas.")
@@ -398,7 +400,7 @@ export async function loadSignalPeople(projectId: string): Promise<SignalPerson[
     const personSignals = signalsByPerson.get(person.id) ?? []
     const priority = calculateSignalPriority({ currentIntent: person.intencao, status: person.status, signals: personSignals })
     const comments = personSignals.filter((signal) => signal.type === "comentou_tema").length
-    return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, comments, signalCount: priority.signalCount, signalTypes: priority.signalTypes, priorityScore: priority.score, priorityBucket: priority.bucket, priorityLabel: priority.label, emailAvailable: person.email_disponivel, phoneAvailable: person.telefone_disponivel, intentScore: person.intencao, intentStatus: person.status, lastSignalAt: person.ultimo_sinal_em, createdAt: person.criado_em }
+    return { id: person.id, name: person.nome, headline: person.headline, role: person.cargo, linkedinUrl: person.linkedin_url, seniority: person.senioridade, icp: person.icp, icpReason: person.icp_motivo, companyName: company?.nome ?? null, companySector: company?.setor ?? null, companySize: company?.porte ?? null, comments, signalCount: priority.signalCount, signalTypes: priority.signalTypes, priorityScore: priority.score, priorityBucket: priority.bucket, priorityLabel: priority.label, emailAvailable: person.email_disponivel, phoneAvailable: person.telefone_disponivel, intentScore: person.intencao, intentStatus: person.status, lastSignalAt: person.ultimo_sinal_em, createdAt: person.criado_em }
   })
 }
 
