@@ -2,6 +2,12 @@
 @media(max-width:980px){.intent-v1-kpis{grid-template-columns:repeat(2,1fr)}.intent-v1-grid,.intent-v1-watch-columns{grid-template-columns:1fr}}
 @media(max-width:720px){.intent-v1-sidebar{position:sticky;top:0;inset:auto;z-index:40;width:100%;min-height:0;overflow-x:auto;overflow-y:hidden;display:flex;flex-direction:row;align-items:center;padding:8px 10px;gap:8px}.intent-v1-brand{height:34px;flex:none;padding:0}.intent-v1-brand>span{width:25px;height:25px}.intent-v1-brand{font-size:0}.intent-v1-company,.intent-v1-sidebar>p,.intent-v1-sidebar footer{display:none}.intent-v1-sidebar nav{display:flex;grid-template-columns:none;gap:3px;flex:none}.intent-v1-sidebar nav button{width:36px;min-height:34px;justify-content:center;padding:0}.intent-v1-sidebar nav button span,.intent-v1-sidebar nav button small{display:none}.intent-v1-main{margin-left:0;padding:20px 16px 56px}.intent-v1-header>div:last-child{margin-left:0}.intent-v1-email{display:none}.intent-v1-intro,.intent-v1-section-heading,.intent-v1-callout,.intent-v1-icp{flex-direction:column}.intent-v1-kpis{grid-template-columns:1fr 1fr}.intent-v1-kpis article{padding:13px}.intent-v1-header h1{font-size:20px}}
 
+.intent-v1-section-heading h1 {
+  margin: 0;
+  font-size: 21px;
+  letter-spacing: -.02em;
+}
+
 /* Mantém a composição do protótipo em qualquer altura de rolagem. */
 .intent-v1-sidebar {
   position: fixed !important;
