@@ -9,7 +9,6 @@ import { activateIcp, generateIcp, loadOnboardingExecution, loadOnboardingWorksp
 import { IcpEditor } from "./components/IcpEditor"
 import { OnboardingProgress } from "./components/OnboardingProgress"
 import { OnboardingStart } from "./components/OnboardingStart"
-import { IntentWorkspaceShell } from "./components/IntentWorkspaceShell"
 import "./onboarding.css"
 
 type Session = { email: string; userId: string }
@@ -87,6 +86,6 @@ export function OnboardingFlow({ session }: { session: Session }) {
   return <div className="intent-onboarding-shell">
     {!editorVisible && <header className="intent-lite-topbar"><a className="intent-brand" href="/overview"><span>In</span>Intent</a><div><span>{session.email}</span><Button onClick={() => void authService.signOut()} size="sm" variant="ghost"><LogOut size={14} />Sair</Button></div></header>}
     {error && !isRunning && <div className="intent-global-error" role="alert">{error}</div>}
-    {editorVisible && workspace?.latestIcp ? <IntentWorkspaceShell active={workspace.latestIcp.status === "ativo"} project={workspace.project} version={workspace.latestIcp.version}>{body}</IntentWorkspaceShell> : body}
+    {body}
   </div>
 }
