@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
-import { LoaderCircle, LogOut } from "lucide-react"
+import { LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 import { authService } from "@/features/auth/services/auth-service"
 import { productErrorMessage } from "@/lib/product-messages"
 import type { IcpRecord, OnboardingExecution, OnboardingWorkspace } from "./domain/onboarding"
@@ -75,7 +76,7 @@ export function OnboardingFlow({ session }: { session: Session }) {
   const activate = async (icp: IcpRecord) => { setBusy("activating"); try { await activateIcp(icp.id); await refresh(); window.history.pushState({}, "", "/icp") } finally { setBusy(null) } }
   const regenerate = async () => { if (workspace?.project.siteUrl) await start(workspace.project.siteUrl, true) }
 
-  if (!workspace && !error) return <div className="intent-fullscreen-loading"><LoaderCircle className="intent-spin" size={22} /><span>Preparando sua experiência…</span></div>
+  if (!workspace && !error) return <div aria-live="polite" className="intent-fullscreen-loading"><Spinner label="Preparando sua experiência" /><span>Preparando sua experiência…</span></div>
 
   const editorVisible = Boolean(workspace?.latestIcp && !isRunning)
   const body = workspace && isRunning ? <OnboardingProgress domain={workspace.project.domain ?? new URL(workspace.project.siteUrl ?? "https://intent.local").hostname} execution={execution} />

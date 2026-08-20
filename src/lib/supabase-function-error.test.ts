@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest"
 import { functionErrorMessage } from "./supabase-function-error"
 
 describe("functionErrorMessage", () => {
-  it("keeps the transport message when context is not a Response", async () => {
-    await expect(functionErrorMessage({ message: "Falha na função", context: { status: 502 } }, "Fallback")).resolves.toBe("Falha na função")
+  it("does not expose a technical transport message when context is not a Response", async () => {
+    await expect(functionErrorMessage({ message: "Falha na função", context: { status: 502 } }, "Não conseguimos concluir esta ação.")).resolves.toBe("Não conseguimos concluir esta ação.")
   })
 
   it("prefers the explicit error returned by an Edge Function", async () => {

@@ -1,7 +1,8 @@
-import { Check, LoaderCircle, RefreshCw, Save, Sparkles } from "lucide-react"
+import { Check, RefreshCw, Save, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
 import { onboardingNotice, productErrorMessage } from "@/lib/product-messages"
 import type { IcpRecord } from "../domain/onboarding"
 import { EditableList } from "./EditableList"
@@ -60,7 +61,7 @@ export function IcpEditor({ initialIcp, warning, busy, onSave, onActivate, onReg
 
       <section className={`intent-activation-banner ${icp.status === "ativo" ? "is-active" : ""}`}>
         <div><Sparkles size={18} /><p><strong>{icp.status === "ativo" ? `Versão ${icp.version} ativa.` : `Versão ${icp.version} pronta para revisão.`}</strong> {icp.status === "ativo" ? "O Intent já usa estas definições para priorizar pessoas e empresas." : "Revise as informações abaixo e ative quando estiver seguro de que elas representam seu melhor cliente."}</p></div>
-        {editable && <Button disabled={Boolean(busy)} onClick={activate}>{busy === "activating" ? <LoaderCircle className="intent-spin" size={15} /> : <Check size={15} />}Ativar perfil ideal</Button>}
+        {editable && <Button disabled={Boolean(busy)} onClick={activate}>{busy === "activating" ? <Spinner label="Ativando o perfil ideal" /> : <Check size={15} />}{busy === "activating" ? "Ativando…" : "Ativar perfil ideal"}</Button>}
       </section>
       {reviewNotice && <p className="intent-warning"><strong>Vale revisar:</strong> {reviewNotice}</p>}
       {message && <p aria-live="polite" className={`intent-editor-message ${/não|inválid|erro/i.test(message) ? "is-error" : ""}`}>{message}</p>}
@@ -102,7 +103,7 @@ export function IcpEditor({ initialIcp, warning, busy, onSave, onActivate, onReg
         <div className="intent-card"><div className="intent-field-heading"><strong>Critérios de prioridade</strong><span>{icp.buyingSignals.regras.length}</span></div><p className="intent-helper">Definem quais sinais merecem atenção primeiro.</p><div className="intent-rule-list">{icp.buyingSignals.regras.map((rule, index) => <div className="intent-rule-row" key={`${rule.nome}-${index}`}><div><Input aria-label={`Nome da regra ${index + 1}`} disabled={!editable} value={rule.nome} onChange={(event) => change((next) => { next.buyingSignals.regras[index].nome = event.target.value })} /><select aria-label={`Prioridade da regra ${index + 1}`} disabled={!editable} value={rule.prioridade} onChange={(event) => change((next) => { next.buyingSignals.regras[index].prioridade = event.target.value as "High" | "Medium" })}><option value="High">Alta</option><option value="Medium">Média</option></select></div><Input aria-label={`Descrição da regra ${index + 1}`} disabled={!editable} value={rule.descricao} onChange={(event) => change((next) => { next.buyingSignals.regras[index].descricao = event.target.value })} /></div>)}</div></div>
       </section>
 
-      {editable && <div className="intent-save-bar"><div><strong>{dirty ? "Você tem alterações para salvar" : "Todas as alterações estão salvas"}</strong><span>Estas definições começam a orientar as prioridades depois da ativação.</span></div><Button disabled={!dirty || Boolean(busy)} onClick={save} variant="outline">{busy === "saving" ? <LoaderCircle className="intent-spin" size={15} /> : <Save size={15} />}Salvar alterações</Button></div>}
+      {editable && <div className="intent-save-bar"><div><strong>{dirty ? "Você tem alterações para salvar" : "Todas as alterações estão salvas"}</strong><span>Estas definições começam a orientar as prioridades depois da ativação.</span></div><Button disabled={!dirty || Boolean(busy)} onClick={save} variant="outline">{busy === "saving" ? <Spinner label="Salvando alterações" /> : <Save size={15} />}{busy === "saving" ? "Salvando…" : "Salvar alterações"}</Button></div>}
     </div>
   </main>
 }

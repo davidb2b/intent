@@ -1,4 +1,5 @@
-import { Check, LoaderCircle, TriangleAlert } from "lucide-react"
+import { Check, TriangleAlert } from "lucide-react"
+import { Spinner } from "@/components/ui/spinner"
 import { ONBOARDING_STAGES, stagePosition, type OnboardingExecution } from "../domain/onboarding"
 import { productErrorMessage, productStatusMessage } from "@/lib/product-messages"
 
@@ -23,7 +24,7 @@ export function OnboardingProgress({ domain, execution }: { domain: string; exec
           return <article className={`intent-stage ${done ? "is-done" : ""} ${active ? "is-active" : ""}`} key={stage.id}>
             <div className="intent-stage-icon">{icons[index]}</div>
             <div><h2>{stage.title}</h2><p>{stage.description}</p>{active && <small>{productStatusMessage(execution?.message, "Esta etapa está em andamento.")}</small>}</div>
-            <div className="intent-stage-status">{done ? <Check size={16} /> : active ? <LoaderCircle className="intent-spin" size={17} /> : <span>{index + 1}</span>}</div>
+            <div className="intent-stage-status">{done ? <Check size={16} /> : active ? <Spinner label={`${stage.title} em andamento`} /> : <span>{index + 1}</span>}</div>
           </article>
         })}
       </div>

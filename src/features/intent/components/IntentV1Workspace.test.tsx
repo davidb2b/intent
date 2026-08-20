@@ -24,7 +24,7 @@ vi.mock("@/features/analytics/services/load-signals", () => ({
   }),
   loadSignalPeople: vi.fn().mockResolvedValue([{ id: "person-1", name: "Mariana Silva", role: "CTO", headline: null, companyName: "Acme cliente", companySector: "Tecnologia", companySize: "201-500", linkedinUrl: "https://www.linkedin.com/in/mariana", seniority: "diretoria", icp: true, icpReason: "Cargo, setor e porte correspondem ao perfil ideal ativo.", comments: 2, signalCount: 2, signalTypes: ["comentou_tema"], priorityScore: 84, priorityBucket: "alta", priorityLabel: "Prioridade alta", emailAvailable: false, phoneAvailable: false, intentScore: 82, intentStatus: "lead", lastSignalAt: "2026-08-18", createdAt: "2026-08-18" }]),
   loadSignalCompanies: vi.fn().mockResolvedValue([{ id: "company-1", name: "Acme cliente", sector: "Tecnologia", size: "201-500", linkedinUrl: "https://www.linkedin.com/company/acme", people: 1, comments: 2, signalSummary: "CTO comentou sobre tema do ICP", level: "aquecendo" }]),
-  loadSignalSources: vi.fn().mockResolvedValue([{ id: "source-1", name: "Fonte aprovada", linkedinUrl: "https://www.linkedin.com/in/fonte", status: "candidata", posts: 4, comments: 2, reactions: 3, ratio: 1, people: 1, icp: 1, yield: 1, previewPost: null, kind: "pessoa" }]),
+  loadSignalSources: vi.fn().mockResolvedValue([{ id: "source-1", name: "Fonte aprovada", linkedinUrl: "https://www.linkedin.com/in/fonte", status: "candidata", posts: 1, comments: 1, reactions: 3, ratio: 1, people: 1, icp: 1, yield: 1, previewPost: null, kind: "pessoa" }]),
   loadIntentSignalEvidence: vi.fn().mockResolvedValue([{ id: "comment-1", personId: "person-1", text: "Quero entender melhor esta solução.", publishedAt: "2026-08-18", tone: "pergunta", personName: "Mariana Silva", personHeadline: "CTO", companyName: "Acme cliente", personUrl: "https://www.linkedin.com/in/mariana", postUrl: "https://www.linkedin.com/posts/mariana", confidence: 0.9, signalType: "comentou_tema", rule: "Busca ativa" }]),
 }))
 
@@ -88,7 +88,9 @@ describe("IntentV1Workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Watchlist/ }))
     expect(screen.getByRole("heading", { level: 1, name: "Watchlist" })).toBeInTheDocument()
+    expect(screen.getAllByRole("heading", { name: "Watchlist" })).toHaveLength(1)
     expect(screen.getByText("Fonte aprovada")).toBeInTheDocument()
+    expect(screen.getByText("1 post · 1 interação pública")).toBeInTheDocument()
   })
 
   it("asks for visible confirmation before consulting a contact", async () => {
@@ -147,10 +149,11 @@ describe("IntentV1Workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Testar classificação" }))
     expect(screen.getByRole("heading", { level: 1, name: "Testar classificação" })).toBeInTheDocument()
+    expect(screen.getAllByRole("heading", { name: "Testar classificação" })).toHaveLength(1)
     expect(screen.queryByRole("button", { name: /exemplo|amostra/i })).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText("Evidência pública"), { target: { value: "Quero avaliar uma solução para este problema." } })
-    fireEvent.click(screen.getByRole("button", { name: "Classificar evidência" }))
+    fireEvent.click(screen.getByRole("button", { name: "Avaliar sinal" }))
     expect(await screen.findByText("Avaliação concluída")).toBeInTheDocument()
     expect(screen.getByText("91% de intenção")).toBeInTheDocument()
   })
