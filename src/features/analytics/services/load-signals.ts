@@ -109,7 +109,7 @@ export type SignalPerson = {
   signalTypes: string[]
   priorityScore: number
   priorityBucket: "alta" | "acompanhar"
-  priorityLabel: "Prioridade alta" | "Em acompanhamento"
+  priorityLabel: "Prioridade alta" | "Em acompanhamento" | "Cliente"
   emailAvailable: boolean
   phoneAvailable: boolean
   intentScore: number | null

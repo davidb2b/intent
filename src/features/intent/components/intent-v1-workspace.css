@@ -26,3 +26,220 @@
     max-width: none;
   }
 }
+
+.intent-v1-source-actions { display: inline-flex; align-items: center; gap: 7px; flex: none; }
+.intent-v1-detail-link { display: inline-flex; margin-top: 5px; border: 0; padding: 0; background: transparent; color: var(--accent); font: 650 11px/1.2 inherit; cursor: pointer; }
+.intent-v1-detail-link:hover { text-decoration: underline; }
+.intent-v1-drawer-layer { position: fixed; inset: 0; z-index: 80; display: flex; justify-content: flex-end; }
+.intent-v1-drawer-backdrop { position: absolute; inset: 0; border: 0; background: rgb(24 24 27 / 42%); cursor: pointer; }
+.intent-v1-drawer { position: relative; width: min(440px, 100vw); height: 100%; overflow-y: auto; background: #fff; box-shadow: -16px 0 40px rgb(24 24 27 / 15%); }
+.intent-v1-drawer > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 20px; border-bottom: 1px solid var(--border); }
+.intent-v1-drawer > header > div { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.intent-v1-drawer h2 { overflow: hidden; margin: 0; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.intent-v1-drawer header p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.intent-v1-drawer-close { border: 0; background: transparent; color: var(--muted); font-size: 25px; line-height: 1; cursor: pointer; }
+.intent-v1-drawer-body { display: grid; gap: 20px; padding: 20px; }
+.intent-v1-drawer-score { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 4px 12px; padding: 14px; border-radius: 10px; background: var(--soft); }
+.intent-v1-drawer-score span, .intent-v1-drawer-score small { color: var(--muted); font-size: 11px; }
+.intent-v1-drawer-score strong { grid-row: span 2; color: var(--green); font-size: 26px; }
+.intent-v1-drawer-body section { display: grid; gap: 7px; }
+.intent-v1-drawer-body h3 { margin: 0; font-size: 13px; }
+.intent-v1-drawer-body p, .intent-v1-drawer-body small { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.intent-v1-drawer-body blockquote { margin: 0; padding: 11px 13px; border-left: 3px solid #a7f3d0; background: #f0fdf4; color: #3f3f46; font-size: 12.5px; line-height: 1.55; }
+.intent-v1-drawer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.intent-v1-drawer-actions a, .intent-v1-drawer-actions > button:not([data-slot="button"]) { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; background: #fff; color: var(--accent); font: 650 12px/1.2 inherit; text-decoration: none; cursor: pointer; }
+.intent-v1-drawer-actions a:hover, .intent-v1-drawer-actions > button:not([data-slot="button"]):hover { background: var(--soft); }
+
+/* Fase 4: comportamentos do protótipo com dados reais. */
+.intent-v1-classifier {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.intent-v1-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.intent-v1-classifier label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.intent-v1-classifier input,
+.intent-v1-classifier textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font: 400 13px/1.45 inherit;
+  outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.intent-v1-classifier input {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.intent-v1-classifier textarea {
+  min-height: 128px;
+  resize: vertical;
+  padding: 10px;
+}
+
+.intent-v1-classifier input::placeholder,
+.intent-v1-classifier textarea::placeholder {
+  color: #a1a1aa;
+}
+
+.intent-v1-classifier input:focus,
+.intent-v1-classifier textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px #e0e7ff;
+}
+
+.intent-v1-classifier-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.intent-v1-classifier-actions small,
+.intent-v1-verdict > small {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.intent-v1-verdict {
+  margin-top: 14px;
+  padding: 18px;
+}
+
+.intent-v1-verdict-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.intent-v1-verdict-heading h3 {
+  margin: 10px 0 0;
+  font-size: 22px;
+  letter-spacing: -.02em;
+}
+
+.intent-v1-verdict-heading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.intent-v1-verdict-status {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 4px 8px;
+  background: var(--soft);
+  color: #52525b;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.intent-v1-verdict-status.is-lead {
+  border-color: #bbf7d0;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.intent-v1-verdict-status.is-sinal_fraco,
+.intent-v1-verdict-status.is-revisar {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #a16207;
+}
+
+.intent-v1-verdict-status.is-fora_icp {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.intent-v1-verdict-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.intent-v1-verdict-grid div {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--soft);
+}
+
+.intent-v1-verdict-grid strong {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.intent-v1-verdict-grid span {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.intent-v1-verdict p {
+  margin: 0 0 10px;
+  color: #52525b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.intent-v1-verdict blockquote {
+  margin: 0 0 12px;
+  padding: 11px 13px;
+  border-left: 3px solid #a7f3d0;
+  background: #f0fdf4;
+  color: #3f3f46;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.intent-v1-table-wrap:has(.intent-v1-table) {
+  padding-bottom: 2px;
+}
+
+.intent-v1-table-wrap > .intent-v1-empty {
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .intent-v1-form-grid,
+  .intent-v1-verdict-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .intent-v1-classifier-actions,
+  .intent-v1-verdict-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

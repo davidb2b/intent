@@ -17,12 +17,30 @@ vi.mock("@/features/analytics/services/load-signals", () => ({
   loadSignalSummary: vi.fn().mockResolvedValue({ projectId: "project-1", monthlyCostUsd: 0.11 }),
   loadSignalPeople: vi.fn().mockResolvedValue([{ id: "person-1", name: "Mariana Silva", role: "CTO", headline: null, companyName: "Acme cliente", linkedinUrl: "https://www.linkedin.com/in/mariana", seniority: "diretoria", icp: true, icpReason: null, comments: 2, signalCount: 2, signalTypes: ["comentou_tema"], priorityScore: 84, priorityBucket: "alta", priorityLabel: "Prioridade alta", emailAvailable: false, phoneAvailable: false, intentScore: 82, intentStatus: "lead", lastSignalAt: "2026-08-18", createdAt: "2026-08-18" }]),
   loadSignalCompanies: vi.fn().mockResolvedValue([{ id: "company-1", name: "Acme cliente", sector: "Tecnologia", size: "201-500", linkedinUrl: "https://www.linkedin.com/company/acme", people: 1, comments: 2 }]),
-  loadSignalSources: vi.fn().mockResolvedValue([{ id: "source-1", name: "Fonte aprovada", linkedinUrl: "https://www.linkedin.com/in/fonte", status: "monitorada", posts: 4, comments: 2, reactions: 3, ratio: 1, people: 1, icp: 1, yield: 1, previewPost: null, kind: "pessoa" }]),
+  loadSignalSources: vi.fn().mockResolvedValue([{ id: "source-1", name: "Fonte aprovada", linkedinUrl: "https://www.linkedin.com/in/fonte", status: "candidata", posts: 4, comments: 2, reactions: 3, ratio: 1, people: 1, icp: 1, yield: 1, previewPost: null, kind: "pessoa" }]),
   loadSignalComments: vi.fn().mockResolvedValue([{ id: "comment-1", personId: "person-1", text: "Quero entender melhor esta solução.", publishedAt: "2026-08-18", tone: "pergunta", personName: "Mariana Silva", personHeadline: "CTO", companyName: "Acme cliente", personUrl: "https://www.linkedin.com/in/mariana", postUrl: "https://www.linkedin.com/posts/mariana", confidence: 0.9 }]),
 }))
 
 vi.mock("@/features/intent/services/reveal-contact", () => ({
   revealContact: vi.fn().mockResolvedValue({ status: "revealed", cached: false, type: "email", contact: "mariana@acme.com.br" }),
+}))
+
+vi.mock("@/features/classification/services/preview-signal", () => ({
+  previewSignal: vi.fn().mockResolvedValue({
+    status: "lead",
+    fit: { cargo: "confirmado", porte: "confirmado", resumo: "Cargo e porte informados correspondem ao perfil ideal ativo." },
+    judgment: { score: 91, rule: "Busca ativa", evidence: "Quero avaliar uma solução para este problema." },
+    costUsd: 0.01,
+    saved: false,
+  }),
+}))
+
+vi.mock("@/features/collection/services/update-source-status", () => ({
+  updateSourceStatus: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock("@/features/people/services/mark-person-client", () => ({
+  markPersonAsClient: vi.fn().mockResolvedValue(undefined),
 }))
 
 describe("IntentV1Workspace", () => {
@@ -60,5 +78,50 @@ describe("IntentV1Workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirmar consulta" }))
     expect(await screen.findByText("mariana@acme.com.br")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Consultar telefone" })).toBeInTheDocument()
+  })
+
+  it("opens the person evidence drawer and preserves a client decision", async () => {
+    render(<IntentV1Workspace session={{ email: "gabriel@acme.com.br", userId: "user-1" }} />)
+    await screen.findByRole("heading", { name: "Início" })
+
+    fireEvent.click(screen.getByRole("button", { name: /Pessoas/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Ver detalhes" }))
+    expect(screen.getByRole("complementary", { name: "Detalhes de Mariana Silva" })).toBeInTheDocument()
+    expect(screen.getAllByText("Quero entender melhor esta solução.").length).toBeGreaterThanOrEqual(2)
+    fireEvent.click(screen.getByRole("button", { name: "Marcar como cliente" }))
+    expect(await screen.findByText("Cliente")).toBeInTheDocument()
+  })
+
+  it("approves a watchlist source through the real status service", async () => {
+    render(<IntentV1Workspace session={{ email: "gabriel@acme.com.br", userId: "user-1" }} />)
+    await screen.findByRole("heading", { name: "Início" })
+
+    fireEvent.click(screen.getByRole("button", { name: /Watchlist/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Acompanhar" }))
+    expect(await screen.findByText("Acompanhando")).toBeInTheDocument()
+  })
+
+  it("shows the real classification test without prototype samples", async () => {
+    render(<IntentV1Workspace session={{ email: "gabriel@acme.com.br", userId: "user-1" }} />)
+    await screen.findByRole("heading", { name: "Início" })
+
+    fireEvent.click(screen.getByRole("button", { name: "Testar classificação" }))
+    expect(screen.getByRole("heading", { level: 1, name: "Testar classificação" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /exemplo|amostra/i })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText("Evidência pública"), { target: { value: "Quero avaliar uma solução para este problema." } })
+    fireEvent.click(screen.getByRole("button", { name: "Classificar evidência" }))
+    expect(await screen.findByText("Avaliação concluída")).toBeInTheDocument()
+    expect(screen.getByText("91% de intenção")).toBeInTheDocument()
+  })
+
+  it("shows only registered executions in costs", async () => {
+    render(<IntentV1Workspace session={{ email: "gabriel@acme.com.br", userId: "user-1" }} />)
+    await screen.findByRole("heading", { name: "Início" })
+
+    fireEvent.click(screen.getByRole("button", { name: /Custos/ }))
+    expect(screen.getByRole("heading", { level: 1, name: "Custos" })).toBeInTheDocument()
+    expect(screen.getByText("Ainda não há execuções registradas para esta operação.")).toBeInTheDocument()
+    expect(screen.queryByText("US$ 12,40")).not.toBeInTheDocument()
   })
 })
