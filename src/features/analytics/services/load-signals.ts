@@ -1,6 +1,7 @@
 import { supabase } from "@/infrastructure/supabase/client"
 import { parseSourceMeta } from "../lib/source-meta"
 import { calculateSignalPriority } from "@/features/intent/domain/signal-priority"
+import { buildCompanySignalSummary, companyActivityLevel } from "@/features/intent/domain/company-signal-summary"
 
 export type SignalSummary = {
   projectId: string | null
@@ -111,6 +112,7 @@ export type SignalCompany = {
   linkedinUrl: string | null
   people: number
   comments: number
+  signalSummary?: string | null
   level: "em_movimento" | "aquecendo" | "fria"
 }
 
@@ -355,32 +357,35 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
 }
 
 export async function loadSignalCompanies(projectId: string): Promise<SignalCompany[]> {
-  const [{ data: companies, error: companyError }, { data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
-    supabase.from("empresas").select("id, nome, setor, porte, linkedin_url, nivel, pessoas_com_sinal").eq("projeto_id", projectId).order("nome"),
-    supabase.from("pessoas").select("id, empresa_id, status").eq("projeto_id", projectId).in("status", ["lead", "sinal_fraco", "cliente"]),
-    supabase.from("sinais").select("pessoa_id").eq("projeto_id", projectId),
+  const [{ data: companies, error: companyError }, { data: people, error: peopleError }, { data: signals, error: signalsError }] = await Promise.all([
+    supabase.from("empresas").select("id, nome, setor, porte, linkedin_url").eq("projeto_id", projectId).order("nome"),
+    supabase.from("pessoas").select("id, empresa_id, cargo, status").eq("projeto_id", projectId).in("status", ["lead", "sinal_fraco", "cliente"]),
+    supabase.from("sinais").select("pessoa_id, empresa_id, tipo, ocorrido_em").eq("projeto_id", projectId).order("ocorrido_em", { ascending: false }),
   ])
-  const firstError = [companyError, peopleError, commentsError].find(Boolean)
+  const firstError = [companyError, peopleError, signalsError].find(Boolean)
   if (firstError) throw new Error(firstError.message)
-  const peopleByCompany = new Map<string, Set<string>>()
-  for (const person of people ?? []) if (person.empresa_id) peopleByCompany.set(person.empresa_id, new Set([...(peopleByCompany.get(person.empresa_id) ?? []), person.id]))
-  const commentsByCompany = new Map<string, number>()
-  const personCompany = new Map((people ?? []).map((person) => [person.id, person.empresa_id]))
-  for (const comment of comments ?? []) {
-    const companyId = personCompany.get(comment.pessoa_id)
-    if (companyId) commentsByCompany.set(companyId, (commentsByCompany.get(companyId) ?? 0) + 1)
+  const personById = new Map((people ?? []).map((person) => [person.id, person]))
+  const signalsByCompany = new Map<string, Array<{ personId: string; role: string | null; type: string; occurredAt: string | null }>>()
+  for (const signal of signals ?? []) {
+    const person = personById.get(signal.pessoa_id)
+    if (!person) continue
+    const companyId = signal.empresa_id ?? person.empresa_id
+    if (!companyId) continue
+    const companySignals = signalsByCompany.get(companyId) ?? []
+    companySignals.push({ personId: person.id, role: person.cargo, type: signal.tipo, occurredAt: signal.ocorrido_em })
+    signalsByCompany.set(companyId, companySignals)
   }
   return (companies ?? [])
     .map((company) => {
-      const peopleWithSignals = peopleByCompany.get(company.id)?.size ?? 0
-      const comments = commentsByCompany.get(company.id) ?? 0
-      const storedLevel = company.nivel
-      const level = storedLevel === "em_movimento" || storedLevel === "aquecendo" || storedLevel === "fria"
-        ? storedLevel
-        : peopleWithSignals >= 2 ? "em_movimento" : peopleWithSignals === 1 ? "aquecendo" : "fria"
-      return { id: company.id, name: company.nome, sector: company.setor, size: company.porte, linkedinUrl: company.linkedin_url, people: peopleWithSignals, comments, level }
+      const companySignals = signalsByCompany.get(company.id) ?? []
+      const peopleWithSignals = new Set(companySignals.map((signal) => signal.personId)).size
+      return { id: company.id, name: company.nome, sector: company.setor, size: company.porte, linkedinUrl: company.linkedin_url, people: peopleWithSignals, comments: companySignals.length, signalSummary: buildCompanySignalSummary(companySignals), level: companyActivityLevel(peopleWithSignals) }
     })
-    .filter((company) => company.people > 0 || company.comments > 0)
+    .filter((company) => company.people > 0)
+    .sort((first, second) => {
+      const levelOrder = { em_movimento: 0, aquecendo: 1, fria: 2 }
+      return levelOrder[first.level] - levelOrder[second.level] || second.people - first.people || first.name.localeCompare(second.name, "pt-BR")
+    })
 }
 
 export async function loadSignalPeople(projectId: string): Promise<SignalPerson[]> {

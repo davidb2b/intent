@@ -298,6 +298,60 @@
   line-height: 1.5;
 }
 
+.intent-v1-companies-panel {
+  padding: 8px 12px;
+}
+
+.intent-v1-companies-table th,
+.intent-v1-companies-table td {
+  padding: 13px 10px;
+}
+
+.intent-v1-companies-table th:nth-child(1) { width: 26%; }
+.intent-v1-companies-table th:nth-child(2) { width: 10%; }
+.intent-v1-companies-table th:nth-child(3) { width: 48%; }
+.intent-v1-companies-table th:nth-child(4) { width: 16%; }
+
+.intent-v1-company-cell strong,
+.intent-v1-company-cell small {
+  display: block;
+}
+
+.intent-v1-company-cell strong {
+  font-size: 13px;
+}
+
+.intent-v1-company-cell small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.intent-v1-company-signals {
+  display: block;
+  color: #52525b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.intent-v1-companies-table .intent-v1-level.is-moving {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.intent-v1-companies-table .intent-v1-level.is-warming {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.intent-v1-companies-table .intent-v1-level.is-cold {
+  border-color: var(--border);
+  background: var(--soft);
+  color: var(--muted);
+}
+
 .intent-v1-table-wrap:has(.intent-v1-table) {
   padding-bottom: 2px;
 }
