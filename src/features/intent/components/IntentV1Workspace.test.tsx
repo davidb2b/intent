@@ -88,6 +88,7 @@ describe("IntentV1Workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Watchlist/ }))
     expect(screen.getByRole("heading", { level: 1, name: "Watchlist" })).toBeInTheDocument()
+    expect(screen.getAllByRole("heading", { name: "Watchlist" })).toHaveLength(1)
     expect(screen.getByText("Fonte aprovada")).toBeInTheDocument()
     expect(screen.getByText("1 post · 1 interação pública")).toBeInTheDocument()
   })
@@ -148,6 +149,7 @@ describe("IntentV1Workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Testar classificação" }))
     expect(screen.getByRole("heading", { level: 1, name: "Testar classificação" })).toBeInTheDocument()
+    expect(screen.getAllByRole("heading", { name: "Testar classificação" })).toHaveLength(1)
     expect(screen.queryByRole("button", { name: /exemplo|amostra/i })).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText("Evidência pública"), { target: { value: "Quero avaliar uma solução para este problema." } })
