@@ -40,8 +40,8 @@ const buyer = {
 };
 
 describe("Phase 2 people-first contracts", () => {
-  it("caps every external discovery branch with explicit daily units", () => {
-    expect(engineBudgetUnits("semear_radar")).toBe(5);
+  it("keeps the initial seed outside the daily activity-verification ceiling", () => {
+    expect(engineBudgetUnits("semear_radar")).toBe(0);
     expect(engineBudgetUnits("vigiar_pessoa")).toBe(1);
     expect(engineBudgetUnits("varrer_empresa")).toBe(5);
     expect(engineBudgetUnits("varrer_post")).toBe(10);

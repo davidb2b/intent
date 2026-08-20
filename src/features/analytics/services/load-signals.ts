@@ -16,6 +16,9 @@ export type SignalSummary = {
   monthlyCostUsd: number
   estimatedNextCostUsd: number
   monitoredSources: number
+  creditsUsed: number
+  creditsReserved: number
+  creditsLimit: number
   executionHistory: SignalExecution[]
 }
 
@@ -66,6 +69,8 @@ export type SignalComment = {
   personUrl: string
   postUrl: string
   confidence: number | null
+  signalType?: string
+  rule?: string | null
 }
 
 export type SignalSource = {
@@ -92,6 +97,7 @@ export type SignalCompany = {
   linkedinUrl: string | null
   people: number
   comments: number
+  level: "em_movimento" | "aquecendo" | "fria"
 }
 
 export type SignalPerson = {
@@ -132,6 +138,9 @@ const emptySummary: SignalSummary = {
   monthlyCostUsd: 0,
   estimatedNextCostUsd: 0,
   monitoredSources: 0,
+  creditsUsed: 0,
+  creditsReserved: 0,
+  creditsLimit: 0,
   executionHistory: [],
 }
 
@@ -147,7 +156,7 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
   if (!project) return emptySummary
 
   const projectId = project.id
-  const [posts, comments, people, companies, executions, term, sources] = await Promise.all([
+  const [posts, comments, people, companies, executions, term, sources, creditBalance] = await Promise.all([
     supabase.from("posts").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
     supabase.from("sinais").select("id", { count: "exact", head: true }).eq("projeto_id", projectId).eq("tipo", "comentou_tema"),
     supabase.from("pessoas").select("id", { count: "exact", head: true }).eq("projeto_id", projectId),
@@ -155,9 +164,10 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
     supabase.from("execucoes").select("id, tipo, status, parametros, posts_lidos, comentarios_lidos, pessoas_novas, custo_usd, erro, etapa_atual, progresso, mensagem_progresso, iniciada_em, concluida_em").eq("projeto_id", projectId).order("iniciada_em", { ascending: false }).limit(20),
     supabase.from("termos").select("termo, contexto_positivo, contexto_negativo").eq("projeto_id", projectId).eq("ativo", true).order("criado_em", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("fontes").select("id", { count: "exact", head: true }).eq("projeto_id", projectId).eq("status", "monitorada"),
+    supabase.rpc("intent_credit_balance", { target_project_id: projectId }),
   ])
 
-  const firstError = [posts, comments, people, companies, executions, term, sources].find((result) => result.error)?.error
+  const firstError = [posts, comments, people, companies, executions, term, sources, creditBalance].find((result) => result.error)?.error
   if (firstError) throw new Error(firstError.message)
 
   const executionHistory = (executions.data ?? []).map((execution) => {
@@ -198,6 +208,7 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
   const estimatedComments = estimatedPosts * 40
   const estimatedNextCostUsd = estimatedPosts * 0.0015 + estimatedComments * 0.0015 * 2
   const latestExecution = executionHistory[0]
+  const balance = Array.isArray(creditBalance.data) ? creditBalance.data[0] : null
 
   return {
     projectId,
@@ -213,6 +224,9 @@ export async function loadSignalSummary(userId: string): Promise<SignalSummary> 
     monthlyCostUsd,
     estimatedNextCostUsd,
     monitoredSources,
+    creditsUsed: Number(balance?.usados ?? 0),
+    creditsReserved: Number(balance?.reservados ?? 0),
+    creditsLimit: Number(balance?.limite ?? 0),
     executionHistory,
   }
 }
@@ -323,8 +337,8 @@ export async function loadSignalSources(projectId: string): Promise<SignalSource
 
 export async function loadSignalCompanies(projectId: string): Promise<SignalCompany[]> {
   const [{ data: companies, error: companyError }, { data: people, error: peopleError }, { data: comments, error: commentsError }] = await Promise.all([
-    supabase.from("empresas").select("id, nome, setor, porte, linkedin_url").eq("projeto_id", projectId).order("nome"),
-    supabase.from("pessoas").select("id, empresa_id").eq("projeto_id", projectId),
+    supabase.from("empresas").select("id, nome, setor, porte, linkedin_url, nivel, pessoas_com_sinal").eq("projeto_id", projectId).order("nome"),
+    supabase.from("pessoas").select("id, empresa_id, status").eq("projeto_id", projectId).in("status", ["lead", "sinal_fraco", "cliente"]),
     supabase.from("sinais").select("pessoa_id").eq("projeto_id", projectId),
   ])
   const firstError = [companyError, peopleError, commentsError].find(Boolean)
@@ -337,7 +351,17 @@ export async function loadSignalCompanies(projectId: string): Promise<SignalComp
     const companyId = personCompany.get(comment.pessoa_id)
     if (companyId) commentsByCompany.set(companyId, (commentsByCompany.get(companyId) ?? 0) + 1)
   }
-  return (companies ?? []).map((company) => ({ id: company.id, name: company.nome, sector: company.setor, size: company.porte, linkedinUrl: company.linkedin_url, people: peopleByCompany.get(company.id)?.size ?? 0, comments: commentsByCompany.get(company.id) ?? 0 }))
+  return (companies ?? [])
+    .map((company) => {
+      const peopleWithSignals = peopleByCompany.get(company.id)?.size ?? 0
+      const comments = commentsByCompany.get(company.id) ?? 0
+      const storedLevel = company.nivel
+      const level = storedLevel === "em_movimento" || storedLevel === "aquecendo" || storedLevel === "fria"
+        ? storedLevel
+        : peopleWithSignals >= 2 ? "em_movimento" : peopleWithSignals === 1 ? "aquecendo" : "fria"
+      return { id: company.id, name: company.nome, sector: company.setor, size: company.porte, linkedinUrl: company.linkedin_url, people: peopleWithSignals, comments, level }
+    })
+    .filter((company) => company.people > 0 || company.comments > 0)
 }
 
 export async function loadSignalPeople(projectId: string): Promise<SignalPerson[]> {
@@ -416,4 +440,37 @@ export async function loadSignalComments(projectId: string): Promise<SignalComme
     }
   })
   return [...legacy, ...signals].sort((first, second) => (second.publishedAt ?? "").localeCompare(first.publishedAt ?? "")).slice(0, 100)
+}
+
+/** Intent v1 reads only the durable public signals produced by the people-first
+ * engine. Legacy comments stay available to the legacy analytics boundary. */
+export async function loadIntentSignalEvidence(projectId: string): Promise<SignalComment[]> {
+  const { data, error } = await supabase
+    .from("sinais")
+    .select("id, pessoa_id, evidencia, ocorrido_em, tipo, regra_que_bateu, pessoa:pessoas!inner(nome, headline, linkedin_url, empresa:empresas(nome)), post:posts(linkedin_url)")
+    .eq("projeto_id", projectId)
+    .order("ocorrido_em", { ascending: false })
+    .limit(100)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((signal) => {
+    const person = Array.isArray(signal.pessoa) ? signal.pessoa[0] : signal.pessoa
+    const post = Array.isArray(signal.post) ? signal.post[0] : signal.post
+    const company = Array.isArray(person.empresa) ? person.empresa[0] : person.empresa
+    return {
+      id: `signal:${signal.id}`,
+      personId: signal.pessoa_id,
+      text: signal.evidencia,
+      publishedAt: signal.ocorrido_em,
+      tone: signal.tipo,
+      personName: person.nome,
+      personHeadline: person.headline,
+      companyName: company?.nome ?? null,
+      personUrl: person.linkedin_url,
+      postUrl: post?.linkedin_url ?? "",
+      confidence: null,
+      signalType: signal.tipo,
+      rule: signal.regra_que_bateu,
+    }
+  })
 }

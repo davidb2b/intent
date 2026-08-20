@@ -27,6 +27,34 @@
   }
 }
 
+.intent-v1-person-status,
+.intent-v1-signal-pill {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  border: 1px solid #ddd6fe;
+  border-radius: 999px;
+  background: #f5f3ff;
+  color: #5b21b6;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.intent-v1-person-status {
+  border-color: var(--border);
+  background: var(--soft);
+  color: #52525b;
+}
+
+.intent-v1-signal-pill {
+  margin-bottom: 4px;
+}
+
+.intent-v1-drawer-body .intent-v1-signal-pill {
+  margin-bottom: 1px;
+}
+
 .intent-v1-source-actions { display: inline-flex; align-items: center; gap: 7px; flex: none; }
 .intent-v1-detail-link { display: inline-flex; margin-top: 5px; border: 0; padding: 0; background: transparent; color: var(--accent); font: 650 11px/1.2 inherit; cursor: pointer; }
 .intent-v1-detail-link:hover { text-decoration: underline; }

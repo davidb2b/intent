@@ -4,7 +4,7 @@ import { calculateSignalPriority } from "./signal-priority"
 describe("calculateSignalPriority", () => {
   const now = new Date("2026-08-20T12:00:00.000Z")
 
-  it("prioritizes a recent direct buying signal without changing the stored judgment", () => {
+  it("applies the 30-day half-life to every captured signal", () => {
     const result = calculateSignalPriority({
       currentIntent: 65,
       status: "sinal_fraco",
@@ -14,24 +14,24 @@ describe("calculateSignalPriority", () => {
 
     expect(result.signalCount).toBe(1)
     expect(result.signalTypes).toEqual(["pediu_indicacao"])
-    expect(result.score).toBe(82)
-    expect(result.bucket).toBe("alta")
+    expect(result.score).toBe(61)
+    expect(result.bucket).toBe("acompanhar")
   })
 
-  it("uses recurrence and recency to order an otherwise weak signal", () => {
+  it("adds decayed evidence and caps the public score at 100", () => {
     const result = calculateSignalPriority({
-      currentIntent: 45,
+      currentIntent: 0,
       status: "sinal_fraco",
       now,
       signals: [
-        { type: "comentou_tema", occurredAt: "2026-08-19T12:00:00.000Z", score: 45 },
-        { type: "compartilhou_tema", occurredAt: "2026-08-10T12:00:00.000Z", score: 40 },
+        { type: "comentou_tema", occurredAt: "2026-08-19T12:00:00.000Z", score: 70 },
+        { type: "compartilhou_tema", occurredAt: "2026-07-21T12:00:00.000Z", score: 70 },
       ],
     })
 
-    expect(result.score).toBe(62)
-    expect(result.bucket).toBe("acompanhar")
-    expect(result.label).toBe("Em acompanhamento")
+    expect(result.score).toBe(100)
+    expect(result.bucket).toBe("alta")
+    expect(result.label).toBe("Prioridade alta")
   })
 
   it("does not create a signal from unknown or malformed activity", () => {
