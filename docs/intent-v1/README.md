@@ -1,4 +1,8 @@
-# Intent v1 — plano vigente
+# Intent v1 — histórico preservado
+
+> O planejamento atual está em [`../intent-v2/README.md`](../intent-v2/README.md).
+> Este diretório permanece como histórico técnico do v1 e não deve ser usado
+> para introduzir comportamento novo no Intent v2.
 
 Status: Fases 0 a 3 implementadas; Fase 4 em homologação
 
