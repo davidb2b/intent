@@ -23,9 +23,22 @@ export interface IntentV2CompanyProfile {
   siteUrl: string;
   linkedinUrl?: string | null;
   fontes: IntentV2EvidenceSource[];
+  oferta?: string | null;
+  proposta_valor?: string | null;
+  dores_resolvidas?: string[];
+  segmentos_atendidos?: string[];
+  firmografia?: {
+    nome: string | null;
+    setor: string | null;
+    funcionarios: number | null;
+    fundacao: number | null;
+    sede: string | null;
+    linkedin_url: string | null;
+  };
 }
 
 export interface IntentV2BuyerProfile {
+  status?: "pendente" | "gerado";
   cargos: string[];
   setores: string[];
   portes: string[];
@@ -34,6 +47,7 @@ export interface IntentV2BuyerProfile {
 }
 
 export interface IntentV2BuyingSignals {
+  status?: "pendente" | "gerado";
   dores: string[];
   gatilhos: string[];
   termos: string[];
