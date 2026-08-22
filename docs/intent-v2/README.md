@@ -53,8 +53,13 @@ Ele registra a execução, custo, modelo e versão do prompt; se qualquer uma da
 três etapas falhar, o ICP anterior permanece intacto. A primeira geração real
 deve ser homologada em uma empresa com descoberta concluída, pois consome IA.
 
-Próximo passo: Fase 4 — filtros de baixo custo, contexto obrigatório do post e
-higiene de conteúdo antes do julgamento de intenção.
+As Fases 3 e 4 já completaram a geração estruturada do ICP e a higiene de
+comentários com contexto obrigatório. A Fase 5 registra decisões IA2/IA3 em
+auditoria privada e prioriza apenas evidências literais. A primeira execução
+real de IA2/IA3 continua sujeita à autorização do cliente, pois consome IA.
+
+Próximo passo: Fase 6 — gate binário, fila e cascatas sem misturar o domínio V2
+ao score histórico.
 
 ## Documentos
 
