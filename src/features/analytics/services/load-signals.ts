@@ -390,7 +390,7 @@ export async function loadSignalCompanies(projectId: string): Promise<SignalComp
 
 export async function loadSignalPeople(projectId: string): Promise<SignalPerson[]> {
   const [{ data: people, error: peopleError }, { data: signals, error: signalsError }] = await Promise.all([
-    supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, email_disponivel, telefone_disponivel, intencao, status, ultimo_sinal_em, criado_em, empresa:empresas(nome, setor, porte)").eq("projeto_id", projectId).order("nome"),
+    supabase.from("pessoas").select("id, nome, headline, cargo, linkedin_url, senioridade, icp, icp_motivo, email_disponivel, telefone_disponivel, intencao, status, ultimo_sinal_em, criado_em, empresa:empresas(nome, setor, porte)").eq("projeto_id", projectId).eq("icp", true).order("nome"),
     supabase.from("sinais").select("pessoa_id, tipo, nota, ocorrido_em").eq("projeto_id", projectId),
   ])
   if (peopleError || signalsError) throw new Error(peopleError?.message ?? signalsError?.message ?? "Não foi possível carregar pessoas.")

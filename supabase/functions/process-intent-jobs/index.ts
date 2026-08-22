@@ -43,6 +43,7 @@ import {
   judgeIntentV2Level,
   judgeIntentV2Relevance,
 } from "../_shared/intent-v2-judgment.ts"
+import { evaluateIntentV2BinaryGate } from "../_shared/intent-v2-binary-gate.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -274,7 +275,7 @@ type RadarOrigin = "semente_apollo" | "cascata_empresa" | "cascata_post"
 async function upsertRadarPerson(admin: AdminClient, input: {
   projectId: string
   candidate: ApolloSeedCandidate
-  fit: FitAssessment
+  fit?: FitAssessment
   origin: RadarOrigin
   companyId?: string | null
 }) {
@@ -328,9 +329,9 @@ async function upsertRadarPerson(admin: AdminClient, input: {
     pessoa_id: personId,
     projeto_id: input.projectId,
     origem: existingOperation?.origem ?? input.origin,
-    fit: input.fit.score,
-    excluido: input.fit.excluded,
-    fit_evidencia: input.fit.reasons,
+    fit: input.fit?.score ?? null,
+    excluido: input.fit?.excluded ?? false,
+    fit_evidencia: input.fit?.reasons ?? [],
     apollo_id: input.candidate.apolloId,
     localizacao_status: "brasil_confirmado",
     pais_literal: input.candidate.country,
@@ -350,8 +351,122 @@ async function upsertRadarPerson(admin: AdminClient, input: {
   return { personId, inserted }
 }
 
+function intentV2IdFromPayload(payload: Record<string, unknown>) {
+  return typeof payload.icp_v2_id === "string" && payload.icp_v2_id.trim()
+    ? payload.icp_v2_id
+    : null
+}
+
+async function loadIntentV2Icp(admin: AdminClient, projectId: string, requestedId: string | null) {
+  let query = admin.from("intent_v2_icps")
+    .select("id, empresa, comprador, sinais_de_compra, localizacoes")
+    .eq("projeto_id", projectId)
+    .eq("status", "ativo")
+  if (requestedId) query = query.eq("id", requestedId)
+  const { data, error } = await query.maybeSingle()
+  if (error) throw new Error(`Falha ao carregar o perfil ideal ativo: ${error.message}`)
+  return data
+}
+
+async function recordIntentV2BinaryGate(admin: AdminClient, input: {
+  projectId: string
+  icpId: string
+  personId: string
+  origin: "semente" | "empresa" | "post" | "atividade"
+  buyer: BuyerProfile
+  country?: string | null
+  locationConfirmed?: boolean
+  title?: string | null
+  headline?: string | null
+  excluded?: boolean
+}) {
+  const result = evaluateIntentV2BinaryGate({
+    buyer: input.buyer,
+    country: input.country,
+    locationConfirmed: input.locationConfirmed,
+    title: input.title,
+    headline: input.headline,
+    excluded: input.excluded,
+  })
+  const now = new Date().toISOString()
+  const { error } = await admin.from("intent_v2_portoes_pessoas_privados").upsert({
+    projeto_id: input.projectId,
+    icp_v2_id: input.icpId,
+    pessoa_id: input.personId,
+    origem: input.origin,
+    aprovado: result.approved,
+    brasil_confirmado: result.brasilConfirmado,
+    excluido: Boolean(input.excluded),
+    cargo_compativel: result.cargoCompativel,
+    motivo: result.reason,
+    evidencia: result.evidence,
+    atualizado_em: now,
+  }, { onConflict: "projeto_id,icp_v2_id,pessoa_id" })
+  if (error) throw new Error(`Falha ao registrar os critérios da pessoa: ${error.message}`)
+  return result
+}
+
+async function hidePersonOutsideIntentV2Icp(admin: AdminClient, projectId: string, personId: string) {
+  const { error } = await admin.from("pessoas").update({
+    icp: false,
+    status: "fora_icp",
+    intencao: null,
+    atualizado_em: new Date().toISOString(),
+  }).eq("id", personId).eq("projeto_id", projectId)
+  if (error) throw new Error(`Falha ao manter o perfil fora da lista visível: ${error.message}`)
+}
+
+function payloadWithIntentV2Icp(payload: Record<string, unknown>, icpV2Id: string | null) {
+  return icpV2Id ? { ...payload, icp_v2_id: icpV2Id } : payload
+}
+
+async function enqueueIntentV2Expansion(admin: AdminClient, input: {
+  projectId: string
+  intentV2IcpId: string
+  legacyIcpId: string
+  type: "empresa" | "post"
+  referenceId: string
+  personId: string
+  jobId: string
+  priority: number
+}) {
+  const referenceKey = `${input.type}:${input.referenceId}`
+  const { data: existing, error: existingError } = await admin.from("intent_v2_expansoes_privadas")
+    .select("status")
+    .eq("projeto_id", input.projectId)
+    .eq("icp_v2_id", input.intentV2IcpId)
+    .eq("tipo", input.type)
+    .eq("referencia_chave", referenceKey)
+    .maybeSingle()
+  if (existingError) throw new Error(`Falha ao verificar uma expansão já programada: ${existingError.message}`)
+  if (existing?.status === "pendente" || existing?.status === "rodando" || existing?.status === "concluida") return false
+
+  const now = new Date().toISOString()
+  const { error: expansionError } = await admin.from("intent_v2_expansoes_privadas").upsert({
+    projeto_id: input.projectId,
+    icp_v2_id: input.intentV2IcpId,
+    tipo: input.type,
+    referencia_chave: referenceKey,
+    origem_pessoa_id: input.personId,
+    job_id: input.jobId,
+    status: "pendente",
+    dados: { origem: "sinal_validado", referencia_id: input.referenceId },
+    atualizado_em: now,
+    concluida_em: null,
+  }, { onConflict: "projeto_id,icp_v2_id,tipo,referencia_chave" })
+  if (expansionError) throw new Error(`Falha ao preparar a próxima coleta pública: ${expansionError.message}`)
+
+  await enqueue(admin, input.projectId, input.type === "empresa" ? "varrer_empresa" : "varrer_post", {
+    [input.type === "empresa" ? "empresa_id" : "post_id"]: input.referenceId,
+    icp_id: input.legacyIcpId,
+    icp_v2_id: input.intentV2IcpId,
+  }, input.priority)
+  return true
+}
+
 async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
   const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const requestedIntentV2Id = intentV2IdFromPayload(job.payload)
   const page = Math.max(1, Math.trunc(Number(job.payload.pagina ?? 1)))
   const executionId = await createExecution(admin, job.projeto_id, "semente", { job_id: job.id, icp_id: icpId, pagina: page })
   let inserted = 0
@@ -362,6 +477,8 @@ async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
     ])
     if (icpError || !icp || icp.status !== "ativo") throw new Error("O perfil ideal ativo não foi encontrado para esta descoberta.")
     if (projectError || !project) throw new Error("Não foi possível ler o limite de descoberta deste projeto.")
+    const activeV2Icp = await loadIntentV2Icp(admin, job.projeto_id, requestedIntentV2Id)
+    const buyer = (activeV2Icp?.comprador ?? icp.comprador) as BuyerProfile
 
     const configuredSeedSize = Math.max(1, Math.min(5000, Math.trunc(Number(project.tamanho_semente_inicial ?? DEFAULT_SEED_SIZE))))
     const pageCount = Math.ceil(configuredSeedSize / SEED_PAGE_SIZE)
@@ -370,7 +487,7 @@ async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
       return { inserted: 0, searched: 0, page, completed: true }
     }
 
-    const searchInput = { ...buildApolloPeopleSearchInput(icp.comprador as BuyerProfile, SEED_PAGE_SIZE), page }
+    const searchInput = { ...buildApolloPeopleSearchInput(buyer, SEED_PAGE_SIZE), page }
     const search = await searchApolloPeople(searchInput, apolloKey)
     await auditPayload(admin, {
       projectId: job.projeto_id,
@@ -397,22 +514,39 @@ async function processSeedJob(admin: AdminClient, job: Job, apolloKey: string) {
       })
       if (!candidate) continue
 
-      const fit = assessApolloFit(candidate, icp.comprador as BuyerProfile)
-      if (!isEligibleForRadar(fit)) continue
+      const fit = activeV2Icp ? undefined : assessApolloFit(candidate, buyer)
+      if (!activeV2Icp && (!fit || !isEligibleForRadar(fit))) continue
       const { personId, inserted: wasInserted } = await upsertRadarPerson(admin, {
         projectId: job.projeto_id,
         candidate,
         fit,
         origin: "semente_apollo",
       })
+      if (activeV2Icp) {
+        const gate = await recordIntentV2BinaryGate(admin, {
+          projectId: job.projeto_id,
+          icpId: activeV2Icp.id,
+          personId,
+          origin: "semente",
+          buyer,
+          country: candidate.country,
+          locationConfirmed: candidate.country === "Brazil",
+          title: candidate.title,
+          headline: candidate.headline,
+        })
+        if (!gate.approved) {
+          await hidePersonOutsideIntentV2Icp(admin, job.projeto_id, personId)
+          continue
+        }
+      }
       if (wasInserted) inserted += 1
 
-      await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: personId, icp_id: icp.id }, 40)
+      await enqueue(admin, job.projeto_id, "vigiar_pessoa", payloadWithIntentV2Icp({ pessoa_id: personId, icp_id: icp.id }, activeV2Icp?.id ?? requestedIntentV2Id), 40)
     }
 
     const hasNextPage = ids.length === SEED_PAGE_SIZE && page < pageCount
     if (hasNextPage) {
-      await enqueue(admin, job.projeto_id, "semear_radar", { icp_id: icp.id, pagina: page + 1 }, 45)
+      await enqueue(admin, job.projeto_id, "semear_radar", payloadWithIntentV2Icp({ icp_id: icp.id, pagina: page + 1 }, activeV2Icp?.id ?? requestedIntentV2Id), 45)
     }
 
     await finishExecution(admin, executionId, { status: "concluida", people: inserted })
@@ -526,12 +660,35 @@ async function postEngagementForType(postUrl: string, type: "comment" | "reactio
 async function processWatchPersonJob(admin: AdminClient, job: Job, apifyToken: string) {
   const personId = typeof job.payload.pessoa_id === "string" ? job.payload.pessoa_id : ""
   const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const requestedIntentV2Id = intentV2IdFromPayload(job.payload)
   const executionId = await createExecution(admin, job.projeto_id, "vigilia", { job_id: job.id, pessoa_id: personId, icp_id: icpId })
   let totalCost = 0
   try {
-    const { data: person } = await admin.from("pessoas").select("id, linkedin_url, empresa_id").eq("id", personId).eq("projeto_id", job.projeto_id).maybeSingle()
-    const { data: operation } = await admin.from("pessoa_operacao_privada").select("fit, excluido, localizacao_status").eq("pessoa_id", personId).maybeSingle()
-    if (!person || !operation || operation.localizacao_status !== "brasil_confirmado" || operation.excluido || Number(operation.fit ?? 0) < 60) {
+    const { data: person } = await admin.from("pessoas").select("id, linkedin_url, empresa_id, cargo, headline").eq("id", personId).eq("projeto_id", job.projeto_id).maybeSingle()
+    const { data: operation } = await admin.from("pessoa_operacao_privada").select("fit, excluido, localizacao_status, pais_literal").eq("pessoa_id", personId).maybeSingle()
+    const activeV2Icp = await loadIntentV2Icp(admin, job.projeto_id, requestedIntentV2Id)
+    if (!person || !operation) {
+      throw new Error("A pessoa não atende aos critérios privados para observação.")
+    }
+    if (activeV2Icp) {
+      const gate = await recordIntentV2BinaryGate(admin, {
+        projectId: job.projeto_id,
+        icpId: activeV2Icp.id,
+        personId,
+        origin: "atividade",
+        buyer: activeV2Icp.comprador as BuyerProfile,
+        country: operation.pais_literal,
+        locationConfirmed: operation.localizacao_status === "brasil_confirmado",
+        title: person.cargo,
+        headline: person.headline,
+        excluded: operation.excluido,
+      })
+      if (!gate.approved) {
+        await hidePersonOutsideIntentV2Icp(admin, job.projeto_id, personId)
+        await finishExecution(admin, executionId, { status: "concluida" })
+        return { skipped: true, reason: gate.reason }
+      }
+    } else if (operation.localizacao_status !== "brasil_confirmado" || operation.excluido || Number(operation.fit ?? 0) < 60) {
       throw new Error("A pessoa não atende aos critérios privados para observação.")
     }
     const { data: legacyIcp, error: legacyIcpError } = await admin.from("icps")
@@ -608,13 +765,13 @@ async function processWatchPersonJob(admin: AdminClient, job: Job, apifyToken: s
         terms: signalTerms,
       })
       if (staged.needsPostContext) {
-        await enqueue(admin, job.projeto_id, "recuperar_contexto_post", { post_id: post.id, icp_id: icpId }, 25)
+        await enqueue(admin, job.projeto_id, "recuperar_contexto_post", payloadWithIntentV2Icp({ post_id: post.id, icp_id: icpId }, activeV2Icp?.id ?? requestedIntentV2Id), 25)
       }
       if (staged.candidateId) pendingCandidateIds.push(staged.candidateId)
     }
 
     if (pendingCandidateIds.length > 0) {
-      await enqueue(admin, job.projeto_id, "julgar_sinal", buildPersonJudgmentPayload(personId, pendingCandidateIds, job.id), 20)
+      await enqueue(admin, job.projeto_id, "julgar_sinal", payloadWithIntentV2Icp(buildPersonJudgmentPayload(personId, pendingCandidateIds, job.id), activeV2Icp?.id ?? requestedIntentV2Id), 20)
     }
 
     await finishExecution(admin, executionId, { status: activities.length ? "concluida" : "parcial", costUsd: totalCost })
@@ -679,6 +836,7 @@ async function materializeCompany(admin: AdminClient, projectId: string, personI
 async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey: string) {
   const companyId = typeof job.payload.empresa_id === "string" ? job.payload.empresa_id : ""
   const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const requestedIntentV2Id = intentV2IdFromPayload(job.payload)
   const executionId = await createExecution(admin, job.projeto_id, "cascata", {
     job_id: job.id,
     empresa_id: companyId,
@@ -703,6 +861,7 @@ async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey:
       .eq("projeto_id", job.projeto_id)
       .maybeSingle()
     if (icpError || !icp || icp.status !== "ativo") throw new Error("O perfil ideal ativo não foi encontrado para esta expansão.")
+    const activeV2Icp = await loadIntentV2Icp(admin, job.projeto_id, requestedIntentV2Id)
 
     const now = new Date().toISOString()
     const { error: startError } = await admin.from("empresa_operacao_privada").update({
@@ -718,7 +877,8 @@ async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey:
       domain: company.dominio as string | null,
       name: company.nome_literal as string,
     }
-    const searchInput = buildApolloCompanyPeopleSearchInput(icp.comprador as BuyerProfile, companyIdentity, DEFAULT_COMPANY_EXPANSION_SIZE)
+    const buyer = (activeV2Icp?.comprador ?? icp.comprador) as BuyerProfile
+    const searchInput = buildApolloCompanyPeopleSearchInput(buyer, companyIdentity, DEFAULT_COMPANY_EXPANSION_SIZE)
     const search = await searchApolloPeople(searchInput, apolloKey)
     await auditPayload(admin, {
       projectId: job.projeto_id,
@@ -759,8 +919,8 @@ async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey:
       })
       if (!candidate || !candidateBelongsToCompany(candidate, companyIdentity)) continue
 
-      const fit = assessApolloFit(candidate, icp.comprador as BuyerProfile)
-      if (!isEligibleForRadar(fit)) continue
+      const fit = activeV2Icp ? undefined : assessApolloFit(candidate, buyer)
+      if (!activeV2Icp && (!fit || !isEligibleForRadar(fit))) continue
       const radar = await upsertRadarPerson(admin, {
         projectId: job.projeto_id,
         candidate,
@@ -768,9 +928,26 @@ async function processCompanyCascadeJob(admin: AdminClient, job: Job, apolloKey:
         origin: "cascata_empresa",
         companyId,
       })
+      if (activeV2Icp) {
+        const gate = await recordIntentV2BinaryGate(admin, {
+          projectId: job.projeto_id,
+          icpId: activeV2Icp.id,
+          personId: radar.personId,
+          origin: "empresa",
+          buyer,
+          country: candidate.country,
+          locationConfirmed: candidate.country === "Brazil",
+          title: candidate.title,
+          headline: candidate.headline,
+        })
+        if (!gate.approved) {
+          await hidePersonOutsideIntentV2Icp(admin, job.projeto_id, radar.personId)
+          continue
+        }
+      }
       if (radar.inserted) inserted += 1
       accepted += 1
-      await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: radar.personId, icp_id: icp.id }, 40)
+      await enqueue(admin, job.projeto_id, "vigiar_pessoa", payloadWithIntentV2Icp({ pessoa_id: radar.personId, icp_id: icp.id }, activeV2Icp?.id ?? requestedIntentV2Id), 40)
     }
 
     const completedAt = new Date().toISOString()
@@ -969,6 +1146,7 @@ async function processWatchlistJob(admin: AdminClient, job: Job, apifyToken: str
 async function processRecoverPostContextJob(admin: AdminClient, job: Job, apifyToken: string) {
   const postId = typeof job.payload.post_id === "string" ? job.payload.post_id : ""
   const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const requestedIntentV2Id = intentV2IdFromPayload(job.payload)
   const executionId = await createExecution(admin, job.projeto_id, "monitoramento", {
     job_id: job.id,
     post_id: postId,
@@ -1072,7 +1250,7 @@ async function processRecoverPostContextJob(admin: AdminClient, job: Job, apifyT
       }
     }
     for (const [personId, candidateIds] of candidateIdsByPerson) {
-      await enqueue(admin, job.projeto_id, "julgar_sinal", buildPersonJudgmentPayload(personId, candidateIds, job.id), 20)
+      await enqueue(admin, job.projeto_id, "julgar_sinal", payloadWithIntentV2Icp(buildPersonJudgmentPayload(personId, candidateIds, job.id), requestedIntentV2Id), 20)
     }
     await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost })
     return { recovered: true, pendingComments: pendingComments.length, judgmentsQueued: candidateIdsByPerson.size, costUsd: totalCost }
@@ -1085,6 +1263,7 @@ async function processRecoverPostContextJob(admin: AdminClient, job: Job, apifyT
 async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { apollo: string; apify: string }) {
   const postId = typeof job.payload.post_id === "string" ? job.payload.post_id : ""
   const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const requestedIntentV2Id = intentV2IdFromPayload(job.payload)
   const executionId = await createExecution(admin, job.projeto_id, "cascata", {
     job_id: job.id,
     post_id: postId,
@@ -1110,6 +1289,8 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
       .eq("projeto_id", job.projeto_id)
       .maybeSingle()
     if (icpError || !icp || icp.status !== "ativo") throw new Error("O perfil ideal ativo não foi encontrado para esta expansão.")
+    const activeV2Icp = await loadIntentV2Icp(admin, job.projeto_id, requestedIntentV2Id)
+    const buyer = (activeV2Icp?.comprador ?? icp.comprador) as BuyerProfile
     const signalTerms = await loadIntentSignalTerms(admin, job.projeto_id, icp.sinais_de_compra)
 
     const now = new Date().toISOString()
@@ -1165,21 +1346,21 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
       .slice(0, DEFAULT_POST_ENGAGEMENT_SIZE)
     const slugs = prioritizedPeople.map(([slug]) => slug)
 
-    const existingPeople = new Map<string, { id: string; empresa_id: string | null }>()
+    const existingPeople = new Map<string, { id: string; empresa_id: string | null; cargo: string | null; headline: string | null }>()
     if (slugs.length > 0) {
       const { data: people, error: peopleError } = await admin.from("pessoas")
-        .select("id, slug, empresa_id")
+        .select("id, slug, empresa_id, cargo, headline")
         .eq("projeto_id", job.projeto_id)
         .in("slug", slugs)
       if (peopleError) throw new Error(`Falha ao verificar pessoas já conhecidas no post: ${peopleError.message}`)
-      for (const person of people ?? []) existingPeople.set(person.slug, { id: person.id, empresa_id: person.empresa_id })
+      for (const person of people ?? []) existingPeople.set(person.slug, { id: person.id, empresa_id: person.empresa_id, cargo: person.cargo, headline: person.headline })
     }
 
-    const operationByPerson = new Map<string, { fit: number | null; excluido: boolean; localizacao_status: string }>()
+    const operationByPerson = new Map<string, { fit: number | null; excluido: boolean; localizacao_status: string; pais_literal: string | null }>()
     const existingPersonIds = [...existingPeople.values()].map((person) => person.id)
     if (existingPersonIds.length > 0) {
       const { data: operations, error: operationsError } = await admin.from("pessoa_operacao_privada")
-        .select("pessoa_id, fit, excluido, localizacao_status")
+        .select("pessoa_id, fit, excluido, localizacao_status, pais_literal")
         .eq("projeto_id", job.projeto_id)
         .in("pessoa_id", existingPersonIds)
       if (operationsError) throw new Error(`Falha ao verificar o radar privado: ${operationsError.message}`)
@@ -1195,13 +1376,32 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
       let companyId = existing?.empresa_id ?? null
       let shouldStartWatch = false
 
-      if (
-        existing
-        && existingOperation?.localizacao_status === "brasil_confirmado"
-        && !existingOperation.excluido
-        && Number(existingOperation.fit ?? 0) >= 60
-      ) {
-        personId = existing.id
+      if (existing && existingOperation) {
+        if (activeV2Icp) {
+          const gate = await recordIntentV2BinaryGate(admin, {
+            projectId: job.projeto_id,
+            icpId: activeV2Icp.id,
+            personId: existing.id,
+            origin: "post",
+            buyer,
+            country: existingOperation.pais_literal,
+            locationConfirmed: existingOperation.localizacao_status === "brasil_confirmado",
+            title: existing.cargo,
+            headline: existing.headline,
+            excluded: existingOperation.excluido,
+          })
+          if (gate.approved) {
+            personId = existing.id
+          } else {
+            await hidePersonOutsideIntentV2Icp(admin, job.projeto_id, existing.id)
+          }
+        } else if (
+          existingOperation.localizacao_status === "brasil_confirmado"
+          && !existingOperation.excluido
+          && Number(existingOperation.fit ?? 0) >= 60
+        ) {
+          personId = existing.id
+        }
       } else if (!existingOperation) {
         const representative = personEngagements.find((item) => item.type === "comment") ?? personEngagements[0]
         const enriched = await enrichApolloPersonByLinkedinUrl(representative.profileUrl, secrets.apollo)
@@ -1216,14 +1416,31 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
         })
         const candidate = normalizeEnrichedApolloPerson(enriched.payload)
         if (!candidate) continue
-        const fit = assessApolloFit(candidate, icp.comprador as BuyerProfile)
-        if (!isEligibleForRadar(fit)) continue
+        const fit = activeV2Icp ? undefined : assessApolloFit(candidate, buyer)
+        if (!activeV2Icp && (!fit || !isEligibleForRadar(fit))) continue
         const radar = await upsertRadarPerson(admin, {
           projectId: job.projeto_id,
           candidate,
           fit,
           origin: "cascata_post",
         })
+        if (activeV2Icp) {
+          const gate = await recordIntentV2BinaryGate(admin, {
+            projectId: job.projeto_id,
+            icpId: activeV2Icp.id,
+            personId: radar.personId,
+            origin: "post",
+            buyer,
+            country: candidate.country,
+            locationConfirmed: candidate.country === "Brazil",
+            title: candidate.title,
+            headline: candidate.headline,
+          })
+          if (!gate.approved) {
+            await hidePersonOutsideIntentV2Icp(admin, job.projeto_id, radar.personId)
+            continue
+          }
+        }
         personId = radar.personId
         companyId = null
         shouldStartWatch = true
@@ -1233,7 +1450,7 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
       if (!personId) continue
       accepted += 1
       if (shouldStartWatch) {
-        await enqueue(admin, job.projeto_id, "vigiar_pessoa", { pessoa_id: personId, icp_id: icp.id }, 40)
+        await enqueue(admin, job.projeto_id, "vigiar_pessoa", payloadWithIntentV2Icp({ pessoa_id: personId, icp_id: icp.id }, activeV2Icp?.id ?? requestedIntentV2Id), 40)
       }
 
       const engagementDates = personEngagements
@@ -1270,7 +1487,7 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
           terms: signalTerms,
         })
         if (staged.needsPostContext) {
-          await enqueue(admin, job.projeto_id, "recuperar_contexto_post", { post_id: postId, icp_id: icp.id }, 25)
+          await enqueue(admin, job.projeto_id, "recuperar_contexto_post", payloadWithIntentV2Icp({ post_id: postId, icp_id: icp.id }, activeV2Icp?.id ?? requestedIntentV2Id), 25)
         }
         if (staged.candidateId) {
           const pending = pendingByPerson.get(personId) ?? []
@@ -1281,7 +1498,7 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
     }
 
     for (const [personId, candidateIds] of pendingByPerson) {
-      await enqueue(admin, job.projeto_id, "julgar_sinal", buildPersonJudgmentPayload(personId, candidateIds, job.id), 20)
+      await enqueue(admin, job.projeto_id, "julgar_sinal", payloadWithIntentV2Icp(buildPersonJudgmentPayload(personId, candidateIds, job.id), activeV2Icp?.id ?? requestedIntentV2Id), 20)
     }
 
     const completedAt = new Date().toISOString()
@@ -1300,7 +1517,7 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
     if (completeError) throw new Error(`Falha ao concluir a expansão do post: ${completeError.message}`)
 
     if (accepted > 0) {
-      await enqueue(admin, job.projeto_id, "investigar_autor", { post_id: postId, icp_id: icp.id }, 36)
+      await enqueue(admin, job.projeto_id, "investigar_autor", payloadWithIntentV2Icp({ post_id: postId, icp_id: icp.id }, activeV2Icp?.id ?? requestedIntentV2Id), 36)
     }
 
     await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost, people: inserted })
@@ -1627,6 +1844,32 @@ async function processIntentV2JudgeCandidates(input: {
       empresa_id: companyId,
       atualizado_em: new Date().toISOString(),
     }).eq("id", candidate.id)
+
+    const legacyIcpId = typeof candidate.icp_id === "string" ? candidate.icp_id : ""
+    if (legacyIcpId && companyId) {
+      await enqueueIntentV2Expansion(input.admin, {
+        projectId: input.job.projeto_id,
+        intentV2IcpId: input.activeIcp.id,
+        legacyIcpId,
+        type: "empresa",
+        referenceId: companyId,
+        personId: input.personId,
+        jobId: input.job.id,
+        priority: 30,
+      })
+    }
+    if (legacyIcpId && typeof candidate.post_id === "string") {
+      await enqueueIntentV2Expansion(input.admin, {
+        projectId: input.job.projeto_id,
+        intentV2IcpId: input.activeIcp.id,
+        legacyIcpId,
+        type: "post",
+        referenceId: candidate.post_id,
+        personId: input.personId,
+        jobId: input.job.id,
+        priority: 35,
+      })
+    }
   }
 
   const { data: priorityRows, error: priorityError } = await input.admin.rpc("intent_v2_apply_person_priority", {
@@ -1647,6 +1890,7 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
     ? [...new Set(job.payload.candidato_ids.filter((value): value is string => typeof value === "string" && value.length > 0))]
     : legacyCandidateId ? [legacyCandidateId] : []
   const payloadPersonId = typeof job.payload.pessoa_id === "string" ? job.payload.pessoa_id : ""
+  const requestedIntentV2Id = intentV2IdFromPayload(job.payload)
   const watchJobId = typeof job.payload.vigilia_job_id === "string" ? job.payload.vigilia_job_id : job.id
   const executionId = await createExecution(admin, job.projeto_id, "julgamento", {
     job_id: job.id,
@@ -1683,14 +1927,39 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
       return { alreadyProcessed: true, candidates: candidates.length }
     }
 
+    const { data: person } = await admin.from("pessoas")
+      .select("id, cargo, headline")
+      .eq("id", personId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
     const { data: operation } = await admin.from("pessoa_operacao_privada")
-      .select("fit, excluido, empresa_candidata")
+      .select("fit, excluido, empresa_candidata, localizacao_status, pais_literal")
       .eq("pessoa_id", personId)
       .maybeSingle()
-    if (!operation || operation.excluido || Number(operation.fit ?? 0) < 60) {
+    const activeV2Icp = await loadIntentV2Icp(admin, job.projeto_id, requestedIntentV2Id)
+    let rejectedByGate = false
+    if (activeV2Icp && person && operation) {
+      const gate = await recordIntentV2BinaryGate(admin, {
+        projectId: job.projeto_id,
+        icpId: activeV2Icp.id,
+        personId,
+        origin: "atividade",
+        buyer: activeV2Icp.comprador as BuyerProfile,
+        country: operation.pais_literal,
+        locationConfirmed: operation.localizacao_status === "brasil_confirmado",
+        title: person.cargo,
+        headline: person.headline,
+        excluded: operation.excluido,
+      })
+      rejectedByGate = !gate.approved
+      if (rejectedByGate) await hidePersonOutsideIntentV2Icp(admin, job.projeto_id, personId)
+    }
+    if (!operation || !person || rejectedByGate || (!activeV2Icp && (operation.excluido || Number(operation.fit ?? 0) < 60))) {
       await admin.from("sinais_candidatos_privados").update({
         status: "rejeitado",
-        motivo_rejeicao: "Fora dos critérios privados de aderência.",
+        motivo_rejeicao: activeV2Icp
+          ? "A pessoa não passou pelos critérios obrigatórios do perfil ideal."
+          : "Fora dos critérios privados de aderência.",
         atualizado_em: new Date().toISOString(),
       }).in("id", pendingCandidates.map((candidate) => candidate.id))
       await finishExecution(admin, executionId, { status: "concluida" })
@@ -1709,12 +1978,6 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
       return { waitingForCredits: true }
     }
 
-    const { data: activeV2Icp, error: activeV2IcpError } = await admin.from("intent_v2_icps")
-      .select("id, empresa, comprador, sinais_de_compra, localizacoes")
-      .eq("projeto_id", job.projeto_id)
-      .eq("status", "ativo")
-      .maybeSingle()
-    if (activeV2IcpError) throw new Error(`Falha ao carregar o perfil ideal ativo: ${activeV2IcpError.message}`)
     if (activeV2Icp) {
       const outcome = await processIntentV2JudgeCandidates({
         admin,
