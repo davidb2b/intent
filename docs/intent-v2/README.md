@@ -42,14 +42,19 @@ priorizado, sem mostrar mecânicas internas de coleta, fornecedores ou modelos.
 
 ## Estado atual
 
-A Fase 0 está concluída no escopo de baseline e planejamento. O comportamento
-publicado ainda é o Intent v1; isso foi registrado deliberadamente para que a
-Fase 1 não misture contratos antigos com os contratos v2.
+As Fases 0 e 1 estão concluídas: baseline, contratos, migration aditiva e RLS
+foram separados do domínio histórico. A Fase 2 está implementada no backend e
+aguarda publicação da Edge Function e uma execução real homologada. A tela
+histórica continua isolada até que a Fase 3 complete o rascunho v2.
 
-Próximo passo: Fase 1 — criar as migrations e contratos de domínio aditivos,
-sem apagar dados v1 e sem ativar o novo fluxo antes da homologação.
+Próximo passo: Fase 3 — gerar apenas os campos estruturados de empresa, ICP e
+sinais a partir das evidências confirmadas, sem inferência e sem score numérico.
 
 ## Documentos
 
 - [`phase-0-baseline.md`](phase-0-baseline.md): baseline observado, matriz de
   aceite e critérios de saída da Fase 0.
+- [`phase-1-domain.md`](phase-1-domain.md): schema aditivo e contratos de
+  domínio do v2.
+- [`phase-2-onboarding.md`](phase-2-onboarding.md): site, Apollo, LinkedIn,
+  cache, créditos e gate de publicação.
