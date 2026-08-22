@@ -38,6 +38,11 @@ import {
   extractIntentSignalTerms,
   mergeIntentSignalTerms,
 } from "../_shared/intent-phase4-hygiene.ts"
+import {
+  hasIntentV2LiteralProof,
+  judgeIntentV2Level,
+  judgeIntentV2Relevance,
+} from "../_shared/intent-v2-judgment.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1436,6 +1441,206 @@ async function refreshCompanyLevel(admin: AdminClient, projectId: string, compan
   }).eq("id", companyId)
 }
 
+function literalProofSource(phrase: string, comment: string, postText: string | null) {
+  if (comment.includes(phrase)) return "comentario" as const
+  if (postText?.includes(phrase)) return "post" as const
+  return null
+}
+
+async function recordIntentV2Cost(admin: AdminClient, input: {
+  executionId: string
+  result: { model: string; requestId: string | null; durationMs: number; costUsd: number }
+  operation: "intent_v2_ia2_relevancia" | "intent_v2_ia3_nivel"
+}) {
+  const { error } = await admin.from("custos").insert({
+    execucao_id: input.executionId,
+    actor: input.result.model,
+    provider: "openai",
+    operacao: input.operation,
+    external_run_id: input.result.requestId,
+    latencia_ms: input.result.durationMs,
+    itens: 1,
+    custo_usd: input.result.costUsd,
+  })
+  if (error) throw new Error(`Falha ao registrar o custo da avaliação: ${error.message}`)
+}
+
+async function processIntentV2JudgeCandidates(input: {
+  admin: AdminClient
+  job: Job
+  executionId: string
+  candidates: Array<Record<string, any>>
+  personId: string
+  operation: Record<string, any>
+  activeIcp: Record<string, any>
+  apiKey: string
+  onCost: (value: number) => void
+}) {
+  const icpContext = {
+    empresa: input.activeIcp.empresa,
+    comprador: input.activeIcp.comprador,
+    sinais_de_compra: input.activeIcp.sinais_de_compra,
+    localizacoes: input.activeIcp.localizacoes,
+  }
+  let companyId: string | null = null
+  let companyResolved = false
+  let historical = 0
+  let approved = 0
+
+  for (const candidate of input.candidates) {
+    const comment = typeof candidate.evidencia === "string" ? candidate.evidencia : ""
+    const postText = typeof candidate.contexto === "string" ? candidate.contexto : null
+    if (!comment.trim()) {
+      await input.admin.from("sinais_candidatos_privados").update({
+        status: "rejeitado",
+        motivo_rejeicao: "A atividade não contém o comentário público necessário para validação.",
+        atualizado_em: new Date().toISOString(),
+      }).eq("id", candidate.id)
+      continue
+    }
+
+    // IA2 só recebe comentários que passaram pelos filtros baratos da Fase 4.
+    // Reações ficam fora deste caminho e nunca são avaliadas por IA.
+    const relevance = await judgeIntentV2Relevance({
+      apiKey: input.apiKey,
+      comment,
+      postText,
+      icpContext,
+    })
+    input.onCost(relevance.result.costUsd)
+    const proofSource = literalProofSource(relevance.value.frase_prova, comment, postText)
+    const literalProof = proofSource !== null && hasIntentV2LiteralProof(relevance.value.frase_prova, comment, postText)
+    const relevantWithProof = relevance.value.relevante && literalProof
+    const relevanceReason = relevantWithProof
+      ? relevance.value.porque
+      : relevance.value.relevante
+        ? "A atividade foi descartada porque a prova informada não aparece literalmente no conteúdo público."
+        : relevance.value.porque
+
+    const { error: relevanceAuditError } = await input.admin.from("intent_v2_julgamentos_privados").upsert({
+      projeto_id: input.job.projeto_id,
+      icp_v2_id: input.activeIcp.id,
+      candidato_id: candidate.id,
+      pessoa_id: input.personId,
+      etapa: "ia2_relevancia",
+      relevante: relevantWithProof,
+      porque: relevanceReason,
+      frase_prova: literalProof ? relevance.value.frase_prova : null,
+      fonte_prova: literalProof ? proofSource : null,
+      resposta: { ...relevance.value, prova_literal_valida: literalProof },
+      modelo: relevance.result.model,
+      prompt_versao: "intent_v2_ia2_relevancia_v1",
+      request_id: relevance.result.requestId,
+      custo_usd: relevance.result.costUsd,
+      latencia_ms: relevance.result.durationMs,
+    }, { onConflict: "candidato_id,etapa" })
+    if (relevanceAuditError) throw new Error(`Falha ao registrar a decisão de relevância: ${relevanceAuditError.message}`)
+    await recordIntentV2Cost(input.admin, {
+      executionId: input.executionId,
+      result: relevance.result,
+      operation: "intent_v2_ia2_relevancia",
+    })
+
+    if (!relevantWithProof) {
+      await input.admin.from("sinais_candidatos_privados").update({
+        status: "rejeitado",
+        motivo_rejeicao: literalProof
+          ? "A atividade não mostrou relação suficiente com o perfil ideal."
+          : "A atividade não trouxe uma prova literal verificável.",
+        atualizado_em: new Date().toISOString(),
+      }).eq("id", candidate.id)
+      continue
+    }
+
+    const priority = await judgeIntentV2Level({
+      apiKey: input.apiKey,
+      comment,
+      postText,
+      relevance: relevance.value,
+      icpContext,
+    })
+    input.onCost(priority.result.costUsd)
+    const { error: priorityAuditError } = await input.admin.from("intent_v2_julgamentos_privados").upsert({
+      projeto_id: input.job.projeto_id,
+      icp_v2_id: input.activeIcp.id,
+      candidato_id: candidate.id,
+      pessoa_id: input.personId,
+      etapa: "ia3_nivel",
+      relevante: true,
+      nivel: priority.value.nivel,
+      porque: priority.value.porque,
+      frase_prova: relevance.value.frase_prova,
+      fonte_prova: proofSource,
+      resposta: priority.value,
+      modelo: priority.result.model,
+      prompt_versao: "intent_v2_ia3_nivel_v1",
+      request_id: priority.result.requestId,
+      custo_usd: priority.result.costUsd,
+      latencia_ms: priority.result.durationMs,
+    }, { onConflict: "candidato_id,etapa" })
+    if (priorityAuditError) throw new Error(`Falha ao registrar o nível de prioridade: ${priorityAuditError.message}`)
+    await recordIntentV2Cost(input.admin, {
+      executionId: input.executionId,
+      result: priority.result,
+      operation: "intent_v2_ia3_nivel",
+    })
+
+    if (priority.value.nivel === "fraca") {
+      historical += 1
+      await input.admin.from("sinais_candidatos_privados").update({
+        status: "historico",
+        motivo_rejeicao: "A atividade foi registrada no histórico, sem prioridade de abordagem agora.",
+        atualizado_em: new Date().toISOString(),
+      }).eq("id", candidate.id)
+      continue
+    }
+
+    if (!companyResolved) {
+      companyId = await materializeCompany(input.admin, input.job.projeto_id, input.personId, input.operation.empresa_candidata)
+      companyResolved = true
+    }
+    const { data: signal, error: signalError } = await input.admin.from("sinais").upsert({
+      projeto_id: input.job.projeto_id,
+      pessoa_id: candidate.pessoa_id,
+      empresa_id: companyId,
+      post_id: candidate.post_id,
+      icp_id: candidate.icp_id,
+      tipo: candidate.tipo,
+      urn_unico: candidate.urn_unico,
+      evidencia: candidate.evidencia,
+      contexto: candidate.contexto,
+      // Compatibilidade com a leitura legada. A prioridade V2 vem somente do nível auditado.
+      nota: 0,
+      regra_que_bateu: `Intent v2 — ${priority.value.nivel}`,
+      ocorrido_em: candidate.ocorrido_em,
+    }, { onConflict: "projeto_id,urn_unico" }).select("id").single()
+    if (signalError || !signal) throw new Error(`Falha ao publicar o sinal validado: ${signalError?.message ?? "sinal ausente"}`)
+
+    const { error: signalAuditError } = await input.admin.from("intent_v2_julgamentos_privados")
+      .update({ sinal_id: signal.id, empresa_id: companyId })
+      .eq("candidato_id", candidate.id)
+    if (signalAuditError) throw new Error(`Falha ao conectar a evidência ao sinal: ${signalAuditError.message}`)
+
+    approved += 1
+    await input.admin.from("sinais_candidatos_privados").update({
+      status: "aprovado",
+      empresa_id: companyId,
+      atualizado_em: new Date().toISOString(),
+    }).eq("id", candidate.id)
+  }
+
+  const { data: priorityRows, error: priorityError } = await input.admin.rpc("intent_v2_apply_person_priority", {
+    target_person_id: input.personId,
+  })
+  if (priorityError) throw new Error(`Falha ao atualizar a prioridade da pessoa: ${priorityError.message}`)
+  const status = Array.isArray(priorityRows) && typeof priorityRows[0]?.status === "string"
+    ? priorityRows[0].status
+    : "vigiado"
+
+  if (companyId) await refreshCompanyLevel(input.admin, input.job.projeto_id, companyId)
+  return { approved, historical, status, companyId }
+}
+
 async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: string) {
   const legacyCandidateId = typeof job.payload.candidato_id === "string" ? job.payload.candidato_id : ""
   const candidateIds = Array.isArray(job.payload.candidato_ids)
@@ -1492,11 +1697,6 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
       return { rejected: true, candidates: pendingCandidates.length }
     }
 
-    const icpIds = [...new Set(pendingCandidates.map((candidate) => candidate.icp_id))]
-    if (icpIds.length !== 1) throw new Error("As atividades não usam o mesmo perfil ideal.")
-    const { data: icp } = await admin.from("icps").select("id, sinais_de_compra").eq("id", icpIds[0]).eq("status", "ativo").maybeSingle()
-    if (!icp) throw new Error("O perfil ideal usado neste sinal não está mais ativo.")
-
     const { data: hasCredits, error: reserveError } = await admin.rpc("intent_reserve_job_credits", {
       target_job_id: job.id,
       target_event: "pessoa_julgada",
@@ -1508,6 +1708,39 @@ async function processJudgeSignalJob(admin: AdminClient, job: Job, openAiKey: st
       await finishExecution(admin, executionId, { status: "aguardando_creditos" })
       return { waitingForCredits: true }
     }
+
+    const { data: activeV2Icp, error: activeV2IcpError } = await admin.from("intent_v2_icps")
+      .select("id, empresa, comprador, sinais_de_compra, localizacoes")
+      .eq("projeto_id", job.projeto_id)
+      .eq("status", "ativo")
+      .maybeSingle()
+    if (activeV2IcpError) throw new Error(`Falha ao carregar o perfil ideal ativo: ${activeV2IcpError.message}`)
+    if (activeV2Icp) {
+      const outcome = await processIntentV2JudgeCandidates({
+        admin,
+        job,
+        executionId,
+        candidates: pendingCandidates,
+        personId,
+        operation,
+        activeIcp: activeV2Icp,
+        apiKey: openAiKey,
+        onCost: (costUsd) => { totalCost += costUsd },
+      })
+      const { error: settleError } = await admin.rpc("intent_settle_job_credits", {
+        target_job_id: job.id,
+        target_reference: creditReference,
+        target_consume: true,
+      })
+      if (settleError) throw new Error(`Falha ao confirmar consumo de crédito: ${settleError.message}`)
+      await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost })
+      return { candidates: pendingCandidates.length, costUsd: totalCost, ...outcome }
+    }
+
+    const icpIds = [...new Set(pendingCandidates.map((candidate) => candidate.icp_id))]
+    if (icpIds.length !== 1) throw new Error("As atividades não usam o mesmo perfil ideal.")
+    const { data: icp } = await admin.from("icps").select("id, sinais_de_compra").eq("id", icpIds[0]).eq("status", "ativo").maybeSingle()
+    if (!icp) throw new Error("O perfil ideal usado neste sinal não está mais ativo.")
     const rules = signalRules(icp.sinais_de_compra)
     let companyId: string | null = null
     let companyResolved = false
