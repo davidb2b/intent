@@ -42,13 +42,19 @@ priorizado, sem mostrar mecânicas internas de coleta, fornecedores ou modelos.
 
 ## Estado atual
 
-As Fases 0 e 1 estão concluídas: baseline, contratos, migration aditiva e RLS
-foram separados do domínio histórico. A Fase 2 está implementada no backend e
-aguarda publicação da Edge Function e uma execução real homologada. A tela
-histórica continua isolada até que a Fase 3 complete o rascunho v2.
+As Fases 0, 1 e 2 estão concluídas no código e publicadas: baseline,
+contratos, migration aditiva, RLS e a descoberta site → Apollo → LinkedIn foram
+separados do domínio histórico. A Fase 3 adiciona a geração estruturada do
+rascunho v2, sem chamar fontes externas novamente e sem substituir os dados
+brutos que sustentam a evidência.
 
-Próximo passo: Fase 3 — gerar apenas os campos estruturados de empresa, ICP e
-sinais a partir das evidências confirmadas, sem inferência e sem score numérico.
+O endpoint `generate-icp-v2` só é executado por uma ação autenticada do usuário.
+Ele registra a execução, custo, modelo e versão do prompt; se qualquer uma das
+três etapas falhar, o ICP anterior permanece intacto. A primeira geração real
+deve ser homologada em uma empresa com descoberta concluída, pois consome IA.
+
+Próximo passo: Fase 4 — filtros de baixo custo, contexto obrigatório do post e
+higiene de conteúdo antes do julgamento de intenção.
 
 ## Documentos
 
@@ -58,3 +64,5 @@ sinais a partir das evidências confirmadas, sem inferência e sem score numéri
   domínio do v2.
 - [`phase-2-onboarding.md`](phase-2-onboarding.md): site, Apollo, LinkedIn,
   cache, créditos e gate de publicação.
+- [`phase-3-generation.md`](phase-3-generation.md): IA1a, IA1b, IA1c,
+  contratos estritos e trilha de auditoria da geração.
