@@ -66,6 +66,21 @@ Deno.serve(async (request) => {
   const { data: icp } = await admin.from("intent_v2_icps").select("id,empresa,comprador,sinais_de_compra").eq("id", body.icpId).eq("projeto_id", project.id).eq("criado_por", user.id).maybeSingle()
   if (!icp) return json({ error: "Não encontramos esta versão da empresa. Atualize a página e tente novamente." }, 404)
 
+  // Stops before the paid AI chain if the audit migration has not reached this
+  // project yet. A partial rollout must never generate a cost without the
+  // complete execution trail required by the product contract.
+  const { error: auditSchemaError } = await admin
+    .from("intent_v2_icps")
+    .select("geracao_execucao_id")
+    .eq("id", icp.id)
+    .limit(1)
+  if (auditSchemaError) {
+    console.error("Intent v2 generation audit schema unavailable", auditSchemaError)
+    return json({
+      error: "Estamos concluindo uma atualização de segurança desta etapa. Tente organizar o perfil novamente em alguns minutos.",
+    }, 503)
+  }
+
   const { data: execution, error: executionError } = await admin.from("execucoes").insert({
     projeto_id: project.id, tipo: "onboarding", status: "rodando", etapa_atual: "ia1a", progresso: 10,
     mensagem_progresso: "Organizando o contexto confirmado da empresa.",
