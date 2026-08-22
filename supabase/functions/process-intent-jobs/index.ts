@@ -33,6 +33,11 @@ import {
   MONITORED_PROFILE_POSTS_ACTOR,
   normalizeWatchlistPost,
 } from "../_shared/monitoring-posts.ts"
+import {
+  assessCommentForIntent,
+  extractIntentSignalTerms,
+  mergeIntentSignalTerms,
+} from "../_shared/intent-phase4-hygiene.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -152,6 +157,105 @@ async function enqueue(admin: AdminClient, projectId: string, type: string, payl
   })
   if (error || !data) throw new Error(`Falha ao preparar a próxima etapa: ${error?.message ?? "job ausente"}`)
   return data as string
+}
+
+async function loadIntentSignalTerms(admin: AdminClient, projectId: string, legacyBuyingSignals: unknown) {
+  const { data: activeV2, error } = await admin.from("intent_v2_icps")
+    .select("sinais_de_compra")
+    .eq("projeto_id", projectId)
+    .eq("status", "ativo")
+    .order("atualizado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new Error(`Falha ao carregar os termos do perfil ideal: ${error.message}`)
+  return mergeIntentSignalTerms(
+    extractIntentSignalTerms(activeV2?.sinais_de_compra),
+    extractIntentSignalTerms(legacyBuyingSignals),
+  )
+}
+
+type CommentHygieneOrigin = "atividade_perfil" | "cascata_post" | "recuperacao_contexto"
+
+async function stageCommentForIntent(admin: AdminClient, input: {
+  projectId: string
+  personId: string
+  companyId: string | null
+  post: { id: string; linkedin_url: string | null; texto: string | null }
+  icpId: string
+  externalId: string
+  auditUrn?: string
+  comment: string
+  occurredAt: string | null
+  provider: string
+  providerRunId: string | null
+  origin: CommentHygieneOrigin
+  terms: string[]
+}) {
+  const urn = input.auditUrn ?? `intent:${await fingerprint(`comment:${input.externalId}`)}`
+  const assessment = assessCommentForIntent({
+    comment: input.comment,
+    postText: input.post.texto,
+    terms: input.terms,
+  })
+  const decision = assessment.decision === "approved"
+    ? "aprovado"
+    : assessment.decision === "awaiting_post_context" ? "aguardando_contexto" : "descartado"
+
+  const { data: priorAudit, error: priorAuditError } = await admin
+    .from("intent_comentarios_higiene_privada")
+    .select("decisao, motivo")
+    .eq("projeto_id", input.projectId)
+    .eq("urn_unico", urn)
+    .maybeSingle()
+  if (priorAuditError) throw new Error(`Falha ao verificar a validação do comentário: ${priorAuditError.message}`)
+
+  // A fonte já foi considerada indisponível: não reabrimos a fila infinitamente.
+  const lockedAsUnavailable = priorAudit?.decisao === "descartado" && priorAudit?.motivo === "contexto_post_indisponivel"
+  const persistedDecision = lockedAsUnavailable ? "descartado" : decision
+  const persistedReason = lockedAsUnavailable ? "contexto_post_indisponivel" : assessment.reason
+  const { error: auditError } = await admin.from("intent_comentarios_higiene_privada").upsert({
+    projeto_id: input.projectId,
+    pessoa_id: input.personId,
+    empresa_id: input.companyId,
+    post_id: input.post.id,
+    icp_id: input.icpId,
+    urn_unico: urn,
+    comentario: input.comment,
+    post_url: input.post.linkedin_url ?? "",
+    contexto_post_disponivel: Boolean(input.post.texto?.trim()),
+    decisao: persistedDecision,
+    motivo: persistedReason,
+    termos_detectados: assessment.matchedTerms,
+    origem: input.origin,
+    provider: input.provider,
+    provider_run_id: input.providerRunId,
+    ocorrido_em: input.occurredAt,
+    atualizado_em: new Date().toISOString(),
+  }, { onConflict: "projeto_id,urn_unico" })
+  if (auditError) throw new Error(`Falha ao registrar a validação gratuita do comentário: ${auditError.message}`)
+
+  if (persistedDecision !== "aprovado") {
+    return { candidateId: null, needsPostContext: persistedDecision === "aguardando_contexto" }
+  }
+
+  const { data: candidate, error: candidateError } = await admin.from("sinais_candidatos_privados").upsert({
+    projeto_id: input.projectId,
+    pessoa_id: input.personId,
+    empresa_id: input.companyId,
+    post_id: input.post.id,
+    icp_id: input.icpId,
+    tipo: signalTypeFromPublicActivity({ kind: "comment", evidence: input.comment }),
+    urn_unico: urn,
+    evidencia: input.comment,
+    contexto: input.post.texto,
+    post_url: input.post.linkedin_url,
+    ocorrido_em: input.occurredAt,
+    provider: input.provider,
+    provider_run_id: input.providerRunId,
+    atualizado_em: new Date().toISOString(),
+  }, { onConflict: "projeto_id,urn_unico" }).select("id,status").single()
+  if (candidateError || !candidate) throw new Error(`Falha ao preparar comentário aderente para análise: ${candidateError?.message ?? "registro ausente"}`)
+  return { candidateId: candidate.status === "pendente" ? candidate.id as string : null, needsPostContext: false }
 }
 
 function safeCompanyCandidate(value: unknown) {
@@ -425,6 +529,13 @@ async function processWatchPersonJob(admin: AdminClient, job: Job, apifyToken: s
     if (!person || !operation || operation.localizacao_status !== "brasil_confirmado" || operation.excluido || Number(operation.fit ?? 0) < 60) {
       throw new Error("A pessoa não atende aos critérios privados para observação.")
     }
+    const { data: legacyIcp, error: legacyIcpError } = await admin.from("icps")
+      .select("id, sinais_de_compra")
+      .eq("id", icpId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (legacyIcpError || !legacyIcp) throw new Error("O perfil ideal desta observação não foi encontrado.")
+    const signalTerms = await loadIntentSignalTerms(admin, job.projeto_id, legacyIcp.sinais_de_compra)
 
     const [commentRuns, reactionRuns] = await Promise.all([
       activityForType(person.linkedin_url, "comment", apifyToken),
@@ -460,36 +571,41 @@ async function processWatchPersonJob(admin: AdminClient, job: Job, apifyToken: s
 
     const pendingCandidateIds: string[] = []
     for (const activity of activities) {
-      const { data: post, error: postError } = await admin.from("posts").upsert({
+      const postPayload: Record<string, unknown> = {
         projeto_id: job.projeto_id,
         linkedin_url: activity.postUrl,
         post_urn: activity.postUrn,
         autor_nome: activity.postAuthorName,
-        autor_url: activity.postAuthorUrl,
-        texto: activity.context,
+        autor_url: activity.postAuthorUrl ?? person.linkedin_url,
         publicado_em: activity.occurredAt,
-      }, { onConflict: "projeto_id,post_urn" }).select("id").single()
+      }
+      // Reações não carregam o texto do post; nunca podem apagar um contexto já preservado.
+      if (activity.type === "comment" && activity.context?.trim()) postPayload.texto = activity.context
+      const { data: post, error: postError } = await admin.from("posts").upsert(postPayload, { onConflict: "projeto_id,post_urn" })
+        .select("id, linkedin_url, texto").single()
       if (postError || !post) throw new Error(`Falha ao preservar a origem pública do sinal: ${postError?.message ?? "post ausente"}`)
 
-      const uniqueUrn = `intent:${await fingerprint(`${activity.type}:${activity.externalId}`)}`
-      const { data: candidate, error: candidateError } = await admin.from("sinais_candidatos_privados").upsert({
-        projeto_id: job.projeto_id,
-        pessoa_id: personId,
-        empresa_id: person.empresa_id,
-        post_id: post.id,
-        icp_id: icpId,
-        tipo: signalTypeFromPublicActivity({ kind: activity.type, evidence: activity.evidence }),
-        urn_unico: uniqueUrn,
-        evidencia: activity.evidence,
-        contexto: activity.context,
-        post_url: activity.postUrl,
-        ocorrido_em: activity.occurredAt,
-        provider: "apify",
-        provider_run_id: runs.find((run) => run.result.items.some((item) => normalizeProfileActivityItem(item, activity.type)?.externalId === activity.externalId))?.result.runId ?? null,
-        atualizado_em: new Date().toISOString(),
-      }, { onConflict: "projeto_id,urn_unico" }).select("id,status").single()
-      if (candidateError || !candidate) throw new Error(`Falha ao preparar sinal para julgamento: ${candidateError?.message ?? "sinal ausente"}`)
-      if (candidate.status === "pendente") pendingCandidateIds.push(candidate.id)
+      // Reações são preservadas como histórico e descoberta; só comentários seguem para julgamento.
+      if (activity.type !== "comment" || !activity.evidence) continue
+      const source = runs.find((run) => run.result.items.some((item) => normalizeProfileActivityItem(item, "comment")?.externalId === activity.externalId))
+      const staged = await stageCommentForIntent(admin, {
+        projectId: job.projeto_id,
+        personId,
+        companyId: person.empresa_id,
+        post,
+        icpId,
+        externalId: activity.externalId,
+        comment: activity.evidence,
+        occurredAt: activity.occurredAt,
+        provider: source?.result.actor ?? "apify",
+        providerRunId: source?.result.runId ?? null,
+        origin: "atividade_perfil",
+        terms: signalTerms,
+      })
+      if (staged.needsPostContext) {
+        await enqueue(admin, job.projeto_id, "recuperar_contexto_post", { post_id: post.id, icp_id: icpId }, 25)
+      }
+      if (staged.candidateId) pendingCandidateIds.push(staged.candidateId)
     }
 
     if (pendingCandidateIds.length > 0) {
@@ -839,6 +955,128 @@ async function processWatchlistJob(admin: AdminClient, job: Job, apifyToken: str
   }
 }
 
+/**
+ * A coleta de atividades de um perfil nem sempre traz o texto completo do
+ * post. Antes de qualquer julgamento, tentamos recuperar esse contexto a
+ * partir do autor já conhecido. Se o post continuar indisponível, mantemos o
+ * comentário apenas no histórico de auditoria e nunca o enviamos à IA.
+ */
+async function processRecoverPostContextJob(admin: AdminClient, job: Job, apifyToken: string) {
+  const postId = typeof job.payload.post_id === "string" ? job.payload.post_id : ""
+  const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
+  const executionId = await createExecution(admin, job.projeto_id, "monitoramento", {
+    job_id: job.id,
+    post_id: postId,
+    icp_id: icpId,
+    origem: "recuperar_contexto_post",
+  })
+  let totalCost = 0
+
+  try {
+    const { data: post, error: postError } = await admin.from("posts")
+      .select("id, linkedin_url, post_urn, autor_url, texto")
+      .eq("id", postId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (postError || !post) throw new Error("Não encontramos a publicação que precisa de contexto.")
+
+    const { data: pendingComments, error: pendingError } = await admin
+      .from("intent_comentarios_higiene_privada")
+      .select("id, pessoa_id, empresa_id, urn_unico, comentario, ocorrido_em, provider, provider_run_id")
+      .eq("projeto_id", job.projeto_id)
+      .eq("post_id", postId)
+      .eq("icp_id", icpId)
+      .eq("decisao", "aguardando_contexto")
+    if (pendingError) throw new Error(`Falha ao localizar os comentários aguardando contexto: ${pendingError.message}`)
+    if (!pendingComments?.length) {
+      await finishExecution(admin, executionId, { status: "concluida" })
+      return { recovered: false, pendingComments: 0, costUsd: 0 }
+    }
+
+    let postText = typeof post.texto === "string" ? post.texto.trim() : ""
+    if (!postText && post.autor_url) {
+      const actorInput = buildMonitoredProfilePostsInput([post.autor_url], "month", 10)
+      if (actorInput.targetUrls.length) {
+        const result = await runApifyActor(MONITORED_PROFILE_POSTS_ACTOR, actorInput, apifyToken)
+        totalCost += result.costUsd
+        await recordProviderCost(admin, executionId, result, "recover_post_context")
+        await auditPayload(admin, {
+          projectId: job.projeto_id,
+          jobId: job.id,
+          provider: "apify",
+          operation: MONITORED_PROFILE_POSTS_ACTOR,
+          runId: result.runId,
+          identity: `context:${postId}`,
+          payload: { input: actorInput, items: result.items, logs: result.logMessages },
+        })
+        const matched = result.items
+          .map((item) => normalizeWatchlistPost(item, { linkedinUrl: post.autor_url as string, name: "Fonte monitorada" }))
+          .find((item) => item && (item.postUrn === post.post_urn || item.linkedinUrl === post.linkedin_url))
+        postText = matched?.text?.trim() ?? ""
+        if (postText) {
+          const { error: updatePostError } = await admin.from("posts")
+            .update({ texto: postText })
+            .eq("id", postId)
+            .eq("projeto_id", job.projeto_id)
+          if (updatePostError) throw new Error(`Falha ao preservar o contexto recuperado: ${updatePostError.message}`)
+        }
+      }
+    }
+
+    if (!postText) {
+      const { error: discardError } = await admin.from("intent_comentarios_higiene_privada").update({
+        decisao: "descartado",
+        motivo: "contexto_post_indisponivel",
+        atualizado_em: new Date().toISOString(),
+      }).in("id", pendingComments.map((comment) => comment.id))
+      if (discardError) throw new Error(`Falha ao registrar a ausência de contexto do post: ${discardError.message}`)
+      await finishExecution(admin, executionId, { status: "parcial", costUsd: totalCost })
+      return { recovered: false, pendingComments: pendingComments.length, costUsd: totalCost }
+    }
+
+    const { data: legacyIcp, error: icpError } = await admin.from("icps")
+      .select("sinais_de_compra")
+      .eq("id", icpId)
+      .eq("projeto_id", job.projeto_id)
+      .maybeSingle()
+    if (icpError || !legacyIcp) throw new Error("O perfil ideal desta análise não foi encontrado.")
+    const terms = await loadIntentSignalTerms(admin, job.projeto_id, legacyIcp.sinais_de_compra)
+    const postWithContext = { ...post, texto: postText }
+    const candidateIdsByPerson = new Map<string, string[]>()
+    for (const comment of pendingComments) {
+      if (!comment.pessoa_id) continue
+      const staged = await stageCommentForIntent(admin, {
+        projectId: job.projeto_id,
+        personId: comment.pessoa_id,
+        companyId: comment.empresa_id,
+        post: postWithContext,
+        icpId,
+        externalId: comment.urn_unico,
+        auditUrn: comment.urn_unico,
+        comment: comment.comentario,
+        occurredAt: comment.ocorrido_em,
+        provider: comment.provider ?? "apify",
+        providerRunId: comment.provider_run_id,
+        origin: "recuperacao_contexto",
+        terms,
+      })
+      if (staged.candidateId) {
+        const candidateIds = candidateIdsByPerson.get(comment.pessoa_id) ?? []
+        candidateIds.push(staged.candidateId)
+        candidateIdsByPerson.set(comment.pessoa_id, candidateIds)
+      }
+    }
+    for (const [personId, candidateIds] of candidateIdsByPerson) {
+      await enqueue(admin, job.projeto_id, "julgar_sinal", buildPersonJudgmentPayload(personId, candidateIds, job.id), 20)
+    }
+    await finishExecution(admin, executionId, { status: "concluida", costUsd: totalCost })
+    return { recovered: true, pendingComments: pendingComments.length, judgmentsQueued: candidateIdsByPerson.size, costUsd: totalCost }
+  } catch (error) {
+    await finishExecution(admin, executionId, { status: "falhou", costUsd: totalCost, error: errorMessage(error) })
+    throw error
+  }
+}
+
 async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { apollo: string; apify: string }) {
   const postId = typeof job.payload.post_id === "string" ? job.payload.post_id : ""
   const icpId = typeof job.payload.icp_id === "string" ? job.payload.icp_id : ""
@@ -855,18 +1093,19 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
 
   try {
     const { data: post, error: postError } = await admin.from("posts")
-      .select("id, linkedin_url, texto")
+      .select("id, linkedin_url, post_urn, autor_url, texto")
       .eq("id", postId)
       .eq("projeto_id", job.projeto_id)
       .maybeSingle()
     if (postError || !post?.linkedin_url) throw new Error("O post qualificado não foi encontrado para expansão.")
 
     const { data: icp, error: icpError } = await admin.from("icps")
-      .select("id, status, comprador")
+      .select("id, status, comprador, sinais_de_compra")
       .eq("id", icpId)
       .eq("projeto_id", job.projeto_id)
       .maybeSingle()
     if (icpError || !icp || icp.status !== "ativo") throw new Error("O perfil ideal ativo não foi encontrado para esta expansão.")
+    const signalTerms = await loadIntentSignalTerms(admin, job.projeto_id, icp.sinais_de_compra)
 
     const now = new Date().toISOString()
     const { error: startError } = await admin.from("post_operacao_privada").upsert({
@@ -1011,27 +1250,26 @@ async function processPostCascadeJob(admin: AdminClient, job: Job, secrets: { ap
       for (const engagement of personEngagements) {
         if (engagement.type !== "comment" || !engagement.evidence || !engagement.occurredAt) continue
         const source = sourceByEngagement.get(`${engagement.type}:${engagement.externalId}`)
-        const uniqueUrn = `intent:${await fingerprint(`comment:${engagement.externalId}`)}`
-        const { data: candidateSignal, error: signalError } = await admin.from("sinais_candidatos_privados").upsert({
-          projeto_id: job.projeto_id,
-          pessoa_id: personId,
-          empresa_id: companyId,
-          post_id: postId,
-          icp_id: icp.id,
-          tipo: signalTypeFromPublicActivity({ kind: "comment", evidence: engagement.evidence }),
-          urn_unico: uniqueUrn,
-          evidencia: engagement.evidence,
-          contexto: post.texto,
-          post_url: post.linkedin_url,
-          ocorrido_em: engagement.occurredAt,
+        const staged = await stageCommentForIntent(admin, {
+          projectId: job.projeto_id,
+          personId,
+          companyId,
+          post,
+          icpId: icp.id,
+          externalId: engagement.externalId,
+          comment: engagement.evidence,
+          occurredAt: engagement.occurredAt,
           provider: source?.actor ?? "apify",
-          provider_run_id: source?.runId ?? null,
-          atualizado_em: new Date().toISOString(),
-        }, { onConflict: "projeto_id,urn_unico" }).select("id,status").single()
-        if (signalError || !candidateSignal) throw new Error(`Falha ao preparar comentário do post para julgamento: ${signalError?.message ?? "sinal ausente"}`)
-        if (candidateSignal.status === "pendente") {
+          providerRunId: source?.runId ?? null,
+          origin: "cascata_post",
+          terms: signalTerms,
+        })
+        if (staged.needsPostContext) {
+          await enqueue(admin, job.projeto_id, "recuperar_contexto_post", { post_id: postId, icp_id: icp.id }, 25)
+        }
+        if (staged.candidateId) {
           const pending = pendingByPerson.get(personId) ?? []
-          pending.push(candidateSignal.id)
+          pending.push(staged.candidateId)
           pendingByPerson.set(personId, pending)
         }
       }
@@ -1369,6 +1607,7 @@ async function processJob(admin: AdminClient, job: Job, secrets: { apollo: strin
   if (job.tipo === "varrer_post") return processPostCascadeJob(admin, job, { apollo: secrets.apollo, apify: secrets.apify })
   if (job.tipo === "investigar_autor") return processAuthorInvestigationJob(admin, job)
   if (job.tipo === "varrer_watchlist") return processWatchlistJob(admin, job, secrets.apify)
+  if (job.tipo === "recuperar_contexto_post") return processRecoverPostContextJob(admin, job, secrets.apify)
   throw new Error("Este tipo de etapa ainda não pertence ao fluxo ativo da Fase 2.")
 }
 
@@ -1400,7 +1639,7 @@ Deno.serve(async (request) => {
     if (!owned) return json({ error: "Não encontramos esta empresa na sua conta." }, 404)
   }
 
-  const activeTypes = ["semear_radar", "vigiar_pessoa", "julgar_sinal", "varrer_empresa", "varrer_post", "investigar_autor", "varrer_watchlist"]
+  const activeTypes = ["semear_radar", "vigiar_pessoa", "julgar_sinal", "varrer_empresa", "varrer_post", "investigar_autor", "varrer_watchlist", "recuperar_contexto_post"]
   const requestedTypes = Array.isArray(body.jobTypes) ? body.jobTypes.filter((type) => activeTypes.includes(type)) : activeTypes
   const maxJobs = Math.max(1, Math.min(10, Math.trunc(Number(body.maxJobs ?? 5))))
   const processed: Array<Record<string, unknown>> = []
