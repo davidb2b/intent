@@ -8,7 +8,7 @@ export class ApolloRequestError extends Error {
   }
 }
 
-type ApolloResponse = {
+export type ApolloResponse = {
   payload: Record<string, unknown>
   durationMs: number
   requestId: string | null
@@ -19,6 +19,30 @@ function retryAfterSeconds(response: Response) {
   if (!raw) return null
   const seconds = Number(raw)
   return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : null
+}
+
+async function readApolloResponse(response: Response, startedAt: number): Promise<ApolloResponse> {
+  if (!response.ok) {
+    const retry = retryAfterSeconds(response)
+    if (response.status === 429) {
+      throw new ApolloRequestError("A pesquisa atingiu o limite temporário do provedor.", retry ?? 60)
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new ApolloRequestError("A pesquisa não está disponível para esta conta.")
+    }
+    throw new ApolloRequestError(`O provedor não respondeu corretamente (${response.status}).`, retry)
+  }
+
+  const payload = await response.json().catch(() => null)
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new ApolloRequestError("A pesquisa retornou um formato inválido.")
+  }
+
+  return {
+    payload: payload as Record<string, unknown>,
+    durationMs: Date.now() - startedAt,
+    requestId: response.headers.get("x-request-id"),
+  }
 }
 
 async function postApollo(
@@ -39,27 +63,27 @@ async function postApollo(
     signal: AbortSignal.timeout(30_000),
   })
 
-  if (!response.ok) {
-    const retry = retryAfterSeconds(response)
-    if (response.status === 429) {
-      throw new ApolloRequestError("A pesquisa de pessoas atingiu o limite temporário do provedor.", retry ?? 60)
-    }
-    if (response.status === 401 || response.status === 403) {
-      throw new ApolloRequestError("A pesquisa de pessoas não está disponível para esta conta.")
-    }
-    throw new ApolloRequestError(`A pesquisa de pessoas não respondeu corretamente (${response.status}).`, retry)
-  }
+  return readApolloResponse(response, startedAt)
+}
 
-  const payload = await response.json().catch(() => null)
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new ApolloRequestError("A pesquisa de pessoas retornou um formato inválido.")
-  }
+async function getApollo(path: string, apiKey: string): Promise<ApolloResponse> {
+  const startedAt = Date.now()
+  const response = await fetch(`https://api.apollo.io${path}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "Cache-Control": "no-cache",
+      "X-Api-Key": apiKey,
+    },
+    signal: AbortSignal.timeout(30_000),
+  })
 
-  return {
-    payload: payload as Record<string, unknown>,
-    durationMs: Date.now() - startedAt,
-    requestId: response.headers.get("x-request-id"),
-  }
+  return readApolloResponse(response, startedAt)
+}
+
+export function enrichApolloOrganization(domain: string, apiKey: string): Promise<ApolloResponse> {
+  const query = new URLSearchParams({ domain: domain.replace(/^www\./i, "").trim().toLowerCase() })
+  return getApollo(`/api/v1/organizations/enrich?${query.toString()}`, apiKey)
 }
 
 export function searchApolloPeople(
